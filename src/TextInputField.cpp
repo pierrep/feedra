@@ -54,6 +54,9 @@ TextInputField::TextInputField() {
     verticalPadding = 0;
 	horizontalPadding = 3;
 	lastTimeCursorMoved = ofGetElapsedTimef();
+
+    doubleClickTime = 500; // milliseconds
+    currentClick = prevClick = ofGetElapsedTimeMillis();
 }
 
 //----------
@@ -501,11 +504,15 @@ void TextInputField::mouseDragged(ofMouseEventArgs& args) {
 void TextInputField::mouseReleased(ofMouseEventArgs& args) {
 	if (!this->enabled) {
 		return;
-	}
+	}    
 
 	if (bounds.inside(args.x, args.y)) {
+        currentClick = ofGetElapsedTimeMillis();
 		if (!this->editing && mouseDownInRect) {
-			beginEditing();
+            if(currentClick - prevClick < doubleClickTime){
+                beginEditing();
+            }
+            prevClick = currentClick;
 		}
 	}
 	else {

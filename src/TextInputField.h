@@ -126,6 +126,10 @@ class TextInputField {
 	void removeListeners();
 	bool hasListeners;
 
+    float prevClick;
+    float currentClick;
+    float doubleClickTime;
+
     bool shiftHeld, commandHeld;
     map<int, char> shiftMap;
 };
