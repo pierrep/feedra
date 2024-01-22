@@ -182,7 +182,7 @@ SoundObject::SoundObject(AppConfig* _config, size_t _scene_id, int _id, int _x, 
 
     soundname.text = "";
     soundname.setFont(config->f2());
-    soundname.bounds = ofRectangle(_x + 10* config->x_scale, _y + 95* config->y_scale, 100, 18);
+    soundname.bounds = ofRectangle(_x + 10* config->x_scale, _y + 100* config->y_scale, 100, 32);
 }
 
 //--------------------------------------------------------------
@@ -294,7 +294,7 @@ void SoundObject::update()
 
                 soundname.enable();
                 soundname.text = result.fileName;
-                soundname.text.resize(14);
+                //soundname.text.resize(14);
                 player.isLoaded = true;
             }
         }

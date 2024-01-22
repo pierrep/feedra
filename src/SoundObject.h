@@ -1,6 +1,6 @@
 #pragma once
 
-#include "ofxTextInputField.h"
+#include "TextInputField.h"
 #include "SimpleSlider.h"
 #include "AppConfig.h"
 #include "Interactive.h"
@@ -50,7 +50,7 @@ public:
     bool isPaused;
 
     SimpleSlider volumeslider;
-    ofxTextInputField   soundname;
+    TextInputField   soundname;
     string soundpath;
     string libraryLocation;
 

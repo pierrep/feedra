@@ -37,6 +37,9 @@ Project{
             "src/main.cpp",
             "src/ofApp.cpp",
             "src/ofApp.h",
+            "src/TextInputField.cpp",
+            "src/TextInputField.h",
+            "src/TextInputFieldFontRenderer.h",
         ]
 
         of.addons: [
