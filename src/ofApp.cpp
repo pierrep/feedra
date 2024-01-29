@@ -12,6 +12,7 @@ ofApp::~ofApp()
 //--------------------------------------------------------------
 void ofApp::setup(){
     ofSetEscapeQuitsApp(false);
+    ofSetWindowTitle("Feedra");
 
     if( ofAppGLFWWindow* glfwWin = dynamic_cast< ofAppGLFWWindow* >(ofGetCurrentWindow().get()) ){
         ofGLFWWindowSettings GLFWsettings = glfwWin->getSettings();
