@@ -4,6 +4,7 @@
 #include "AppConfig.h"
 #include "SimpleSlider.h"
 #include "Scene.h"
+#include "NewScene.h"
 
 class ofApp : public ofBaseApp{
 
@@ -26,6 +27,7 @@ class ofApp : public ofBaseApp{
 		void gotMessage(ofMessage msg);		        
 
         vector<Scene*> scenes;
+        NewScene* newScene;
         AppConfig config;
         SimpleSlider mainVolume;
 };

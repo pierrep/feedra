@@ -31,18 +31,24 @@ void ofApp::setup(){
     // create scenes
     int maxScenes = 4;
     int scene_width = 200*config.x_scale;
-    int scene_height = 50*config.y_scale;
-    int baseSceneOffset = config.gridWidth*config.spacing + config.xoffset ;;
+    int scene_height = 40*config.y_scale;
+    int baseSceneOffset = config.gridWidth*config.spacing + config.xoffset ;
 
     int id = 0;
+    int new_scene_y;
     for(size_t i = 0; i < maxScenes; i++)
     {
         int x = baseSceneOffset;
-        int y = i* config.spacing + config.yoffset;
+        int y = i* config.scene_spacing + config.yoffset;
+        new_scene_y = y;
         Scene* s = new Scene(&config,id,x,y,scene_width,scene_height);
         scenes.push_back(s);
-        id++;
+        id++;        
     }
+
+    // setup new scene
+    newScene = new NewScene(&config,baseSceneOffset, new_scene_y + config.scene_spacing,scene_height,scene_height);
+    newScene->setup();
 
     // setup scenes
     for(size_t i=0;i < scenes.size();i++) {
@@ -88,6 +94,30 @@ void ofApp::update(){
     config.masterVolume = mainVolume.getValue();
 
     scenes[config.activeScene]->update();
+
+    if(newScene->doNewScene) {
+        int baseSceneOffset = config.gridWidth*config.spacing + config.xoffset ;
+        int x = baseSceneOffset;
+        int y = scenes.size() * config.scene_spacing + config.yoffset;
+        int scene_width = 200*config.x_scale;
+        int scene_height = 40*config.y_scale;
+        Scene* s = new Scene(&config,scenes.size(),x,y,scene_width,scene_height);
+        s->setup();
+        scenes.push_back(s);
+
+        for(size_t i=0;i < scenes.size();i++) {
+            if(config.activeScene != i) {
+                for(size_t j = 0; j < scenes[i]->sounds.size();j++)
+                {
+                    scenes[i]->sounds[j]->disableAllEvents();
+                }
+            }
+        }
+
+        newScene->y = y + config.scene_spacing;
+
+        newScene->doNewScene = false;
+    }
 }
 
 //--------------------------------------------------------------
@@ -98,6 +128,8 @@ void ofApp::draw(){
     for(size_t i=0; i < scenes.size();i++) {
          scenes[i]->render();
      }
+
+    newScene->render();
 
 }
 

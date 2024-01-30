@@ -56,8 +56,8 @@ Scene::Scene(AppConfig* _config, int _id, int _x, int _y, int _w, int _h)
     play_button.id = _id;
     play_button.setX(_x + 50 * config->x_scale);
     play_button.setY(_y + 10 * config->y_scale);
-    play_button.setWidth(30 * config->x_scale);
-    play_button.setHeight(30 * config->y_scale);
+    play_button.setWidth(20 * config->x_scale);
+    play_button.setHeight(20 * config->y_scale);
 
     playScene = false;
 }

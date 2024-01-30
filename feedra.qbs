@@ -20,6 +20,8 @@ Project{
             "src/Loader.h",
             "src/Looper.cpp",
             "src/Looper.h",
+            "src/NewScene.cpp",
+            "src/NewScene.h",
             "src/PlayBar.cpp",
             "src/PlayBar.h",
             "src/PlayScene.cpp",

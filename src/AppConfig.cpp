@@ -21,6 +21,8 @@ void AppConfig::setup()
     gridWidth = 6;
     gridHeight = 4;
 
+    scene_spacing = 60*x_scale;
+
     activeScene = 0;
 
     loopByDefault = false;

@@ -33,6 +33,8 @@ public:
     int gridWidth;
     int gridHeight;
 
+    int scene_spacing;
+
     bool loopByDefault;
 
     size_t activeScene;
