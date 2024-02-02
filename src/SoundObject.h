@@ -34,7 +34,6 @@ public:
     //Globals    
     AppConfig* config;
     ofSoundPlayer audioPlayer;
-    ofJson settings;
 
     Loader loader;
     Player player;

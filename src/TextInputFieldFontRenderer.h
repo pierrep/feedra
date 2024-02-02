@@ -15,18 +15,14 @@
  *  ofxTextInputFieldFontRenderer.h, created by Marek Bereza on 14/08/2013.
  */
 
-
 namespace TextInput {
 	class FontRenderer {
 	public:
 		virtual ~FontRenderer() {}
 		virtual void drawString(string text, int x, int y) = 0;
 		virtual float getLineHeight() = 0;
-		virtual float stringWidth(const string &str) = 0;
-		
-		
-		virtual bool isBitmapFont() { return false; }
-		
+		virtual float stringWidth(const string &str) = 0;				
+		virtual bool isBitmapFont() { return false; }		
 		
 		// this gets the cursor position (in characters) based on an x coordinate.
 		int getPosition(const string &str, int x) {
@@ -64,17 +60,15 @@ namespace TextInput {
 		
 		float spacesWidth(const string &str) {
 			if(str.size()>0 && str[str.size()-1]==' ') {
-				return renderer->getSpaceSize()*renderer->getSize();
+                return renderer->getSpaceSize();//*renderer->getSize();
 			}
 			return 0;
 		}
 		float stringWidth(const string &str) {
 			
-			return renderer->stringWidth(str) + spacesWidth(str) + 3;
+            return renderer->stringWidth(str) + spacesWidth(str);
 		}
 	};
-	
-
 
 	class BitmapFontRenderer: public FontRenderer {
 	public:
@@ -85,13 +79,7 @@ namespace TextInput {
 		}
 		float getLineHeight() {
 			return 8.f*1.725f;
-		}
-		
-		
-		
-		
-		
-		
+		}		
 		
 		float stringWidth(const string &str) {
 			int w = 0;

@@ -21,7 +21,12 @@ void AppConfig::setup()
     gridWidth = 6;
     gridHeight = 4;
 
-    scene_spacing = 60*x_scale;
+    scene_spacing = 50*x_scale;
+
+    scene_width = 200*x_scale;
+    scene_height = 40*y_scale;
+    baseSceneOffset = gridWidth*spacing + xoffset ;
+    max_scenes = 10;
 
     activeScene = 0;
 
@@ -33,6 +38,8 @@ void AppConfig::setup()
     loopicon.load("images/loopicon.png");
 
     defaultLibraryLocation = "/home/grimus/Downloads/5e/";
+
+    settings.clear();
 
     masterVolume = 1.0f;    
 }

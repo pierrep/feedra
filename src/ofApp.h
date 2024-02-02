@@ -4,7 +4,8 @@
 #include "AppConfig.h"
 #include "SimpleSlider.h"
 #include "Scene.h"
-#include "NewScene.h"
+#include "AddScene.h"
+#include "DeleteScene.h"
 
 class ofApp : public ofBaseApp{
 
@@ -25,10 +26,16 @@ class ofApp : public ofBaseApp{
 		void windowResized(int w, int h);
 		void dragEvent(ofDragInfo dragInfo);
 		void gotMessage(ofMessage msg);		        
+        void loadScenes();
+        void updateScenePosition();
+        void enableScene(int i);
 
         vector<Scene*> scenes;
-        NewScene* newScene;
+        AddScene* addScene;
+        int maxScenes;
         AppConfig config;
         SimpleSlider mainVolume;
+
+        bool bDoRender;
 };
 

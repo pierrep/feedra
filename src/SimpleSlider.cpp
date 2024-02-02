@@ -9,6 +9,7 @@
 //----------------------------------------------------
 SimpleSlider::SimpleSlider(){
     bEventsEnabled = false;
+    labelFont = nullptr;
 }
 
 //----------------------------------------------------
@@ -52,7 +53,7 @@ void SimpleSlider::setup(int _id,float _x, float _y, float _w, float _h, float l
 void SimpleSlider::enableEvents()
 {
     //ofLogNotice() << " Enable slider events, id = " << id;
-    ofAddListener(ofEvents().draw, this, &SimpleSlider::draw);
+    //ofAddListener(ofEvents().draw, this, &SimpleSlider::draw);
     ofAddListener(ofEvents().mouseMoved, this, &SimpleSlider::mouseMoved);
     ofAddListener(ofEvents().mousePressed, this, &SimpleSlider::mousePressed);
     ofAddListener(ofEvents().mouseReleased, this, &SimpleSlider::mouseReleased);
@@ -63,7 +64,7 @@ void SimpleSlider::enableEvents()
 void SimpleSlider::disableEvents()
 {
     //ofLogNotice() << " Disable slider events, id = " << id;
-    ofRemoveListener(ofEvents().draw, this, &SimpleSlider::draw);
+    //ofRemoveListener(ofEvents().draw, this, &SimpleSlider::draw);
     ofRemoveListener(ofEvents().mouseMoved, this, &SimpleSlider::mouseMoved);
     ofRemoveListener(ofEvents().mousePressed, this, &SimpleSlider::mousePressed);
     ofRemoveListener(ofEvents().mouseReleased, this, &SimpleSlider::mouseReleased);
@@ -79,14 +80,19 @@ void SimpleSlider::clear(){
 }
 
 //----------------------------------------------------
-void SimpleSlider::setLabelString (string str){
+void SimpleSlider::setFont(ofTrueTypeFont* _font){
+    labelFont = _font;
+    bDrawLabel = true;
+}
+
+//----------------------------------------------------
+void SimpleSlider::setLabelString(string str){
 	labelString = str;
     bDrawLabel = true;
 }
 
-
 //----------------------------------------------------
-void SimpleSlider::draw(ofEventArgs& event){
+void SimpleSlider::render(){
     ofPushStyle();
 	ofEnableAlphaBlending();
 	ofDisableSmoothing();
@@ -135,18 +141,29 @@ void SimpleSlider::draw(ofEventArgs& event){
     ofDisableAlphaBlending();
 
     ofSetColor(0);
-	if (bVertical){
-		ofDrawBitmapString( ofToString(getValue(),numberDisplayPrecision), width+5,height);
-	} else {
-		ofDrawBitmapString( ofToString(getValue(),numberDisplayPrecision), width+5,height/2 + 4);		
-	}	
 
-
+    if(labelFont != nullptr) {
+        if (bVertical){
+            labelFont->drawString( ofToString(getValue(),numberDisplayPrecision), width+5*x_scale,height);
+        } else {
+            labelFont->drawString( ofToString(getValue(),numberDisplayPrecision), width+5*x_scale,height/2 + 4*y_scale);
+        }
+    } else {
+        if (bVertical){
+            ofDrawBitmapString( ofToString(getValue(),numberDisplayPrecision), width+5*x_scale,height);
+        } else {
+            ofDrawBitmapString( ofToString(getValue(),numberDisplayPrecision), width+5*x_scale,height/2 + 4*y_scale);
+        }
+    }
 
     if(bDrawLabel && !bVertical)
     {
-        float labelStringHeight = 4;
-        ofDrawBitmapString( labelString, 0, -labelStringHeight);
+        float labelStringHeight = 4*y_scale;
+        if(labelFont != nullptr) {
+            labelFont->drawString( labelString, 0, -labelStringHeight);
+        } else {
+            ofDrawBitmapString( labelString, 0, -labelStringHeight);
+        }
     }
 	
 	ofPopMatrix();

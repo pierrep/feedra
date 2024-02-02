@@ -11,7 +11,7 @@ PlayScene::PlayScene()
 PlayScene::~PlayScene()
 {
     ofRemoveListener(Interactive::clickedEvent, this, &PlayScene::onClicked);
-    ofLogVerbose() << "PlayScene destructor called...";
+    //ofLogNotice() << "PlayScene destructor for id: " << id << " called...";
 }
 
 //--------------------------------------------------------------
@@ -47,7 +47,7 @@ PlayScene::PlayScene(const PlayScene& parent) {
 
 //--------------------------------------------------------------
 void PlayScene::onClicked(int& args) {
-    //ofLogNotice() << "PlayScene id: " << id << " << endl;
+    //ofLogNotice() << "PlayScene id: " << id;
     doPlay = true;
     isPlaying = !isPlaying;
 }

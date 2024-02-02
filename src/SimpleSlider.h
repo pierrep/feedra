@@ -19,7 +19,7 @@ class SimpleSlider {
         void	setup (int id, float x, float y, float w, float h, float loVal, float hiVal, float initialPercent, bool bVert, bool bDrawNum);
 		void	clear();
 
-		void	draw(ofEventArgs& event);
+        void	render();
 		void	mouseMoved(ofMouseEventArgs& event);
 		void	mouseDragged(ofMouseEventArgs& event);
 		void	mousePressed(ofMouseEventArgs& event);
@@ -35,6 +35,7 @@ class SimpleSlider {
 		void	setPercent(float p);
 		void	setNumberDisplayPrecision(int prec);
 		void	setLabelString (string str);
+        void	setFont (ofTrueTypeFont* font);
 		void	updatePercentFromMouse(int mx, int my); 
         void    setScale(float x, float y);
         void    showLabel(bool bShow) {bDrawLabel = bShow;}
@@ -56,17 +57,15 @@ class SimpleSlider {
 		bool	bDrawNumber;
 		bool	bHasFocus; 
 		
-	
 		float	lowValue;
 		float	highValue;
 		float	percent;
 	
 		string	labelString; 
+        ofTrueTypeFont* labelFont;
 
         float   x_scale;
         float   y_scale;
-	
-    protected:
 	
         bool    bDrawLabel;
         bool	bEventsEnabled;

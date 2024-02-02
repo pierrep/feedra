@@ -12,16 +12,18 @@ Project{
         name: { return FileInfo.baseName(sourceDirectory) }
 
         files: [
+            "src/AddScene.cpp",
+            "src/AddScene.h",
             "src/AppConfig.cpp",
             "src/AppConfig.h",
+            "src/DeleteScene.cpp",
+            "src/DeleteScene.h",
             "src/Interactive.cpp",
             "src/Interactive.h",
             "src/Loader.cpp",
             "src/Loader.h",
             "src/Looper.cpp",
             "src/Looper.h",
-            "src/NewScene.cpp",
-            "src/NewScene.h",
             "src/PlayBar.cpp",
             "src/PlayBar.h",
             "src/PlayScene.cpp",

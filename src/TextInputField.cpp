@@ -36,6 +36,7 @@ TextInputField::TextInputField() {
 	selectionBegin = 0;
 	selectionEnd = 0;
 	selecting = false;
+    shiftHeld = false;
 	
 	fontRef = NULL;
     this->enabled = false;
@@ -449,6 +450,14 @@ void TextInputField::keyPressed(ofKeyEventArgs& args) {
 			}
 		}
 	}
+
+    if (key==OF_KEY_END){
+        cursorPosition = text.size();
+    }
+
+    if (key==OF_KEY_HOME){
+        cursorPosition = 0;
+    }
 }
 
 //----------
@@ -490,9 +499,9 @@ void TextInputField::mouseDragged(ofMouseEventArgs& args) {
 	if (bounds.inside(args.x, args.y)) {
 		int pos = getCursorPositionFromMouse(args.x, args.y);
 		if (pos != cursorPosition) {
-			selecting = true;
-			selectionBegin = MIN(pos, cursorPosition);
-			selectionEnd = MAX(pos, cursorPosition);
+            //selecting = true;
+            //selectionBegin = MIN(pos, cursorPosition);
+            //selectionEnd = MAX(pos, cursorPosition);
 		}
 		else {
 			selecting = false;
@@ -619,24 +628,26 @@ int TextInputField::getCursorPositionFromMouse(int x, int y) {
 
 //----------
 void TextInputField::addListeners() {
-	if (this->hasListeners) {
+    if (hasListeners) {
 		return;
 	}
 	ofAddListener(ofEvents().keyPressed, this, &TextInputField::keyPressed);
 	ofAddListener(ofEvents().keyReleased, this, &TextInputField::keyReleased);
 	ofAddListener(ofEvents().mousePressed, this, &TextInputField::mousePressed);
 	ofAddListener(ofEvents().mouseDragged, this, &TextInputField::mouseDragged);
-	ofAddListener(ofEvents().mouseReleased, this, &TextInputField::mouseReleased);
+    ofAddListener(ofEvents().mouseReleased, this, &TextInputField::mouseReleased);
+    hasListeners = true;
 }
 
 //----------
 void TextInputField::removeListeners() {
-	if (!this->hasListeners) {
+    if (!hasListeners) {
 		return;
 	}
 	ofRemoveListener(ofEvents().keyPressed, this, &TextInputField::keyPressed);
-	ofAddListener(ofEvents().keyReleased, this, &TextInputField::keyReleased);
+    ofRemoveListener(ofEvents().keyReleased, this, &TextInputField::keyReleased);
 	ofRemoveListener(ofEvents().mousePressed, this, &TextInputField::mousePressed);
 	ofRemoveListener(ofEvents().mouseDragged, this, &TextInputField::mouseDragged);
 	ofRemoveListener(ofEvents().mouseReleased, this, &TextInputField::mouseReleased);
+    hasListeners = false;
 }

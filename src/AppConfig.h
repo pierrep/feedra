@@ -34,12 +34,19 @@ public:
     int gridHeight;
 
     int scene_spacing;
+    int scene_width;
+    int scene_height;
+    int baseSceneOffset;
 
     bool loopByDefault;
 
-    size_t activeScene;
+    int activeScene;
+    size_t activeSceneIdx;
+    int max_scenes;
     size_t activeSound;
     string last_path;
 
     ofImage loopicon;
+
+    ofJson settings;
 };

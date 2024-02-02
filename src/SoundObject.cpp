@@ -51,14 +51,15 @@ void SoundObject::enableAllEvents()
 void SoundObject::load()
 {
     ofJson json;
-    ofFile file("settings/settings"+ofToString(scene_id)+"-"+ofToString(id)+".json");
+    ofFile file("settings/settings.json");
+    string prefix = ofToString(scene_id)+"-"+ofToString(id);
     if(file.exists()){
         file >> json;
         for(auto & setting: json){
             if(!setting.empty())
             {
-                if(!setting["path"].empty()) {
-                    soundpath = setting["path"];
+                if(!setting[prefix+"-path"].empty()) {
+                    soundpath = setting[prefix+"-path"];
                     if(!soundpath.empty()) {
                         bool bLoaded = false;
                         bLoaded = audioPlayer.load(soundpath, isStream);
@@ -70,18 +71,18 @@ void SoundObject::load()
                         }
                     }
                 }
-                if(!setting["soundname"].empty())
+                if(!setting[prefix+"-soundname"].empty())
                 {
-                    soundname.text = setting["soundname"];
+                    soundname.text = setting[prefix+"-soundname"];
                     soundname.enable();
                 }
-                if(!setting["volume"].empty())
+                if(!setting[prefix+"-volume"].empty())
                 {
-                    volumeslider.setPercent(setting["volume"]);
+                    volumeslider.setPercent(setting[prefix+"-volume"]);
                 }
-                if(!setting["loop"].empty())
+                if(!setting[prefix+"-loop"].empty())
                 {
-                    looper.isLooping = setting["loop"];
+                    looper.isLooping = setting[prefix+"-loop"];
                 }
             }
         }
@@ -91,25 +92,30 @@ void SoundObject::load()
 //--------------------------------------------------------------
 void SoundObject::save()
 {
-    settings.clear();
+    if(!player.isLoaded) {
+        // nothing loaded, don't save
+        return;
+    }
+
+    string prefix = ofToString(scene_id)+"-"+ofToString(id);
 
     ofJson loop;
-    loop["loop"] = looper.isLooping;
-    settings.push_back(loop);
+    loop[prefix+"-loop"] = looper.isLooping;
+    config->settings.push_back(loop);
 
     ofJson filename;
-    filename["soundname"] = soundname.text;
-    settings.push_back(filename);
+    filename[prefix+"-soundname"] = soundname.text;
+    config->settings.push_back(filename);
 
     ofJson path;
-    path["path"] = soundpath;
-    settings.push_back(path);
+    path[prefix+"-path"] = soundpath;
+    config->settings.push_back(path);
 
     ofJson vol;
-    vol["volume"] = volumeslider.getValue();
-    settings.push_back(vol);
+    vol[prefix+"-volume"] = volumeslider.getValue();
+    config->settings.push_back(vol);
 
-    ofSaveJson("settings/settings"+ofToString(scene_id)+"-"+ofToString(id)+".json",settings);
+
 
 }
 
@@ -131,6 +137,7 @@ void SoundObject::setup()
 
     volumeslider.setup(id,getX(),getY() -20*config->y_scale, 80*config->x_scale, 15*config->y_scale, 0, 1, 0.7, false, false);
     volumeslider.setScale(config->y_scale, config->x_scale);
+    volumeslider.setFont(&config->f2());
     //\volumeslider.setLabelString("volume");
 }
 
@@ -178,7 +185,6 @@ SoundObject::SoundObject(AppConfig* _config, size_t _scene_id, int _id, int _x, 
     looper.setHeight(15 * config->y_scale);
     looper.setX(_x + _w - getHeight()/2.0f - looper.getWidth()/2.0f);
     looper.setY(_y + 10 * config->y_scale);
-
 
     soundname.text = "";
     soundname.setFont(config->f2());
@@ -266,6 +272,8 @@ void SoundObject::render()
     }
     ofSetColor(0);
     soundname.draw();
+
+    volumeslider.render();
 
     ofPopStyle();
 }

@@ -1,9 +1,7 @@
 #include "Scene.h"
 
 Scene::Scene()
-{
-    id = 0;
-    playScene = false;
+{   
 }
 
 //--------------------------------------------------------------
@@ -15,7 +13,7 @@ Scene::~Scene()
     sounds.clear();
 
     ofRemoveListener(Interactive::clickedEvent, this, &Scene::onClicked);
-    ofLogVerbose() << "Scene destructor called...";
+    //ofLogNotice() << "Scene destructor for id: " << id << " called...";
 }
 
 //--------------------------------------------------------------
@@ -40,26 +38,41 @@ void Scene::setup()
     }
 
     play_button.setup(config);
+    delete_scene.setup(config);
+    textfield.setUseListeners(true);
 }
 
 //--------------------------------------------------------------
-Scene::Scene(AppConfig* _config, int _id, int _x, int _y, int _w, int _h)
+Scene::Scene(AppConfig* _config, string name, int _id, int _x, int _y, int _w, int _h)
 {
     id = _id;
 
     config = _config;
-    setX(_x);
-    setY(_y);
+
     setWidth(_w);
     setHeight(_h);
 
-    play_button.id = _id;
-    play_button.setX(_x + 50 * config->x_scale);
-    play_button.setY(_y + 10 * config->y_scale);
+    updatePosition(_x,_y);
+
+    play_button.id = id;
     play_button.setWidth(20 * config->x_scale);
     play_button.setHeight(20 * config->y_scale);
 
-    playScene = false;
+    delete_scene.id = id;
+    delete_scene.setWidth(20 * config->x_scale);
+    delete_scene.setHeight(20 * config->y_scale);
+
+    scene_name = "Scene "+ofToString(id);
+    if(strcmp(name.c_str(),"")== 0) {
+        textfield.text = scene_name;
+    } else {
+        textfield.text = name;
+    }
+
+    textfield.setFont(config->f2());
+    textfield.disable();
+
+    selectScene = false;
 }
 
 //--------------------------------------------------------------
@@ -73,11 +86,26 @@ Scene::Scene(const Scene& parent) {
     setHeight(parent.height);
 }
 
-//--------------------------------------------------------------
+//---------------------------------------------------------
+void Scene::updatePosition(int _x, int _y)
+{
+    setX(_x);
+    setY(_y);
+
+    play_button.setX(_x + getWidth()- 80 * config->x_scale);
+    play_button.setY(_y + 10 * config->y_scale);
+
+    delete_scene.setX(_x + getWidth()- 40 * config->x_scale);
+    delete_scene.setY(_y + 10 * config->y_scale);
+
+    textfield.bounds = ofRectangle(getX()+10*config->x_scale, getY() + getHeight()/2, 100*config->x_scale, 16*config->y_scale);
+}
+
+//---------------------------------------------------------
 void Scene::onClicked(int& args) {
     ofLogNotice() << "Scene id: " << id << " clicked";
-    playScene = true;
-    config->activeScene = id;
+    selectScene = true;
+    config->activeScene =  id;
 }
 
 //--------------------------------------------------------------
@@ -98,15 +126,28 @@ void Scene::render()
     ofDrawRectangle(getX(),getY(),getWidth(), getHeight());
 
     ofNoFill();
-    ofSetColor(64);
+    if(config->activeScene == id) {
+        ofSetColor(0);
+    } else {
+        ofSetColor(64);
+    }
     ofDrawRectangle(getX(),getY(),getWidth(), getHeight());
 
     if(config->activeScene == id) {
         play_button.render();
-    }
+        delete_scene.render();
+    }    
 
-    ofSetColor(0);
-    config->smallfont.drawString("Scene"+ofToString(id),getX(),getY()-5);
+    if(config->activeScene == id) {
+        ofSetColor(0);
+    } else {
+        ofSetColor(128);
+    }
+    //config->smallfont.drawString(scene_name,getX()+10*config->x_scale, getY() + getHeight()/2);
+    textfield.draw();
+    if(textfield.isEditing()) {
+        ofDrawRectangle(textfield.bounds);
+    }
     ofPopStyle();   
 }
 
@@ -130,3 +171,20 @@ void Scene::update()
          sounds[i]->update();
     }
 }
+
+//--------------------------------------------------------------
+void Scene::enable()
+{
+    play_button.enableEvents();
+    delete_scene.enableEvents();
+    textfield.enable();
+}
+
+//--------------------------------------------------------------
+void Scene::disable()
+{
+    play_button.disableEvents();
+    delete_scene.disableEvents();
+    textfield.disable();
+}
+

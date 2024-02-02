@@ -1,27 +1,28 @@
-#include "NewScene.h"
+#include "DeleteScene.h"
 
-NewScene::NewScene()
+DeleteScene::DeleteScene()
 {
-    doNewScene = false;
+    id = 0;
+    doDeleteScene = false;
 }
 
 //--------------------------------------------------------------
-NewScene::~NewScene()
+DeleteScene::~DeleteScene()
 {
-    ofRemoveListener(Interactive::clickedEvent, this, &NewScene::onClicked);
-    ofLogVerbose() << "NewScene destructor called...";
+    ofRemoveListener(Interactive::clickedEvent, this, &DeleteScene::onClicked);
+    ofLogVerbose() << "DeleteScene destructor called...";
 }
 
 //--------------------------------------------------------------
-void NewScene::setup()
+void DeleteScene::setup(AppConfig* _config)
 {
-    ofAddListener(this->clickedEvent, this, &NewScene::onClicked);    
-}
-
-//--------------------------------------------------------------
-NewScene::NewScene(AppConfig* _config, int _x, int _y, int _w, int _h)
-{
+    ofAddListener(this->clickedEvent, this, &DeleteScene::onClicked);    
     config = _config;
+}
+
+//--------------------------------------------------------------
+DeleteScene::DeleteScene(int _x, int _y, int _w, int _h)
+{
 
     setX(_x);
     setY(_y);
@@ -30,32 +31,33 @@ NewScene::NewScene(AppConfig* _config, int _x, int _y, int _w, int _h)
 }
 
 //--------------------------------------------------------------
-NewScene::NewScene(const NewScene& parent) {
-    ofLog() << "NewScene copy constructor called";
+DeleteScene::DeleteScene(const DeleteScene& parent) {
+    ofLog() << "DeleteScene copy constructor called";
 
+    id = parent.id;
     setX(parent.x);
     setY(parent.y);
     setWidth(parent.width);
     setHeight(parent.height);
 
-    doNewScene = parent.doNewScene;
+    doDeleteScene = parent.doDeleteScene;
 }
 
 //--------------------------------------------------------------
-void NewScene::onClicked(int& args) {
-    ofLogNotice() << "NewScene clicked";
-    doNewScene = true;
+void DeleteScene::onClicked(int& args) {
+    ofLogNotice() << "DeleteScene id: " << id;
+    doDeleteScene = true;
 }
 
 //--------------------------------------------------------------
-void NewScene::render()
+void DeleteScene::render()
 {    
     ofPushStyle();
 
     ofFill();
     ofSetHexColor(0x7b2800);
 
-    ofDrawRectangle(getX()+getWidth()/2 - getWidth()/8,getY(),getWidth()/4, getHeight());
+    //ofDrawRectangle(getX()+getWidth()/2 - getWidth()/8,getY(),getWidth()/4, getHeight());
     ofDrawRectangle(getX(),getY()+getHeight()/2 - getHeight()/8, getWidth(), getHeight()/4);
 
     ofNoFill();
@@ -66,7 +68,7 @@ void NewScene::render()
 }
 
 //--------------------------------------------------------------
-void NewScene::update()
+void DeleteScene::update()
 {
 
 }
