@@ -21,14 +21,15 @@ void AppConfig::setup()
     gridWidth = 6;
     gridHeight = 4;
 
-    scene_spacing = 50*x_scale;
-
     scene_width = 200*x_scale;
-    scene_height = 40*y_scale;
+    scene_height = 45*y_scale;
+    scene_spacing = scene_height + 5*x_scale;
     baseSceneOffset = gridWidth*spacing + xoffset ;
-    max_scenes = 10;
+    scene_yoffset = 80*y_scale;
+    max_scenes = 12;
 
     activeScene = 0;
+    activeSound = 1;
 
     loopByDefault = false;
 
@@ -41,7 +42,8 @@ void AppConfig::setup()
 
     settings.clear();
 
-    masterVolume = 1.0f;    
+    masterVolume = 1.0f;
+    masterFade = 1.0f;
 }
 
 

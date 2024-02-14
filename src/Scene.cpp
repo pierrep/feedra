@@ -34,7 +34,7 @@ void Scene::setup()
     // setup sound objects
     for(size_t i=0;i < sounds.size();i++) {
         sounds[i]->setup();
-        sounds[i]->load();
+        sounds[i]->load(0);
     }
 
     play_button.setup(config);
@@ -43,11 +43,12 @@ void Scene::setup()
 }
 
 //--------------------------------------------------------------
-Scene::Scene(AppConfig* _config, string name, int _id, int _x, int _y, int _w, int _h)
+Scene::Scene(AppConfig* _config, string name, int _id, int _activeSound, int _x, int _y, int _w, int _h)
 {
     id = _id;
 
     config = _config;
+    activeSound = _activeSound;
 
     setWidth(_w);
     setHeight(_h);
@@ -98,12 +99,13 @@ void Scene::updatePosition(int _x, int _y)
     delete_scene.setX(_x + getWidth()- 40 * config->x_scale);
     delete_scene.setY(_y + 10 * config->y_scale);
 
-    textfield.bounds = ofRectangle(getX()+10*config->x_scale, getY() + getHeight()/2, 100*config->x_scale, 16*config->y_scale);
+    float txt_height = 16;
+    textfield.bounds = ofRectangle(getX()+10*config->x_scale, getY() + getHeight()/2 - txt_height/3*config->y_scale, 100*config->x_scale, txt_height*config->y_scale);
 }
 
 //---------------------------------------------------------
 void Scene::onClicked(int& args) {
-    ofLogNotice() << "Scene id: " << id << " clicked";
+    //ofLogNotice() << "Scene id: " << id << " clicked";
     selectScene = true;
     config->activeScene =  id;
 }
@@ -162,6 +164,8 @@ void Scene::play()
 //--------------------------------------------------------------
 void Scene::update()
 {
+    activeSound = config->activeSound;
+
     if(play_button.doPlay) {
         play_button.doPlay = false;
         play();

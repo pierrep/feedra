@@ -9,6 +9,7 @@
 #include "PlayBar.h"
 #include "Stop.h"
 #include "Looper.h"
+#include "SoundPlayer.h"
 
 class SoundObject: public Interactive
 {
@@ -24,7 +25,7 @@ public:
     void onClicked(int& args);
     void textFieldEnter(string& newText);
     void save();
-    void load();
+    void load(int idx);
     void play() {player.doPlay = true;}
     void disableAllEvents();
     void enableAllEvents();
@@ -33,7 +34,8 @@ public:
 
     //Globals    
     AppConfig* config;
-    ofSoundPlayer audioPlayer;
+    //ofSoundPlayer audioPlayer;
+    SoundPlayer soundPlayer;
 
     Loader loader;
     Player player;
@@ -53,4 +55,9 @@ public:
     string soundpath;
     string libraryLocation;
 
+    int sample_rate;
+    int channels;
+    float pan;
+
+    static ofEvent<int> clickedObjectEvent;
 };

@@ -45,7 +45,7 @@ DeleteScene::DeleteScene(const DeleteScene& parent) {
 
 //--------------------------------------------------------------
 void DeleteScene::onClicked(int& args) {
-    ofLogNotice() << "DeleteScene id: " << id;
+    //ofLogNotice() << "DeleteScene id: " << id;   
     doDeleteScene = true;
 }
 

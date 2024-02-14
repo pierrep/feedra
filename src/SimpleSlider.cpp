@@ -213,6 +213,10 @@ void SimpleSlider::mouseMoved(ofMouseEventArgs& event){
 void SimpleSlider::mouseDragged(ofMouseEventArgs& event){
 	if (bHasFocus){
 		updatePercentFromMouse (event.x, event.y); 
+        SliderData d;
+        d.id = id;
+        d.value = getValue();
+        ofNotifyEvent(clickedEvent, d);
 	}
 }
 void SimpleSlider::mousePressed(ofMouseEventArgs& event){
@@ -220,6 +224,10 @@ void SimpleSlider::mousePressed(ofMouseEventArgs& event){
 	if (box.inside(event.x, event.y)){
 		bHasFocus = true;
 		updatePercentFromMouse (event.x, event.y); 
+        SliderData d;
+        d.id = id;
+        d.value = getValue();
+        ofNotifyEvent(clickedEvent, d);
 	}
 }
 void SimpleSlider::mouseReleased(ofMouseEventArgs& event){

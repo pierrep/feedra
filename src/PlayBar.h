@@ -11,7 +11,7 @@ public:
     PlayBar(const PlayBar& d);
     PlayBar(int _id, int _x, int _y, int _w, int _h);
     void setup(AppConfig* conf);
-    void render(float position);
+    void render(bool isPlayingDelay, float position);
     void update();
     void onClicked(int& args);
 

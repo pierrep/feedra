@@ -13,10 +13,13 @@ int main( ){
 #else
     ofGLWindowSettings settings;
     settings.setGLVersion(2,1);
-    settings.setSize(1150,750);
+    settings.setSize(1150,750);    
 #endif
     ofCreateWindow(settings);
-
+    //(GLFWwindow*)ofGetWindowPtr()->setWindowIcon();
+    ofAppGLFWWindow* win;
+    win = dynamic_cast<ofAppGLFWWindow *> (ofGetWindowPtr());
+    win->setWindowIcon("feedra-icon.png");
 	ofRunApp( new ofApp());
 
 }

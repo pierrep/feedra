@@ -56,12 +56,12 @@ void AddScene::render(int hexcol)
     ofFill();
     ofSetHexColor(hexcol);
 
-    ofDrawRectangle(getX()+getWidth()/2 - getWidth()/8,getY(),getWidth()/4, getHeight());
-    ofDrawRectangle(getX(),getY()+getHeight()/2 - getHeight()/8, getWidth(), getHeight()/4);
+    ofDrawRectangle(getX()+getWidth()/4 - getWidth()/16,getY(),getWidth()/8, getHeight()/2);
+    ofDrawRectangle(getX(),getY()+getHeight()/4 - getHeight()/16, getWidth()/2, getHeight()/8);
 
     ofNoFill();
     ofSetLineWidth(1);
-    ofDrawRectangle(getX(),getY(),getWidth(),getHeight());
+    ofDrawRectangle(getX(),getY(),getWidth()/2,getHeight()/2);
 
     ofPopStyle();
 }

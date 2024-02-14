@@ -53,16 +53,21 @@ void PlayBar::onClicked(int& args) {
 }
 
 //--------------------------------------------------------------
-void PlayBar::render(float position)
+void PlayBar::render(bool isPlayingDelay, float position)
 {    
     ofPushStyle();
 
     //if(isPlaying || (isLoaded && (position > 0.0f))) {
     ofFill();
-    ofSetHexColor(0x7b2829);
+    if(isPlayingDelay) {
+        ofSetColor(128);
+    } else {
+        ofSetColor(50,150,50);
+    }
     ofDrawRectangle(getX(), getY(), getWidth()*position, getHeight());
     ofNoFill();
     ofSetLineWidth(1);
+    ofSetColor(64);
     ofDrawRectangle(getX(), getY(), getWidth(), getHeight());
 
     ofPopStyle();

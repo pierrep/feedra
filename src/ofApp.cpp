@@ -1,39 +1,64 @@
 #include "ofApp.h"
 #include "GLFW/glfw3.h"
 
+//--------------------------------------------------------------
 ofApp::~ofApp()
 {    
-    ofJson mainvol;
-    mainvol["mainvolume"] = mainVolume.getValue();
-    cout << mainVolume.getValue() << endl;
-    config.settings.push_back(mainvol);
+    ofRemoveListener(minDelay.clickedEvent, this, &ofApp::onClicked);
+    ofRemoveListener(maxDelay.clickedEvent, this, &ofApp::onClicked);
+    ofRemoveListener(pan.clickedEvent, this, &ofApp::onClicked);
 
-    ofJson sceneId;
-    sceneId["maxscenes"] = scenes.size();
-    config.settings.push_back(sceneId);
+    saveConfig();
 
     for(size_t i=0;i < scenes.size();i++) {
-        for(size_t j = 0; j < scenes[i]->sounds.size();j++)
-        {
-            scenes[i]->sounds[j]->disableAllEvents();
-        }
-        scenes[i]->disable();
-
-        ofJson sceneInfo;
-        sceneInfo["scene"+ofToString(i)] = scenes[i]->id;
-        sceneInfo["scene"+ofToString(i)+"-name"] = scenes[i]->textfield.text;
-        config.settings.push_back(sceneInfo);
+//        for(size_t j = 0; j < scenes[i]->sounds.size();j++)
+//        {
+//            scenes[i]->sounds[j]->disableAllEvents();
+//        }
+//        scenes[i]->disable();
     }
+
     for(size_t i=0;i < scenes.size();i++) {        
         delete scenes[i];
     }
     scenes.clear();
 
-    ofSaveJson("settings/settings.json",config.settings);
-
     delete addScene;
 }
 
+//--------------------------------------------------------------
+void ofApp::saveConfig()
+{
+    saveConfig("settings/settings.json");
+}
+
+//--------------------------------------------------------------
+void ofApp::saveConfig(string path)
+{
+    config.settings.clear();
+
+    ofJson globalsettings;    
+    globalsettings["mainvolume"] = mainVolume.getValue();
+    globalsettings["maxscenes"] = scenes.size();
+    config.settings.push_back(globalsettings);
+
+    for(size_t i=0;i < scenes.size();i++) {
+        ofJson sceneInfo;
+        sceneInfo["scene"+ofToString(i)] = scenes[i]->id;
+        sceneInfo["scene"+ofToString(i)+"-name"] = scenes[i]->textfield.text;
+        sceneInfo["scene"+ofToString(i)+"-activesound"] = scenes[i]->activeSound;
+        config.settings.push_back(sceneInfo);
+
+        for(int j=0;j < scenes[i]->sounds.size();j++)
+        {
+            scenes[i]->sounds[j]->save();
+        }
+    }
+    string save_name = path;
+    ofSaveJson(save_name,config.settings);
+}
+
+//--------------------------------------------------------------
 void ofApp::loadScenes()
 {
     ofJson json;
@@ -67,13 +92,18 @@ void ofApp::loadScenes()
                         //cout << "new_scene_id: " << new_scene_id << endl;
 
                         int x = config.baseSceneOffset;
-                        int y = i* config.scene_spacing + config.yoffset;
+                        int y = i* config.scene_spacing + config.scene_yoffset;
                         string name = "";
                         if(!setting["scene"+ofToString(i)+"-name"].empty())
                         {
                             name = setting["scene"+ofToString(i)+"-name"];
                         }
-                        Scene* s = new Scene(&config,name,new_scene_id,x,y,config.scene_width,config.scene_height);
+                        int asid = new_scene_id*100 +1;
+                        if(!setting["scene"+ofToString(i)+"-activesound"].empty())
+                        {
+                            asid = setting["scene"+ofToString(i)+"-activesound"];
+                        }
+                        Scene* s = new Scene(&config,name,new_scene_id,asid,x,y,config.scene_width,config.scene_height);
                         scenes.push_back(s);
                     }
                 }
@@ -87,7 +117,12 @@ void ofApp::loadScenes()
 //--------------------------------------------------------------
 void ofApp::setup(){
     ofSetEscapeQuitsApp(false);
-    ofSetWindowTitle("Feedra");
+    ofSetWindowTitle("Feedra");    
+
+    ofFile file("settings/settings.json");
+    if(file.exists()){
+        file.copyTo("settings/settings_backup.json",true,true);
+    }
 
     if( ofAppGLFWWindow* glfwWin = dynamic_cast< ofAppGLFWWindow* >(ofGetCurrentWindow().get()) ){
         ofGLFWWindowSettings GLFWsettings = glfwWin->getSettings();
@@ -109,6 +144,27 @@ void ofApp::setup(){
     mainVolume.setFont(&config.f2());
     mainVolume.setLabelString("Main Volume");
 
+    minDelay.setup(1,config.xoffset,ofGetHeight() - 80*config.y_scale,200*config.x_scale,20*config.y_scale,0,60,0,false,false);
+    minDelay.setScale(config.y_scale, config.x_scale);
+    minDelay.setFont(&config.f2());
+    minDelay.setNumberDisplayPrecision(0);
+    minDelay.setLabelString("Min delay");
+
+    maxDelay.setup(2,config.xoffset,ofGetHeight() - 40*config.y_scale,200*config.x_scale,20*config.y_scale,0,120,0,false,false);
+    maxDelay.setScale(config.y_scale, config.x_scale);
+    maxDelay.setFont(&config.f2());
+    maxDelay.setNumberDisplayPrecision(0);
+    maxDelay.setLabelString("Max delay");
+
+    pan.setup(3,config.xoffset+600*config.x_scale,ofGetHeight() - 80*config.y_scale,200*config.x_scale,20*config.y_scale,-1,1,0,false,false);
+    pan.setScale(config.y_scale, config.x_scale);
+    pan.setFont(&config.f2());
+    pan.setLabelString("Panning");
+
+    ofAddListener(minDelay.clickedEvent, this, &ofApp::onClicked);
+    ofAddListener(maxDelay.clickedEvent, this, &ofApp::onClicked);
+    ofAddListener(pan.clickedEvent, this, &ofApp::onClicked);
+
     maxScenes = 0;
     loadScenes();
 
@@ -118,8 +174,8 @@ void ofApp::setup(){
         for(size_t i = 0; i < maxScenes; i++)
         {
             int x = config.baseSceneOffset;
-            int y = i* config.scene_spacing + config.yoffset;
-            Scene* s = new Scene(&config,"",i,x,y,config.scene_width,config.scene_height);
+            int y = i* config.scene_spacing + config.scene_yoffset;
+            Scene* s = new Scene(&config,"",i,i*100+1,x,y,config.scene_width,config.scene_height);
             scenes.push_back(s);
         }
     }
@@ -132,7 +188,14 @@ void ofApp::setup(){
     for(size_t i=0;i < scenes.size();i++) {
         scenes[i]->setup();
     }
-    config.activeScene = scenes[0]->id;
+//    config.activeScene = scenes[0]->id;
+//    config.activeSound = scenes[0]->activeSound;
+//    int idx = config.activeSound - config.activeSceneIdx*100 -1;
+//    config.activeSoundIdx =  idx;
+    enableScene(0);
+
+    updateSliders();
+
     for(size_t i=0;i < scenes.size();i++) {
         if(config.activeScene != scenes[i]->id) {
             for(size_t j = 0; j < scenes[i]->sounds.size();j++)
@@ -142,33 +205,73 @@ void ofApp::setup(){
         }
     }
 
+    ofAddListener(SoundObject::clickedObjectEvent, this, &ofApp::onObjectClicked);
+
+    // Set the current default audio device
+    curDevice = newDevice = OpenALSoundPlayer::getDefaultDevice();
 }
 
 //--------------------------------------------------------------
-void ofApp::enableScene(int i) {
+void ofApp::updateSliders()
+{
+    int md = scenes[config.activeSceneIdx]->sounds[config.activeSoundIdx]->soundPlayer.minDelay[0];
+    //cout << "md = " << md << endl;
+    int l = minDelay.getHighValue();
+    float pct = (float) md /(float) 1000 * 1.0f/l;
+    //cout << "pct = " << pct << endl;
+    minDelay.setPercent(pct);
 
-    for(size_t k=0; k < scenes.size();k++) {
-        for(size_t j = 0; j < scenes[i]->sounds.size();j++)
-        {
-            scenes[k]->sounds[j]->disableAllEvents();
-        }
-        scenes[k]->disable();
+    maxDelay.setLowValue(minDelay.getValue());
+    maxDelay.setHighValue(minDelay.getValue()+30);
+    md = scenes[config.activeSceneIdx]->sounds[config.activeSoundIdx]->soundPlayer.maxDelay[0];
+    //cout << "md = " << md << endl;
+    l = minDelay.getHighValue();
+    pct = (float) md /(float) 1000 * 1.0f/l;
+    //cout << "pct = " << pct << endl;
+    maxDelay.setPercent(pct);
+
+    float p = scenes[config.activeSceneIdx]->sounds[config.activeSoundIdx]->soundPlayer.getPan();
+    pct = (p+1.0f) / 2.0f;
+    pan.setPercent(pct);
+}
+
+//--------------------------------------------------------------
+void ofApp::onObjectClicked(int& args)
+{
+    //cout << "object clicked: " << args << endl;
+
+    updateSliders();
+
+}
+
+//--------------------------------------------------------------
+void ofApp::onClicked(SliderData& args) {
+    //ofLogNotice() << " clicked id: " << args.id << "  value: " << args.value;
+
+    if(args.id == 1) {
+        //min value
+        maxDelay.setLowValue(minDelay.getValue());
+        maxDelay.setHighValue(minDelay.getValue()+30);
+        scenes[config.activeSceneIdx]->sounds[config.activeSoundIdx]->soundPlayer.minDelay[0] = minDelay.getValue()*1000;        
+        scenes[config.activeSceneIdx]->sounds[config.activeSoundIdx]->soundPlayer.recalculateDelay();
+    }
+    if(args.id == 2) {
+        // max value
+        scenes[config.activeSceneIdx]->sounds[config.activeSoundIdx]->soundPlayer.maxDelay[0] = maxDelay.getValue()*1000;
+        scenes[config.activeSceneIdx]->sounds[config.activeSoundIdx]->soundPlayer.recalculateDelay();
     }
 
-    for(size_t j = 0; j < scenes[i]->sounds.size();j++)
-    {
-        scenes[i]->sounds[j]->enableAllEvents();
+    if(args.id == 3) {
+        // panning
+        scenes[config.activeSceneIdx]->sounds[config.activeSoundIdx]->soundPlayer.setPan(pan.getValue());
     }
-    scenes[i]->enable();
+
+
 }
 
 //--------------------------------------------------------------
 void ofApp::update(){
-    for(int i =0; i < scenes.size();i++) {
-        if(config.activeScene == scenes[i]->id) {
-            config.activeSceneIdx = i;
-        }
-    }
+    checkAudioDeviceChange();
 
     for(size_t i=0; i < scenes.size();i++) {
          if(scenes[i]->selectScene) {
@@ -183,66 +286,88 @@ void ofApp::update(){
 
     //Add scene
     if(addScene->doAddScene) {
-        int baseSceneOffset = config.gridWidth*config.spacing + config.xoffset ;
-        int x = baseSceneOffset;
-        int y = scenes.size() * config.scene_spacing + config.yoffset;
-        int scene_width = 200*config.x_scale;
-        int scene_height = 40*config.y_scale;
-
-        int new_id = 0;
-        int cur_id = 0;
-        int prev_id = 0;
-
-        // sort by id:
-        vector<Scene*> tmp_scenes;
-        tmp_scenes = scenes;
-        std::sort(tmp_scenes.begin(), tmp_scenes.end(),
-            [](Scene* a, Scene* b) {
-                return a->id < b->id;
-            });
-
-        for(int i = 0; i < tmp_scenes.size();i++)
-        {
-            cur_id = tmp_scenes[i]->id;
-            if((cur_id - prev_id) > 1)
-            {
-                new_id = prev_id+1;
-                break;
-            }
-            prev_id = cur_id;
-            new_id = cur_id+1;
-        }
-        if(tmp_scenes[0]->id > 0) {
-            new_id = 0;
-        }
-
-        Scene* s = new Scene(&config,"",new_id,x,y,scene_width,scene_height);
-        s->setup();
-        scenes.push_back(s);
-
-        for(size_t i=0;i < scenes.size();i++) {
-            if(config.activeScene != scenes[i]->id) {
-                for(size_t j = 0; j < scenes[i]->sounds.size();j++)
-                {
-                    scenes[i]->sounds[j]->disableAllEvents();
-                }
-                scenes[i]->disable();
-            }
-        }
-
-        addScene->y = y + config.scene_spacing;
-
-        if(scenes.size() >= config.max_scenes) {
-            addScene->disableEvents();
-        }
-        addScene->doAddScene = false;
+        addNewScene();
     }
 
     //Delete scene
     if(scenes[config.activeSceneIdx]->delete_scene.doDeleteScene)
     {
-        scenes[config.activeSceneIdx]->delete_scene.doDeleteScene = false;
+        deleteScene();
+    }
+}
 
+//--------------------------------------------------------------
+void ofApp::addNewScene()
+{
+    addScene->doAddScene = false;
+
+    int baseSceneOffset = config.gridWidth*config.spacing + config.xoffset ;
+    int x = baseSceneOffset;
+    int y = scenes.size() * config.scene_spacing + config.scene_yoffset;
+    int scene_width = 200*config.x_scale;
+    int scene_height = 40*config.y_scale;
+
+    // Sort scenes
+    int new_id = 0;
+    int cur_id = 0;
+    int prev_id = 0;
+
+    // sort by id:
+    vector<Scene*> tmp_scenes;
+    tmp_scenes = scenes;
+    std::sort(tmp_scenes.begin(), tmp_scenes.end(),
+        [](Scene* a, Scene* b) {
+            return a->id < b->id;
+        });
+
+    for(int i = 0; i < tmp_scenes.size();i++)
+    {
+        cur_id = tmp_scenes[i]->id;
+        if((cur_id - prev_id) > 1)
+        {
+            new_id = prev_id+1;
+            break;
+        }
+        prev_id = cur_id;
+        new_id = cur_id+1;
+    }
+    if(tmp_scenes[0]->id > 0) {
+        new_id = 0;
+    }
+
+    Scene* s = new Scene(&config,"",new_id,new_id*100+1,x,y,scene_width,scene_height);
+    s->setup();
+    scenes.push_back(s);
+
+//    for(size_t i=0;i < scenes.size();i++) {
+//        if(config.activeScene != scenes[i]->id) {
+//            for(size_t j = 0; j < scenes[i]->sounds.size();j++)
+//            {
+//                scenes[i]->sounds[j]->disableAllEvents();
+//            }
+//            scenes[i]->disable();
+//        }
+//    }
+
+    addScene->y = y + config.scene_spacing;
+
+    if(scenes.size() >= config.max_scenes) {
+        addScene->disableEvents();
+    }
+
+    enableScene(new_id);
+}
+
+//--------------------------------------------------------------
+void ofApp::deleteScene()
+{
+    scenes[config.activeSceneIdx]->delete_scene.doDeleteScene = false;
+
+    string scene_name = scenes[config.activeSceneIdx]->scene_name;
+    string response = ofSystemTextBoxDialog("Are you sure you want to delete "+scene_name+"? Type 'yes' to delete", "no");
+    cout << "response  = " << response << endl;
+    if((response.compare("yes") == 0) || (response.compare("YES") == 0))
+    {
         size_t scene_to_delete = config.activeSceneIdx;
 
         for(size_t j = 0; j < scenes[scene_to_delete]->sounds.size();j++)
@@ -251,9 +376,6 @@ void ofApp::update(){
         }
         delete scenes[scene_to_delete];
         scenes.erase(scenes.begin()+scene_to_delete);
-        //cout << "delete scene " << scene_to_delete << endl;
-
-        config.activeScene = scenes[0]->id;
         enableScene(0);
 
         if(scenes.size() < config.max_scenes) {
@@ -261,17 +383,48 @@ void ofApp::update(){
         }
 
         updateScenePosition();
+        //cout << "delete scene " << scene_to_delete << endl;
     }
 }
 
+//--------------------------------------------------------------
+void ofApp::enableScene(int i) {
+    config.activeScene = scenes[i]->id;
+
+    for(int i =0; i < scenes.size();i++) {
+        if(config.activeScene == scenes[i]->id) {
+            config.activeSceneIdx = i;
+        }
+    }
+
+    config.activeSound = scenes[i]->activeSound;
+    int idx = config.activeSound - config.activeSceneIdx*100 -1;
+    config.activeSoundIdx =  idx;
+
+    for(size_t i=0; i < scenes.size();i++) {
+        for(size_t j = 0; j < scenes[i]->sounds.size();j++)
+        {
+            scenes[i]->sounds[j]->disableAllEvents();
+        }
+        scenes[i]->disable();
+    }
+
+    for(size_t j = 0; j < scenes[i]->sounds.size();j++)
+    {
+        scenes[i]->sounds[j]->enableAllEvents();
+    }
+    scenes[i]->enable();
+}
+
+//--------------------------------------------------------------
 void ofApp::updateScenePosition()
 {
     for(size_t i=0;i < scenes.size();i++) {
-        int y = i* config.scene_spacing + config.yoffset;
+        int y = i* config.scene_spacing + config.scene_yoffset;
         scenes[i]->updatePosition(scenes[i]->x,y);
     }
 
-    int y = scenes.size() * config.scene_spacing + config.yoffset;
+    int y = scenes.size() * config.scene_spacing + config.scene_yoffset;
     addScene->y = y;
 }
 
@@ -291,6 +444,36 @@ void ofApp::draw(){
         addScene->render(0x404040);
     }
 
+    // Current selected sound info
+    if(scenes[config.activeSceneIdx]->sounds[config.activeSoundIdx]->soundPlayer.isLoaded()) {
+        //cout << "config.activeSceneIdx = " << config.activeSceneIdx << " config.activeSoundIdx = " << config.activeSoundIdx << endl;
+        int mind = scenes[config.activeSceneIdx]->sounds[config.activeSoundIdx]->soundPlayer.minDelay[0];
+        int maxd = scenes[config.activeSceneIdx]->sounds[config.activeSoundIdx]->soundPlayer.maxDelay[0];
+        float total = (float) scenes[config.activeSceneIdx]->sounds[config.activeSoundIdx]->soundPlayer.totalDelay[0]/1000.0f;
+
+        std::stringstream stream;
+        stream << std::fixed << std::setprecision(0) << round(total);
+        std::string t = stream.str();
+
+        string name = scenes[config.activeSceneIdx]->sounds[config.activeSoundIdx]->soundname.text;
+        string path = scenes[config.activeSceneIdx]->sounds[config.activeSoundIdx]->soundpath;
+        int chan = scenes[config.activeSceneIdx]->sounds[config.activeSoundIdx]->channels;
+        int sr = scenes[config.activeSceneIdx]->sounds[config.activeSoundIdx]->sample_rate;
+
+        ofSetColor(0);
+        config.f1().drawString("Random delay:\n\n"+ofToString(t)+" secs", 270*config.x_scale, ofGetHeight() - 70*config.y_scale);
+        //config.f2().drawString("min delay: "+ofToString(mind), 270*config.x_scale, ofGetHeight() - 50*config.y_scale);
+        //config.f2().drawString("max delay: "+ofToString(maxd), 270*config.x_scale, ofGetHeight() - 30*config.y_scale);
+        ofSetColor(255);
+        config.f2().drawString("name: "+name, 400*config.x_scale, ofGetHeight() - 50*config.y_scale);
+        config.f2().drawString("path: "+path, 400*config.x_scale, ofGetHeight() - 30*config.y_scale);
+        config.f2().drawString("channels: "+ofToString(chan), 400*config.x_scale, ofGetHeight() - 70*config.y_scale);
+        config.f2().drawString("sample rate: "+ofToString(sr), 400*config.x_scale, ofGetHeight() - 10*config.y_scale);
+
+        minDelay.render();
+        maxDelay.render();
+        pan.render();
+    }
     mainVolume.render();
 }
 
@@ -298,10 +481,14 @@ void ofApp::draw(){
 void ofApp::keyPressed  (ofKeyEventArgs & args){
     int key = args.key;
 
-    if(key == 'q' && args.hasModifier(OF_KEY_CONTROL)){
+    if((key == 'q' || key == 'Q') && args.hasModifier(OF_KEY_CONTROL)){
         ofExit();
     }
-    if(key == ' ') {
+    if((key == 's' || key == 'S') && args.hasModifier(OF_KEY_CONTROL)){
+        ofFileDialogResult result = ofSystemSaveDialog("settings.json", "Save Feedra app settings");        
+        saveConfig(result.filePath);
+    }
+    if(key == ' ' && args.hasModifier(OF_KEY_CONTROL)) {
         bDoRender = !bDoRender;
     }
 
@@ -318,6 +505,24 @@ void ofApp::keyPressed  (ofKeyEventArgs & args){
             std::swap(scenes[config.activeSceneIdx],scenes[config.activeSceneIdx+1]);
             updateScenePosition();
         }
+    }
+}
+
+//--------------------------------------------------------------
+void ofApp::checkAudioDeviceChange()
+{
+    curTime = ofGetElapsedTimeMillis();
+    if((curTime - prevTime) > 1000)
+    {
+        int num_devices = OpenALSoundPlayer::listDevices(false);
+        newDevice = OpenALSoundPlayer::getDefaultDevice();
+        //ofLogNotice() << "Num devices = " << num_devices << "  default device: " << newDevice;
+        prevTime = curTime;
+
+        if(newDevice.compare(curDevice) != 0) {
+            OpenALSoundPlayer::reopenDevice(newDevice.c_str());
+        }
+        curDevice = newDevice;
     }
 }
 
@@ -369,5 +574,5 @@ void ofApp::gotMessage(ofMessage msg){
 
 //--------------------------------------------------------------
 void ofApp::dragEvent(ofDragInfo dragInfo){
-
+    cout << "drag info  position: " << dragInfo.position << " num files: " << dragInfo.files.size() << endl;
 }

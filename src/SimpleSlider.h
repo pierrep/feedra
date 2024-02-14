@@ -9,6 +9,11 @@
 
 #include "ofMain.h"
 
+struct SliderData {
+    float value;
+    int id;
+};
+
 class SimpleSlider {
 
 	public:
@@ -42,6 +47,8 @@ class SimpleSlider {
 
         void    disableEvents();
         void    enableEvents();
+
+        ofEvent<SliderData> clickedEvent;
 	
 	protected:
 		

@@ -7,7 +7,7 @@
 #include "AddScene.h"
 #include "DeleteScene.h"
 
-class ofApp : public ofBaseApp{
+class ofApp : public ofBaseApp {
 
 	public:
         ~ofApp();
@@ -29,6 +29,14 @@ class ofApp : public ofBaseApp{
         void loadScenes();
         void updateScenePosition();
         void enableScene(int i);
+        void onClicked(SliderData& args);
+        void onObjectClicked(int& args);
+        void updateSliders();
+        void saveConfig();
+        void saveConfig(string path);
+        void addNewScene();
+        void deleteScene();
+        void checkAudioDeviceChange();
 
         vector<Scene*> scenes;
         AddScene* addScene;
@@ -36,6 +44,15 @@ class ofApp : public ofBaseApp{
         AppConfig config;
         SimpleSlider mainVolume;
 
+        SimpleSlider minDelay;
+        SimpleSlider maxDelay;
+        SimpleSlider pan;
+
         bool bDoRender;
+
+        long int curTime;
+        long int prevTime;
+        string curDevice;
+        string newDevice;
 };
 

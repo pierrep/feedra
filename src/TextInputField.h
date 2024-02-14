@@ -102,6 +102,10 @@ class TextInputField {
     void setClipboard(string clippy);
     string getClipboard();
 	#endif
+
+    void setStringLimit(size_t max) {
+        string_limit = max;
+    }
 	
   protected:
 	float lastTimeCursorMoved;
@@ -132,4 +136,7 @@ class TextInputField {
 
     bool shiftHeld, commandHeld;
     map<int, char> shiftMap;
+
+    size_t string_limit;
 };
+

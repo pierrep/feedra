@@ -1,5 +1,9 @@
 #include "SoundObject.h"
 
+#define STRING_LIMIT 17
+
+ofEvent<int> SoundObject::clickedObjectEvent;
+
 //--------------------------------------------------------------
 SoundObject::SoundObject()
 {
@@ -7,16 +11,12 @@ SoundObject::SoundObject()
     id = -1;
     scene_id = 0;
 }
-
 //--------------------------------------------------------------
 SoundObject::~SoundObject()
 {
-    if(isSetup) {
-        save();
-        isSetup = false;
-    }
-    audioPlayer.stop();
-    ofRemoveListener(Interactive::clickedEvent, this, &SoundObject::onClicked);
+    soundPlayer.stop();
+
+    ofRemoveListener(this->clickedEvent, this, &SoundObject::onClicked);
     ofRemoveListener(soundname.onTextChange, this, &SoundObject::textFieldEnter);
     //ofLogNotice() << "SoundObject destructor called...ID = " << id;
 }
@@ -48,7 +48,7 @@ void SoundObject::enableAllEvents()
 }
 
 //--------------------------------------------------------------
-void SoundObject::load()
+void SoundObject::load(int idx)
 {
     ofJson json;
     ofFile file("settings/settings.json");
@@ -62,9 +62,10 @@ void SoundObject::load()
                     soundpath = setting[prefix+"-path"];
                     if(!soundpath.empty()) {
                         bool bLoaded = false;
-                        bLoaded = audioPlayer.load(soundpath, isStream);
+                        bLoaded = soundPlayer.load(soundpath, isStream);
                         if(bLoaded) {
-                            audioPlayer.setLoop(looper.isLooping);
+                            soundPlayer.setLoop(looper.isLooping);
+                            //channels = soundPlayer.getNumChannels();
                             player.isLoaded = true;
                         } else {
                             ofLogError() << " Failed to load " << soundpath;
@@ -82,40 +83,59 @@ void SoundObject::load()
                 }
                 if(!setting[prefix+"-loop"].empty())
                 {
-                    looper.isLooping = setting[prefix+"-loop"];
+                    looper.isLooping = setting[prefix+"-loop"];                    
+                }
+                if(!setting[prefix+"-samplerate"].empty())
+                {
+                    sample_rate = setting[prefix+"-samplerate"];
+                }
+                if(!setting[prefix+"-channels"].empty())
+                {
+                    channels = setting[prefix+"-channels"];
+                }
+                if(!setting[prefix+"-pan"].empty())
+                {
+                    pan = setting[prefix+"-pan"];
+                }
+                if(!setting[prefix+"-mindelay"].empty())
+                {
+                    soundPlayer.minDelay[0] = setting[prefix+"-mindelay"];
+                }
+                if(!setting[prefix+"-maxdelay"].empty())
+                {
+                    soundPlayer.maxDelay[0] = setting[prefix+"-maxdelay"];
                 }
             }
         }
     }
+
+    soundPlayer.setup(config,id);
+    soundPlayer.setLoop(looper.isLooping);
+    soundPlayer.setPan(pan);
 }
 
 //--------------------------------------------------------------
 void SoundObject::save()
 {
-    if(!player.isLoaded) {
+    if(soundpath.empty()) {
         // nothing loaded, don't save
         return;
     }
 
     string prefix = ofToString(scene_id)+"-"+ofToString(id);
 
-    ofJson loop;
-    loop[prefix+"-loop"] = looper.isLooping;
-    config->settings.push_back(loop);
+    ofJson soundobj;
+    soundobj[prefix+"-loop"] = looper.isLooping;
+    soundobj[prefix+"-soundname"] = soundname.text;
+    soundobj[prefix+"-path"] = soundpath;
+    soundobj[prefix+"-volume"] = volumeslider.getValue();
+    soundobj[prefix+"-samplerate"] = sample_rate;
+    soundobj[prefix+"-channels"] = channels;
+    soundobj[prefix+"-pan"] = soundPlayer.getPan();
+    soundobj[prefix+"-mindelay"] = soundPlayer.minDelay[0];
+    soundobj[prefix+"-maxdelay"] = soundPlayer.maxDelay[0];
 
-    ofJson filename;
-    filename[prefix+"-soundname"] = soundname.text;
-    config->settings.push_back(filename);
-
-    ofJson path;
-    path[prefix+"-path"] = soundpath;
-    config->settings.push_back(path);
-
-    ofJson vol;
-    vol[prefix+"-volume"] = volumeslider.getValue();
-    config->settings.push_back(vol);
-
-
+    config->settings.push_back(soundobj);
 
 }
 
@@ -131,6 +151,7 @@ void SoundObject::setup()
     playbar.setup(config);
     looper.setup(config);
     soundname.setUseListeners(true);
+    soundname.setStringLimit(STRING_LIMIT);
     soundname.disable();
 
     isSetup = true;
@@ -149,6 +170,9 @@ SoundObject::SoundObject(AppConfig* _config, size_t _scene_id, int _id, int _x, 
     isStream = true;
     isSetup = false;
     config = _config;
+    channels = 0;
+    sample_rate = 0;
+
     id = _id + _scene_id*100;
     setX(_x);
     setY(_y);
@@ -228,8 +252,14 @@ SoundObject::SoundObject(const SoundObject& parent) {
 
 //--------------------------------------------------------------
 void SoundObject::onClicked(int& args) {
-    //ofLogNotice() << "SoundObject id: " << id << " clicked";
+    ofLogNotice() << "SoundObject id " << id << " clicked";
+
     config->activeSound = id;
+    int idx = id - config->activeSceneIdx*100 -1;
+    config->activeSoundIdx =  idx;
+    ofLogNotice() << "activeSound: " << config->activeSound << " activeSoundIdx: " << config->activeSoundIdx;
+
+    ofNotifyEvent(clickedObjectEvent, idx);
 }
 
 //--------------------------------------------------------------
@@ -247,22 +277,28 @@ void SoundObject::render()
     ofFill();
     ofDrawRectRounded(getX(),getY(),getWidth(), getHeight(),10);
 
-    ofSetColor(64);
-    ofSetLineWidth(3);
     ofNoFill();
+    if(config->activeSound == id) {
+        ofSetLineWidth(4);
+        ofSetHexColor(0x65aecd);
+    } else {
+        ofSetLineWidth(3);
+        ofSetColor(32);
+    }
     ofDrawRectRounded(getX(),getY(),getWidth(), getHeight(),10);       
 
     float pos = 0;
-    pos = audioPlayer.getPosition();
+    pos = soundPlayer.getPosition();
     //if(id == 1)
     //cout << "pos = " << pos << endl;
     loader.render();
-    stopper.render(audioPlayer.isPlaying(),pos);
-    player.render(pos);
+    stopper.render(soundPlayer.isPlaying(), pos);
+    player.render(soundPlayer.isPlayingDelay(),pos);
     looper.render();
 
-    if(player.isPlaying || (player.isLoaded && (pos > 0.0f))) {
-        playbar.render(pos);
+    //if(player.isPlaying || (player.isLoaded && (pos > 0.0f))) {
+    if(player.isPlaying || (player.isLoaded)) {
+        playbar.render(soundPlayer.isPlayingDelay(),pos);
     }
 
     if(soundname.isEditing()) {
@@ -291,37 +327,47 @@ void SoundObject::update()
 
         result = ofSystemLoadDialog("load file",false,path);
         if(result.bSuccess) {           
-            bool bLoaded = audioPlayer.load(result.filePath, isStream);
+            bool bLoaded = soundPlayer.load(result.filePath, isStream);
             if(bLoaded) {
                 soundpath = result.filePath;
 
                 filesystem::path s(soundpath);
                 config->last_path = s.parent_path().string();
 
-                audioPlayer.setLoop(isLooping);
+                soundPlayer.setLoop(isLooping);
 
                 soundname.enable();
                 soundname.text = result.fileName;
-                //soundname.text.resize(14);
+
+                sample_rate = soundPlayer.getSampleRate();
+                channels = soundPlayer.getNumChannels();
                 player.isLoaded = true;
             }
         }
         loader.doLoad = false;
     }
 
+    if(!player.isLoaded)
+    {
+        //do not proceed if we have no file loaded
+        return;
+    }
+
+    soundPlayer.update();
+
     if(player.doPlay)
     {
-        if(audioPlayer.isPlaying()) {
+        if(soundPlayer.isPlaying()) {
             //player.isPlaying = false;
             cout << "pause audio" << id << endl;
-            audioPlayer.setPaused(true);
+            soundPlayer.setPaused(true);
             player.doPlay = false;
             isPaused = true;
         }
-        else if (audioPlayer.isLoaded()) {            
-            audioPlayer.setPaused(false);
+        else if (soundPlayer.isLoaded()) {
+            soundPlayer.setPaused(false);
             //audioPlayer.play();
-            cout << "play audio" << id << endl;
+            cout << "play audio" << id << " channels = " << channels << " samplerate = " << sample_rate << endl;
             player.doPlay = false;
             isPaused = false;
         }
@@ -330,8 +376,8 @@ void SoundObject::update()
 
     if(stopper.doStop) {
         if(isPaused) {
-            audioPlayer.setVolume(0);
-            audioPlayer.setPaused(false);
+            soundPlayer.setVolume(0);
+            soundPlayer.setPaused(false);
             isPaused = false;
             return;
         }
@@ -339,7 +385,7 @@ void SoundObject::update()
         if(!stopper.isStopped) {
             {
                 stopper.isStopped = true;
-                audioPlayer.stop();
+                soundPlayer.stop();
             }
         }
         stopper.doStop = false;
@@ -348,25 +394,25 @@ void SoundObject::update()
     }
 
     if(playbar.doScrub) {
-        audioPlayer.setPosition(playbar.position);
+        soundPlayer.setPosition(playbar.position);
         //cout << "Scrub to position: " << playbar.position << endl;
         playbar.doScrub = false;
     }
 
     if(looper.doLooper) {
         looper.doLooper = false;
-        audioPlayer.setLoop(looper.isLooping);
+        soundPlayer.setLoop(looper.isLooping);
     }
 
-    if(audioPlayer.isPlaying()) {
+    if(soundPlayer.isPlaying()) {
         player.isPlaying = true;
     } else {
         player.isPlaying = false;
     }
 
-    if(audioPlayer.isLoaded())
+    if(soundPlayer.isLoaded())
     {
-        audioPlayer.setVolume(volumeslider.getValue()*config->getMasterVolume());
+        soundPlayer.setVolume(volumeslider.getValue()*config->getMasterVolume()*config->masterFade);
     }
 
 }

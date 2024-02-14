@@ -12,7 +12,7 @@ public:
     Scene();
     ~Scene();
     Scene(const Scene& d);
-    Scene(AppConfig* config, string name,int _id, int _x, int _y, int _w, int _h);
+    Scene(AppConfig* config, string name,int _id, int _activeSound, int _x, int _y, int _w, int _h);
     void setup();
     void render();
     void update();
@@ -24,6 +24,7 @@ public:
 
     int id;
     bool selectScene;
+    int activeSound;
     AppConfig* config;
 
     string scene_name;

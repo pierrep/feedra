@@ -55,6 +55,7 @@ void Stop::render(bool isPlaying, float _position)
     ofPushStyle();
 
     if(isPlaying || (_position > 0.0f)) {
+    //if(isPlaying) {
         ofSetColor(250,160,120);
         ofFill();
         ofDrawRectangle(getX(),getY(),getWidth(), getHeight());

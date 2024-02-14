@@ -54,7 +54,7 @@ void Player::onClicked(int& args) {
 }
 
 //--------------------------------------------------------------
-void Player::render(float position)
+void Player::render(bool isPlayingDelay, float position)
 {    
     ofPushStyle();
 
@@ -66,18 +66,12 @@ void Player::render(float position)
     }
 
     if(isPlaying) {
+        //pause button
         ofDrawRectangle(getX(),getY(),getWidth()/3, getHeight());
         ofDrawRectangle(getX()+getWidth()*2.0f/3.0f,getY(),getWidth()/3, getHeight());
     } else {
+        //play button
         ofDrawTriangle(getX(),getY(),getX(),getY()+getHeight(),getX()+getWidth(),getY()+getHeight()/2);
-    }
-
-    if(isPlaying || (isLoaded && (position > 0.0f))) {
-        ofSetHexColor(0x7b2829);
-        ofDrawRectangle(getX(),getY()+getHeight()+1,getWidth()*position, 10*config->y_scale);
-        ofNoFill();
-        ofSetLineWidth(1);
-        ofDrawRectangle(getX(),getY()+getHeight()+1,getWidth(), 10*config->y_scale);
     }
 
     ofSetColor(192);

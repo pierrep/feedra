@@ -58,6 +58,8 @@ TextInputField::TextInputField() {
 
     doubleClickTime = 500; // milliseconds
     currentClick = prevClick = ofGetElapsedTimeMillis();
+
+    string_limit = text.max_size();
 }
 
 //----------
@@ -232,8 +234,12 @@ void TextInputField::draw() {
         ofPopStyle();
     }
 
+    string tmp_text = text;
     // draw the actual text
-	fontRef->drawString(text, horizontalPadding, fontRef->getLineHeight() + verticalPadding);
+    if(text.size() > string_limit) {
+        tmp_text = text.substr(0,string_limit);
+    }
+    fontRef->drawString(tmp_text, horizontalPadding, fontRef->getLineHeight() + verticalPadding);
 	ofPopMatrix();
 }
 

@@ -22,6 +22,7 @@ public:
     string defaultLibraryLocation;
 
     float masterVolume;
+    float masterFade;
 
     float x_scale;
     float y_scale;
@@ -37,13 +38,15 @@ public:
     int scene_width;
     int scene_height;
     int baseSceneOffset;
+    int scene_yoffset;
 
     bool loopByDefault;
 
     int activeScene;
     size_t activeSceneIdx;
     int max_scenes;
-    size_t activeSound;
+    int activeSound;
+    size_t activeSoundIdx;
     string last_path;
 
     ofImage loopicon;
