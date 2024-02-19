@@ -19,7 +19,7 @@ int main( ){
     //(GLFWwindow*)ofGetWindowPtr()->setWindowIcon();
     ofAppGLFWWindow* win;
     win = dynamic_cast<ofAppGLFWWindow *> (ofGetWindowPtr());
-    win->setWindowIcon("feedra-icon.png");
+    win->setWindowIcon("feedra.png");
 	ofRunApp( new ofApp());
 
 }
