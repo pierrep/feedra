@@ -459,6 +459,7 @@ void ofApp::draw(){
         string path = scenes[config.activeSceneIdx]->sounds[config.activeSoundIdx]->soundpath;
         int chan = scenes[config.activeSceneIdx]->sounds[config.activeSoundIdx]->channels;
         int sr = scenes[config.activeSceneIdx]->sounds[config.activeSoundIdx]->sample_rate;
+        string fs = scenes[config.activeSceneIdx]->sounds[config.activeSoundIdx]->soundPlayer.audioPlayer[0]->getFormatString();
 
         ofSetColor(0);
         config.f1().drawString("Random delay:\n\n"+ofToString(t)+" secs", 270*config.x_scale, ofGetHeight() - 70*config.y_scale);
@@ -469,6 +470,7 @@ void ofApp::draw(){
         config.f2().drawString("path: "+path, 400*config.x_scale, ofGetHeight() - 30*config.y_scale);
         config.f2().drawString("channels: "+ofToString(chan), 400*config.x_scale, ofGetHeight() - 70*config.y_scale);
         config.f2().drawString("sample rate: "+ofToString(sr), 400*config.x_scale, ofGetHeight() - 10*config.y_scale);
+        config.f2().drawString("type: "+ofToString(fs), 600*config.x_scale, ofGetHeight() - 10*config.y_scale);
 
         minDelay.render();
         maxDelay.render();

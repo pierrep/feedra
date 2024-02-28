@@ -68,7 +68,8 @@ void SoundObject::load(int idx)
                             //channels = soundPlayer.getNumChannels();
                             player.isLoaded = true;
                         } else {
-                            ofLogError() << " Failed to load " << soundpath;
+                            // no need for an error here, loading mechanism will complain
+                            //ofLogError() << " Failed to load " << soundpath;
                         }
                     }
                 }

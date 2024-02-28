@@ -7,14 +7,6 @@
 #include "ofEvents.h"
 #include <sndfile.h>
 
-#if defined (TARGET_OF_IOS) || defined (TARGET_OSX)
-#include <OpenAL/al.h>
-#include <OpenAL/alc.h>
-#else
-#include <AL/al.h>
-#include <AL/alc.h>
-#endif
-
 #ifdef OF_USING_MPG123
 #include <mpg123.h>
 #endif
@@ -91,7 +83,63 @@ static string getALCErrorString(ALCenum  error) {
         case ALC_OUT_OF_MEMORY:
             return "ALC_OUT_OF_MEMORY";
     };
-	return "UNKWOWN_ERROR";
+    return "UNKNOWN_ERROR";
+}
+
+static string getOpenALFormatString(ALenum format)
+{
+    switch(format) {
+    case AL_FORMAT_MONO16:
+        return "AL_FORMAT_MONO16";
+    case AL_FORMAT_MONO_FLOAT32:
+        return "AL_FORMAT_MONO_FLOAT32";
+    case AL_FORMAT_STEREO16:
+        return "AL_FORMAT_STEREO16";
+    case AL_FORMAT_STEREO_FLOAT32:
+        return "AL_FORMAT_STEREO_FLOAT32";
+    };
+    return "Unknown OpenAL format";
+}
+
+static string getSoundFileFormatString(int format) {
+
+    switch((format&SF_FORMAT_SUBMASK))
+    {
+    case SF_FORMAT_PCM_24:
+        return "24 bit PCM";
+    case SF_FORMAT_PCM_32:
+        return "32 bit PCM";
+    case SF_FORMAT_FLOAT:
+        return "float";
+    case SF_FORMAT_DOUBLE:
+        return "double";
+    case SF_FORMAT_VORBIS:
+        return "Ogg/Vorbis";
+    case SF_FORMAT_OPUS:
+        return "Opus";
+    case SF_FORMAT_ALAC_20:
+        return "20 bit Apple Lossless Codec";
+    case SF_FORMAT_ALAC_24:
+        return "24 bit Apple Lossless Codec";
+    case SF_FORMAT_ALAC_32:
+        return "32 bit Apple Lossless Codec";
+    case 0x0080/*SF_FORMAT_MPEG_LAYER_I*/:
+        return "MPEG Layer I";
+    case 0x0081/*SF_FORMAT_MPEG_LAYER_II*/:
+        return "MPEG Layer II";
+    case 0x0082/*SF_FORMAT_MPEG_LAYER_III*/:
+        return "mp3";
+    case SF_FORMAT_IMA_ADPCM:
+        return "IMA ADPCM";
+    case SF_FORMAT_MS_ADPCM:
+        return "Microsoft ADPCM";
+    }
+
+    if((format&SF_FORMAT_TYPEMASK) == SF_FORMAT_FLAC) {
+        return "FLAC";
+    }
+
+    return "Unknown format: " + ofToString(format);
 }
 
 #ifdef OF_USING_MPG123
@@ -146,6 +194,13 @@ static string getMpg123EncodingString(int encoding) {
 #endif
 
 #define BUFFER_STREAM_SIZE 4096
+
+enum FormatType {
+    Int16,
+    Float,
+    IMA4,
+    MSADPCM
+};
 
 // now, the individual sound player:
 //------------------------------------------------------------
@@ -604,7 +659,8 @@ bool OpenALSoundPlayer::mpg123Stream(const std::filesystem::path& path,vector<sh
 		if(mpg123_open(mp3streamf,path.string().c_str())!=MPG123_OK){
 			mpg123_close(mp3streamf);
 			mpg123_delete(mp3streamf);
-			ofLogError("OpenALSoundPlayer") << "mpg123Stream(): couldn't read \"" << path << "\"";
+            mp3streamf = 0;
+            ofLogError("OpenALSoundPlayer") << "mpg123Stream(): couldn't read " << path;
 			return false;
 		}
 
@@ -696,7 +752,7 @@ bool OpenALSoundPlayer::readFile(const std::filesystem::path& fileName, vector<s
 bool OpenALSoundPlayer::load(const std::filesystem::path& _fileName, bool is_stream){
 
 	std::filesystem::path fileName = ofToDataPath(_fileName);
-
+    enum FormatType sample_format = Int16;
 	bMultiPlay = false;
 	isStreaming = is_stream;
 	int err = AL_NO_ERROR;
@@ -707,10 +763,44 @@ bool OpenALSoundPlayer::load(const std::filesystem::path& _fileName, bool is_str
 	// [2] try to unload any previously loaded sounds
 	// & prevent user-created memory leaks
 	// if they call "loadSound" repeatedly, for example
-
 	unload();
-	ALenum format=AL_FORMAT_MONO16;
-	bLoadedOk = false;
+    bLoadedOk = false;
+
+    // Get Format
+    SF_INFO sfInfo;
+
+    if(ofFilePath::getFileExt(fileName)=="mp3" || ofFilePath::getFileExt(fileName)=="MP3"){
+        fileformat = 0x0082;
+    } else {
+        SNDFILE* f = sf_open(_fileName.string().c_str(),SFM_READ,&sfInfo);
+        fileformat = sfInfo.format;
+        /* Detect a suitable format to load. Formats like Vorbis and Opus use float
+         * natively, so load as float to avoid clipping when possible. Formats
+         * larger than 16-bit can also use float to preserve a bit more precision.
+         */
+        switch((sfInfo.format&SF_FORMAT_SUBMASK))
+        {
+            case SF_FORMAT_PCM_24:
+            case SF_FORMAT_PCM_32:
+            case SF_FORMAT_FLOAT:
+            case SF_FORMAT_DOUBLE:
+            case SF_FORMAT_VORBIS:
+            case SF_FORMAT_OPUS:
+            case SF_FORMAT_ALAC_20:
+            case SF_FORMAT_ALAC_24:
+            case SF_FORMAT_ALAC_32:
+            case 0x0080/*SF_FORMAT_MPEG_LAYER_I*/:
+            case 0x0081/*SF_FORMAT_MPEG_LAYER_II*/:
+            case 0x0082/*SF_FORMAT_MPEG_LAYER_III*/:
+                if(alIsExtensionPresent("AL_EXT_FLOAT32"))
+                    sample_format = Float;
+                break;
+        }
+        sf_close(f);
+    }
+    format_string = getSoundFileFormatString(fileformat);    
+
+    ALenum openALformat=AL_FORMAT_MONO16;
 
 	if(!isStreaming){
 		readFile(fileName, buffer);
@@ -724,6 +814,35 @@ bool OpenALSoundPlayer::load(const std::filesystem::path& _fileName, bool is_str
         ofLogError() << "Sound file load failed - wrong file type or empty file";
         return false;
     }
+
+    if(sample_format == Int16)
+    {
+        splblockalign = 1;
+        byteblockalign = channels * 2;
+    }
+    else if(sample_format == Float)
+    {
+        splblockalign = 1;
+        byteblockalign = channels * 4;
+    }
+
+    /* Figure out the OpenAL format from the file and desired sample type. */
+    openALformat = AL_NONE;
+    if(channels == 1)
+    {
+        if(sample_format == Int16)
+            openALformat = AL_FORMAT_MONO16;
+        else if(sample_format == Float)
+            openALformat = AL_FORMAT_MONO_FLOAT32;
+    }
+    else if(channels == 2)
+    {
+        if(sample_format == Int16)
+            openALformat = AL_FORMAT_STEREO16;
+        else if(sample_format == Float)
+            openALformat = AL_FORMAT_STEREO_FLOAT32;
+    }
+    //ofLogNotice() << "OpenAL Format should be " << getOpenALFormatString(openALformat);
 
 	int numFrames = buffer.size()/channels;
 
@@ -756,7 +875,8 @@ bool OpenALSoundPlayer::load(const std::filesystem::path& _fileName, bool is_str
             }
 
 			alGetError(); // Clear error.
-			alBufferData(buffers[i],format,&buffer[0],buffer.size()*2,samplerate);
+            openALformat=AL_FORMAT_MONO16;
+            alBufferData(buffers[i],openALformat,&buffer[0],buffer.size()*2,samplerate);
 			err = alGetError();
 			if (err != AL_NO_ERROR){
 				ofLogError("OpenALSoundPlayer:") << "loadSound(): couldn't create buffer for \"" << fileName << "\": "
@@ -796,7 +916,8 @@ bool OpenALSoundPlayer::load(const std::filesystem::path& _fileName, bool is_str
                         multibuffer[i][j] = buffer[j*channels+i];
                     }
                     alGetError(); // Clear error.
-                    alBufferData(buffers[s*2+i],format,&multibuffer[i][0],buffer.size()/channels*2,samplerate);
+                    openALformat = AL_FORMAT_MONO16;
+                    alBufferData(buffers[s*2+i],openALformat,&multibuffer[i][0],buffer.size()/channels*2,samplerate);
                     err = alGetError();
                     if ( err != AL_NO_ERROR){
                         ofLogError("OpenALSoundPlayer") << "loadSound(): couldn't create stereo buffers for \"" << fileName << "\": " << (int) err << " " << getALErrorString(err);
@@ -814,7 +935,7 @@ bool OpenALSoundPlayer::load(const std::filesystem::path& _fileName, bool is_str
 					multibuffer[i][j] = buffer[j*channels+i];
 				}
 				alGetError(); // Clear error.
-                alBufferData(buffers[i],format,&multibuffer[i][0],buffer.size()/channels*2,samplerate);
+                alBufferData(buffers[i],openALformat,&multibuffer[i][0],buffer.size()/channels*2,samplerate);
 				err = alGetError();
 				if (err != AL_NO_ERROR){
 					ofLogError("OpenALSoundPlayer") << "loadSound(): couldn't create stereo buffers for \"" << fileName << "\": "

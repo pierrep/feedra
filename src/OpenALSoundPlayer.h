@@ -5,6 +5,13 @@
 #include "ofSoundBaseTypes.h"
 #include "ofThread.h"
 
+#if defined (TARGET_OF_IOS) || defined (TARGET_OSX)
+#include <OpenAL/al.h>
+#include <OpenAL/alc.h>
+#else
+#include <AL/al.h>
+#include <AL/alc.h>
+#endif
 
 
 typedef unsigned int ALuint;
@@ -72,6 +79,9 @@ class OpenALSoundPlayer : public ofBaseSoundPlayer, public ofThread {
         int getNumChannels() const {return channels;}
         bool isStreamEnd() const { return stream_end;}
 
+        int getFileFormat() const {return fileformat;}
+        std::string getFormatString() const {return format_string;}
+
 	protected:
 		void threadedFunction();
 
@@ -129,12 +139,16 @@ class OpenALSoundPlayer : public ofBaseSoundPlayer, public ofThread {
 		static std::vector<kiss_fft_cpx> systemCx_out;
 
 		SNDFILE* streamf;
+        ALint byteblockalign = 0;
+        ALint splblockalign = 0;
 		size_t stream_samples_read;
 #ifdef OF_USING_MPG123
 		mpg123_handle * mp3streamf;
 		int stream_encoding;
 #endif
 		int mp3_buffer_size;
+        int fileformat;
+        std::string format_string;
 		int stream_subformat;
 		double stream_scale;
 		std::vector<short> buffer;
