@@ -489,7 +489,7 @@ void OpenALSoundPlayer::close(){
 }
 
 // ----------------------------------------------------------------------------
-bool OpenALSoundPlayer::sfReadFile(const std::filesystem::path& path, vector<short> & buffer, vector<float> & fftAuxBuffer){
+bool OpenALSoundPlayer::sfReadFile(const std::filesystem::path& path){
 	SF_INFO sfInfo;
 	SNDFILE* f = sf_open(path.string().c_str(),SFM_READ,&sfInfo);
 	if(!f){
@@ -497,8 +497,8 @@ bool OpenALSoundPlayer::sfReadFile(const std::filesystem::path& path, vector<sho
 		return false;
 	}
 
-	buffer.resize(sfInfo.frames*sfInfo.channels);
-	fftAuxBuffer.resize(sfInfo.frames*sfInfo.channels);
+    buffer_short.resize(sfInfo.frames*sfInfo.channels);
+    buffer_float.resize(sfInfo.frames*sfInfo.channels);
 
 	int subformat = sfInfo.format & SF_FORMAT_SUBMASK ;
 	if (subformat == SF_FORMAT_FLOAT || subformat == SF_FORMAT_DOUBLE){
@@ -509,24 +509,24 @@ bool OpenALSoundPlayer::sfReadFile(const std::filesystem::path& path, vector<sho
 		else
 			scale = 32700.0 / scale ;
 
-		sf_count_t samples_read = sf_read_float (f, &fftAuxBuffer[0], fftAuxBuffer.size());
-		if(samples_read<(int)fftAuxBuffer.size()){
+        sf_count_t samples_read = sf_read_float (f, &buffer_float[0], buffer_float.size());
+        if(samples_read<(int)buffer_float.size()){
 			ofLogWarning("OpenALSoundPlayer") << "sfReadFile(): read " << samples_read << " float samples, expected "
-			<< fftAuxBuffer.size() << " for \"" << path << "\"";
+            << buffer_float.size() << " for \"" << path << "\"";
 		}
-		for (int i = 0 ; i < int(fftAuxBuffer.size()) ; i++){
-			fftAuxBuffer[i] *= scale ;
-			buffer[i] = 32565.0 * fftAuxBuffer[i];
+        for (int i = 0 ; i < int(buffer_float.size()) ; i++){
+            buffer_float[i] *= scale ;
+            buffer_short[i] = 32565.0 * buffer_float[i];
 		}
 	}else{
-		sf_count_t frames_read = sf_readf_short(f,&buffer[0],sfInfo.frames);
+        sf_count_t frames_read = sf_readf_short(f,&buffer_short[0],sfInfo.frames);
 		if(frames_read<sfInfo.frames){
 			ofLogError("OpenALSoundPlayer") << "sfReadFile(): read " << frames_read << " frames from buffer, expected "
 			<< sfInfo.frames << " for \"" << path << "\"";
 			return false;
 		}
 		sf_seek(f,0,SEEK_SET);
-		frames_read = sf_readf_float(f,&fftAuxBuffer[0],sfInfo.frames);
+        frames_read = sf_readf_float(f,&buffer_float[0],sfInfo.frames);
 		if(frames_read<sfInfo.frames){
 			ofLogError("OpenALSoundPlayer") << "sfReadFile(): read " << frames_read << " frames from fft buffer, expected "
 			<< sfInfo.frames << " for \"" << path << "\"";
@@ -543,7 +543,7 @@ bool OpenALSoundPlayer::sfReadFile(const std::filesystem::path& path, vector<sho
 
 #ifdef OF_USING_MPG123
 //------------------------------------------------------------
-bool OpenALSoundPlayer::mpg123ReadFile(const std::filesystem::path& path,vector<short> & buffer,vector<float> & fftAuxBuffer){
+bool OpenALSoundPlayer::mpg123ReadFile(const std::filesystem::path& path){
 	int err = MPG123_OK;
 	mpg123_handle * f = mpg123_new(nullptr,&err);
 	if(mpg123_open(f,path.string().c_str())!=MPG123_OK){
@@ -563,25 +563,25 @@ bool OpenALSoundPlayer::mpg123ReadFile(const std::filesystem::path& path,vector<
 
 	size_t done=0;
 	size_t buffer_size = mpg123_outblock( f );
-	buffer.resize(buffer_size/2);
-	while(mpg123_read(f,(unsigned char*)&buffer[buffer.size()-buffer_size/2],buffer_size,&done)!=MPG123_DONE){
-		buffer.resize(buffer.size()+buffer_size/2);
+    buffer_short.resize(buffer_size/2);
+    while(mpg123_read(f,(unsigned char*)&buffer_short[buffer_short.size()-buffer_size/2],buffer_size,&done)!=MPG123_DONE){
+        buffer_short.resize(buffer_short.size()+buffer_size/2);
 	};
-	buffer.resize(buffer.size()-(buffer_size/2-done/2));
+    buffer_short.resize(buffer_short.size()-(buffer_size/2-done/2));
 	mpg123_close(f);
 	mpg123_delete(f);
 
-	fftAuxBuffer.resize(buffer.size());
-	for(int i=0;i<(int)buffer.size();i++){
-		fftAuxBuffer[i] = float(buffer[i])/32565.f;
+    buffer_float.resize(buffer_short.size());
+    for(int i=0;i<(int)buffer_short.size();i++){
+        buffer_float[i] = float(buffer_short[i])/32565.f;
 	}
-	duration = float(buffer.size()/channels) / float(samplerate);
+    duration = float(buffer_short.size()/channels) / float(samplerate);
 	return true;
 }
 #endif
 
 //------------------------------------------------------------
-bool OpenALSoundPlayer::sfStream(const std::filesystem::path& path,vector<short> & buffer,vector<float> & fftAuxBuffer){
+bool OpenALSoundPlayer::sfStream(const std::filesystem::path& path){
 	if(!streamf){
 		SF_INFO sfInfo;
 		streamf = sf_open(path.string().c_str(),SFM_READ,&sfInfo);
@@ -606,14 +606,14 @@ bool OpenALSoundPlayer::sfStream(const std::filesystem::path& path,vector<short>
 
 	int curr_buffer_size = BUFFER_STREAM_SIZE*channels;
 	if(speed>1) curr_buffer_size *= (int)round(speed);
-	buffer.resize(curr_buffer_size);
-	fftAuxBuffer.resize(buffer.size());
+    buffer_short.resize(curr_buffer_size);
+    buffer_float.resize(buffer_short.size());
 	if (stream_subformat == SF_FORMAT_FLOAT || stream_subformat == SF_FORMAT_DOUBLE){
-		sf_count_t samples_read = sf_read_float (streamf, &fftAuxBuffer[0], fftAuxBuffer.size());
+        sf_count_t samples_read = sf_read_float (streamf, &buffer_float[0], buffer_float.size());
 		stream_samples_read += samples_read;
-		if(samples_read<(int)fftAuxBuffer.size()){
-			fftAuxBuffer.resize(samples_read);
-			buffer.resize(samples_read);
+        if(samples_read<(int)buffer_float.size()){
+            buffer_float.resize(samples_read);
+            buffer_short.resize(samples_read);
 
             // set to start of stream
             sf_seek(streamf,0,SEEK_SET);
@@ -622,17 +622,17 @@ bool OpenALSoundPlayer::sfStream(const std::filesystem::path& path,vector<short>
 			stream_samples_read = 0;
 			stream_end = true;
 		}
-		for (int i = 0 ; i < int(fftAuxBuffer.size()) ; i++){
-            fftAuxBuffer[i] *= stream_scale ;
-			buffer[i] = 32565.0 * fftAuxBuffer[i];
+        for (int i = 0 ; i < int(buffer_float.size()) ; i++){
+            //buffer_float[i] *= stream_scale ;
+            buffer_short[i] = 32565.0 * buffer_float[i] * stream_scale;
 		}
 	}else{
-		sf_count_t frames_read = sf_readf_short(streamf,&buffer[0],curr_buffer_size/channels);
+        sf_count_t frames_read = sf_readf_short(streamf,&buffer_short[0],curr_buffer_size/channels);
 		stream_samples_read += frames_read*channels;
         //cout << "sfStream()   frames_read = " << frames_read << " stream_samples_read: " << stream_samples_read << endl;
         if(frames_read < curr_buffer_size/channels){
-			fftAuxBuffer.resize(frames_read*channels);
-			buffer.resize(frames_read*channels);
+            buffer_float.resize(frames_read*channels);
+            buffer_short.resize(frames_read*channels);
 
             // set to start of stream
             sf_seek(streamf,0,SEEK_SET);
@@ -642,8 +642,8 @@ bool OpenALSoundPlayer::sfStream(const std::filesystem::path& path,vector<short>
             //cout << "End of stream, stream_samples_read = 0" << endl;
 			stream_end = true;
 		}
-		for(int i=0;i<(int)buffer.size();i++){
-			fftAuxBuffer[i]=float(buffer[i])/32565.0f;
+        for(int i=0;i<(int)buffer_short.size();i++){
+            buffer_float[i]=float(buffer_short[i])/32565.0f;
 		}
 	}
 
@@ -652,7 +652,7 @@ bool OpenALSoundPlayer::sfStream(const std::filesystem::path& path,vector<short>
 
 #ifdef OF_USING_MPG123
 //------------------------------------------------------------
-bool OpenALSoundPlayer::mpg123Stream(const std::filesystem::path& path,vector<short> & buffer,vector<float> & fftAuxBuffer){
+bool OpenALSoundPlayer::mpg123Stream(const std::filesystem::path& path){
 	if(!mp3streamf){
 		int err = MPG123_OK;
 		mp3streamf = mpg123_new(nullptr,&err);
@@ -683,22 +683,22 @@ bool OpenALSoundPlayer::mpg123Stream(const std::filesystem::path& path,vector<sh
 
 	int curr_buffer_size = mp3_buffer_size;
 	if(speed>1) curr_buffer_size *= (int)round(speed);
-	buffer.resize(curr_buffer_size);
-	fftAuxBuffer.resize(buffer.size());
+    buffer_short.resize(curr_buffer_size);
+    buffer_float.resize(buffer_short.size());
 	size_t done=0;
-	if(mpg123_read(mp3streamf,(unsigned char*)&buffer[0],curr_buffer_size*2,&done)==MPG123_DONE){
+    if(mpg123_read(mp3streamf,(unsigned char*)&buffer_short[0],curr_buffer_size*2,&done)==MPG123_DONE){
         //set to start of stream
         mpg123_seek(mp3streamf,0,SEEK_SET);
 
-		buffer.resize(done/2);
-		fftAuxBuffer.resize(done/2);
+        buffer_short.resize(done/2);
+        buffer_float.resize(done/2);
 		if(!bLoop) stopThread();
 		stream_end = true;
 	}
 
 
-	for(int i=0;i<(int)buffer.size();i++){
-		fftAuxBuffer[i] = float(buffer[i])/32565.f;
+    for(int i=0;i<(int)buffer_short.size();i++){
+        buffer_float[i] = float(buffer_short[i])/32565.f;
 	}
 
 	return true;
@@ -706,46 +706,46 @@ bool OpenALSoundPlayer::mpg123Stream(const std::filesystem::path& path,vector<sh
 #endif
 
 //------------------------------------------------------------
-bool OpenALSoundPlayer::stream(const std::filesystem::path& fileName, vector<short> & buffer){
+size_t OpenALSoundPlayer::stream(const std::filesystem::path& fileName){
 #ifdef OF_USING_MPG123
 	if(ofFilePath::getFileExt(fileName)=="mp3" || ofFilePath::getFileExt(fileName)=="MP3" || mp3streamf){
-		if(!mpg123Stream(fileName,buffer,fftAuxBuffer)) return false;
+        if(!mpg123Stream(fileName)) return 0;
 	}else
 #endif
-		if(!sfStream(fileName,buffer,fftAuxBuffer)) return false;
+        if(!sfStream(fileName)) return 0;
 
 	fftBuffers.resize(channels);
-	int numFrames = buffer.size()/channels;
+    int numFrames = buffer_float.size()/channels;
 
 	for(int i=0;i<channels;i++){
 		fftBuffers[i].resize(numFrames);
 		for(int j=0;j<numFrames;j++){
-			fftBuffers[i][j] = fftAuxBuffer[j*channels+i];
+            fftBuffers[i][j] = buffer_float[j*channels+i];
 		}
 	}
-	return true;
+    return numFrames;
 }
 
-bool OpenALSoundPlayer::readFile(const std::filesystem::path& fileName, vector<short> & buffer){
+size_t OpenALSoundPlayer::readFile(const std::filesystem::path& fileName){
 #ifdef OF_USING_MPG123
 	if(ofFilePath::getFileExt(fileName)!="mp3" && ofFilePath::getFileExt(fileName)!="MP3"){
-		if(!sfReadFile(fileName,buffer,fftAuxBuffer)) return false;
+        if(!sfReadFile(fileName)) return 0;
 	}else{
-		if(!mpg123ReadFile(fileName,buffer,fftAuxBuffer)) return false;
+        if(!mpg123ReadFile(fileName)) return 0;
 	}
 #else
 	if(!sfReadFile(fileName,buffer,fftAuxBuffer)) return false;
 #endif
 	fftBuffers.resize(channels);
-	int numFrames = buffer.size()/channels;
+    int numFrames = buffer_float.size()/channels;
 
 	for(int i=0;i<channels;i++){
 		fftBuffers[i].resize(numFrames);
 		for(int j=0;j<numFrames;j++){
-			fftBuffers[i][j] = fftAuxBuffer[j*channels+i];
+            fftBuffers[i][j] = buffer_float[j*channels+i];
 		}
 	}
-	return true;
+    return numFrames;
 }
 
 //------------------------------------------------------------
@@ -800,16 +800,15 @@ bool OpenALSoundPlayer::load(const std::filesystem::path& _fileName, bool is_str
     }
     format_string = getSoundFileFormatString(fileformat);    
 
-    ALenum openALformat=AL_FORMAT_MONO16;
-
+    int numFrames = 0;
 	if(!isStreaming){
-		readFile(fileName, buffer);
+        numFrames = readFile(fileName);
 	}else{
         //read stream to get buffer size
-		stream(fileName, buffer);
+        numFrames = stream(fileName);
 	}
 
-    if(buffer.size() == 0)
+    if(numFrames == 0)
     {
         ofLogError() << "Sound file load failed - wrong file type or empty file";
         return false;
@@ -838,13 +837,11 @@ bool OpenALSoundPlayer::load(const std::filesystem::path& _fileName, bool is_str
     else if(channels == 2)
     {
         if(sample_format == Int16)
-            openALformat = AL_FORMAT_STEREO16;
+            openALformat = AL_FORMAT_MONO16;//AL_FORMAT_STEREO16;
         else if(sample_format == Float)
-            openALformat = AL_FORMAT_STEREO_FLOAT32;
+            openALformat = AL_FORMAT_MONO_FLOAT32;//AL_FORMAT_STEREO_FLOAT32;
     }
-    //ofLogNotice() << "OpenAL Format should be " << getOpenALFormatString(openALformat);
-
-	int numFrames = buffer.size()/channels;
+    ofLogNotice() << "OpenAL Format should be " << getOpenALFormatString(openALformat);
 
 	if(isStreaming){
 		buffers.resize(channels*2);
@@ -871,12 +868,16 @@ bool OpenALSoundPlayer::load(const std::filesystem::path& _fileName, bool is_str
 
 		for(int i=0; i<(int)buffers.size(); i++){
             if(isStreaming){
-                stream(fileName,buffer);
+                stream(fileName);
             }
 
 			alGetError(); // Clear error.
-            openALformat=AL_FORMAT_MONO16;
-            alBufferData(buffers[i],openALformat,&buffer[0],buffer.size()*2,samplerate);
+            //openALformat=AL_FORMAT_MONO16;
+            if(openALformat == AL_FORMAT_MONO16) {
+                alBufferData(buffers[i],openALformat,&buffer_short[0],buffer_short.size()*2,samplerate);
+            } else {
+                alBufferData(buffers[i],openALformat,&buffer_float[0],buffer_float.size()*2,samplerate);
+            }
 			err = alGetError();
 			if (err != AL_NO_ERROR){
 				ofLogError("OpenALSoundPlayer:") << "loadSound(): couldn't create buffer for \"" << fileName << "\": "
@@ -895,8 +896,14 @@ bool OpenALSoundPlayer::load(const std::filesystem::path& _fileName, bool is_str
 	    alSourcef (sources[0], AL_ROLLOFF_FACTOR,  0.0);
 	    alSourcei (sources[0], AL_SOURCE_RELATIVE, AL_TRUE);
 	}else{
-		vector<vector<short> > multibuffer;
-		multibuffer.resize(channels);
+        vector<vector<short> > multibuffer_short;
+        vector<vector<float> > multibuffer_float;
+
+        if(openALformat == AL_FORMAT_MONO16) {
+            multibuffer_short.resize(channels);
+        } else {
+            multibuffer_float.resize(channels);
+        }
 		sources.resize(channels);
 		alGenSources(channels, &sources[0]);
 
@@ -908,21 +915,32 @@ bool OpenALSoundPlayer::load(const std::filesystem::path& _fileName, bool is_str
 		if(isStreaming){
             for(int s=0; s < 2;s++)
             {
-                stream(fileName,buffer);
+                stream(fileName);
                 for(int i=0;i<channels;i++){
 
-                    multibuffer[i].resize(buffer.size()/channels);
-                    for(int j=0;j<numFrames;j++){
-                        multibuffer[i][j] = buffer[j*channels+i];
+                    if(openALformat == AL_FORMAT_MONO16) {
+                        multibuffer_short[i].resize(buffer_short.size()/channels);
+                        for(int j=0;j<numFrames;j++){
+                            multibuffer_short[i][j] = buffer_short[j*channels+i];
+                        }
+                    } else {
+                        multibuffer_float[i].resize(buffer_float.size()/channels);
+                        for(int j=0;j<numFrames;j++){
+                            multibuffer_float[i][j] = buffer_float[j*channels+i];
+                        }
                     }
+
                     alGetError(); // Clear error.
-                    openALformat = AL_FORMAT_MONO16;
-                    alBufferData(buffers[s*2+i],openALformat,&multibuffer[i][0],buffer.size()/channels*2,samplerate);
+                    if(openALformat == AL_FORMAT_MONO16) {
+                        alBufferData(buffers[s*2+i],openALformat,&multibuffer_short[i][0],buffer_short.size()/channels*2,samplerate);
+                    } else {
+                        alBufferData(buffers[s*2+i],openALformat,&multibuffer_float[i][0],buffer_float.size()/channels*4,samplerate);
+                    }
                     err = alGetError();
                     if ( err != AL_NO_ERROR){
                         ofLogError("OpenALSoundPlayer") << "loadSound(): couldn't create stereo buffers for \"" << fileName << "\": " << (int) err << " " << getALErrorString(err);
                         sources.clear();
-                        multibuffer.clear();
+                        multibuffer_short.clear();
                         return false;
                     }
                     alSourceQueueBuffers(sources[i],1,&buffers[s*2+i]);
@@ -930,12 +948,23 @@ bool OpenALSoundPlayer::load(const std::filesystem::path& _fileName, bool is_str
             }
 		}else{
 			for(int i=0;i<channels;i++){
-				multibuffer[i].resize(buffer.size()/channels);
-				for(int j=0;j<numFrames;j++){
-					multibuffer[i][j] = buffer[j*channels+i];
-				}
+                if(openALformat == AL_FORMAT_MONO16) {
+                    multibuffer_short[i].resize(buffer_short.size()/channels);
+                    for(int j=0;j<numFrames;j++){
+                        multibuffer_short[i][j] = buffer_short[j*channels+i];
+                    }
+                } else {
+                    multibuffer_float[i].resize(buffer_float.size()/channels);
+                    for(int j=0;j<numFrames;j++){
+                        multibuffer_float[i][j] = buffer_float[j*channels+i];
+                    }
+                }
 				alGetError(); // Clear error.
-                alBufferData(buffers[i],openALformat,&multibuffer[i][0],buffer.size()/channels*2,samplerate);
+                if(openALformat == AL_FORMAT_MONO16) {
+                    alBufferData(buffers[i],openALformat,&multibuffer_short[i][0],buffer_short.size()/channels*2,samplerate);
+                } else {
+                    alBufferData(buffers[i],openALformat,&multibuffer_float[i][0],buffer_float.size()/channels*2,samplerate);
+                }
 				err = alGetError();
 				if (err != AL_NO_ERROR){
 					ofLogError("OpenALSoundPlayer") << "loadSound(): couldn't create stereo buffers for \"" << fileName << "\": "
@@ -980,8 +1009,15 @@ bool OpenALSoundPlayer::isLoaded() const{
 
 //------------------------------------------------------------
 void OpenALSoundPlayer::threadedFunction(){
-	vector<vector<short> > multibuffer;
-	multibuffer.resize(channels);
+    vector<vector<short> > multibuffer_short;
+    vector<vector<float> > multibuffer_float;
+
+    if(openALformat == AL_FORMAT_MONO16) {
+        multibuffer_short.resize(channels);
+    } else {
+        multibuffer_float.resize(channels);
+    }
+
 	while(isThreadRunning()){
         sleep(1);
 		std::unique_lock<std::mutex> lock(mutex);
@@ -996,24 +1032,42 @@ void OpenALSoundPlayer::threadedFunction(){
 			{
                 //cout << "source: " << i*channels << " AL_BUFFERS_PROCESSED = " << processed << endl;
                 processed--;
-                stream("",buffer);
-				int numFrames = buffer.size()/channels;
-				if(channels>1){
+                stream("");
+
+                if(channels > 1){
 					for(int j=0;j<channels;j++){
-						multibuffer[j].resize(buffer.size()/channels);
-						for(int k=0;k<numFrames;k++){
-							multibuffer[j][k] = buffer[k*channels+j];
-						}
+                        if(openALformat == AL_FORMAT_MONO16) {
+                            int numFrames = buffer_short.size()/channels;
+                            multibuffer_short[j].resize(buffer_short.size()/channels);
+                            for(int k=0;k<numFrames;k++){
+                                multibuffer_short[j][k] = buffer_short[k*channels+j];
+                            }
+                        } else {
+                            int numFrames = buffer_float.size()/channels;
+                            multibuffer_float[j].resize(buffer_float.size()/channels);
+                            for(int k=0;k<numFrames;k++){
+                                multibuffer_float[j][k] = buffer_float[k*channels+j];
+                            }
+                        }
 						ALuint albuffer;
-						alSourceUnqueueBuffers(sources[i*channels+j], 1, &albuffer);                        
-                        alBufferData(albuffer,AL_FORMAT_MONO16,&multibuffer[j][0],buffer.size()*2/channels,samplerate);
+                        alSourceUnqueueBuffers(sources[i*channels+j], 1, &albuffer);
+                        if(openALformat == AL_FORMAT_MONO16) {
+                            alBufferData(albuffer,openALformat,&multibuffer_short[j][0],buffer_short.size()*2/channels,samplerate);
+                        } else
+                        {
+                            alBufferData(albuffer,openALformat,&multibuffer_float[j][0],buffer_float.size()*4/channels,samplerate);
+                        }
                         alSourceQueueBuffers(sources[i*channels+j], 1, &albuffer);
                         //cout << "sourceQueuebuffer(thread)-> sources: " << i*channels+j << endl;
 					}
 				}else{
 					ALuint albuffer;
 					alSourceUnqueueBuffers(sources[i], 1, &albuffer);
-                    alBufferData(albuffer,AL_FORMAT_MONO16,&buffer[0],buffer.size()*2/channels,samplerate);
+                    if(openALformat == AL_FORMAT_MONO16) {
+                        alBufferData(albuffer,openALformat,&buffer_short[0],buffer_short.size()*2/channels,samplerate);
+                    } else {
+                        alBufferData(albuffer,openALformat,&buffer_float[0],buffer_float.size()*4/channels,samplerate);
+                    }
 					alSourceQueueBuffers(sources[i], 1, &albuffer);
                     //cout << "sourceQueuebuffer(thread)-> sources: " << i << endl;
 				}
@@ -1250,7 +1304,7 @@ void OpenALSoundPlayer::setPaused(bool bP){
 		alSourcePlayv(sources.size(),&sources[0]);
         if(isStreaming){
             stream_end = false;
-            startThread();
+            startThread(); //Need to delete std::unique_lock<std::mutex> lck(mutex) from void ofThread::startThread() in ofThread.cpp to have this work with above lock()
 		}
 	}
 }

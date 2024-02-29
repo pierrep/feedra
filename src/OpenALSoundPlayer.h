@@ -95,15 +95,15 @@ class OpenALSoundPlayer : public ofBaseSoundPlayer, public ofThread {
 		static void runWindow(std::vector<float> & signal);
 		static void initSystemFFT(int bands);
 
-        bool sfReadFile(const std::filesystem::path& path,std::vector<short> & buffer,std::vector<float> & fftAuxBuffer);
-        bool sfStream(const std::filesystem::path& path,std::vector<short> & buffer,std::vector<float> & fftAuxBuffer);
+        bool sfReadFile(const std::filesystem::path& path);
+        bool sfStream(const std::filesystem::path& path);
 #ifdef OF_USING_MPG123
-        bool mpg123ReadFile(const std::filesystem::path& path,std::vector<short> & buffer,std::vector<float> & fftAuxBuffer);
-        bool mpg123Stream(const std::filesystem::path& path,std::vector<short> & buffer,std::vector<float> & fftAuxBuffer);
+        bool mpg123ReadFile(const std::filesystem::path& path);
+        bool mpg123Stream(const std::filesystem::path& path);
 #endif
 
-        bool readFile(const std::filesystem::path& fileName,std::vector<short> & buffer);
-        bool stream(const std::filesystem::path& fileName, std::vector<short> & buffer);
+        size_t readFile(const std::filesystem::path& fileName);
+        size_t stream(const std::filesystem::path& fileName);
 
 		bool isStreaming;
 		bool bMultiPlay;
@@ -149,10 +149,11 @@ class OpenALSoundPlayer : public ofBaseSoundPlayer, public ofThread {
 		int mp3_buffer_size;
         int fileformat;
         std::string format_string;
+        ALenum openALformat;
 		int stream_subformat;
 		double stream_scale;
-		std::vector<short> buffer;
-		std::vector<float> fftAuxBuffer;
+        std::vector<short> buffer_short;
+        std::vector<float> buffer_float;
 
         std::atomic<bool> stream_end;
 };
