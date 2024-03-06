@@ -46,22 +46,6 @@ SoundPlayer::SoundPlayer(const SoundPlayer& parent) {
 
 }
 
-//--------------------------------------------------------------------
-void SoundPlayer::play(){
-   audioPlayer[curSound]->play();
-}
-
-//--------------------------------------------------------------------
-void SoundPlayer::setPaused(bool _bPause){
-    bPaused = _bPause;
-    if(curDelay[curSound] > 0) {
-        bPlayingDelay = !_bPause;
-    } else {
-        audioPlayer[curSound]->setPaused(_bPause);
-    }
-
-}
-
 //--------------------------------------------------------------
 void SoundPlayer::update()
 {
@@ -93,6 +77,11 @@ void SoundPlayer::update()
         }
     }
     prevTime = curTime;
+}
+
+//--------------------------------------------------------------------
+void SoundPlayer::play(){
+   audioPlayer[curSound]->play();
 }
 
 //--------------------------------------------------------------
@@ -136,6 +125,17 @@ void SoundPlayer::unload(){
 }
 
 //--------------------------------------------------------------------
+void SoundPlayer::setPaused(bool _bPause){
+    bPaused = _bPause;
+    if(curDelay[curSound] > 0) {
+        bPlayingDelay = !_bPause;
+    } else {
+        audioPlayer[curSound]->setPaused(_bPause);
+    }
+
+}
+
+//--------------------------------------------------------------------
 void SoundPlayer::setVolume(float vol)
 {
     audioPlayer[curSound]->setVolume(vol);
@@ -167,6 +167,12 @@ void SoundPlayer::setSpeed(float spd){
     }
 
 }
+
+ //--------------------------------------------------------------------
+ float SoundPlayer::getDuration() const
+ {
+     return audioPlayer[curSound]->getDuration();
+ }
 
 //--------------------------------------------------------------------
 void SoundPlayer::setPosition(float pct)

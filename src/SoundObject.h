@@ -34,7 +34,6 @@ public:
 
     //Globals    
     AppConfig* config;
-    //ofSoundPlayer audioPlayer;
     SoundPlayer soundPlayer;
 
     Loader loader;
@@ -58,6 +57,14 @@ public:
     int sample_rate;
     int channels;
     float pan;
+
+    bool isFading;
+    int fadeDirection;
+    float fadeVolume;
+
+    long int curTime;
+    long int prevTime;
+    std::function<void()> f;
 
     static ofEvent<int> clickedObjectEvent;
 };

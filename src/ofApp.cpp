@@ -55,7 +55,7 @@ void ofApp::saveConfig(string path)
         }
     }
     string save_name = path;
-    ofSaveJson(save_name,config.settings);
+    ofSavePrettyJson(save_name,config.settings);
 }
 
 //--------------------------------------------------------------

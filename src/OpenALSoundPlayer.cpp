@@ -195,12 +195,6 @@ static string getMpg123EncodingString(int encoding) {
 
 #define BUFFER_STREAM_SIZE 4096
 
-enum FormatType {
-    Int16,
-    Float,
-    IMA4,
-    MSADPCM
-};
 
 // now, the individual sound player:
 //------------------------------------------------------------
@@ -212,11 +206,12 @@ OpenALSoundPlayer::OpenALSoundPlayer(){
 	internalFreq 	= 44100;
 	speed 			= 1;
 	bPaused 		= false;
-	isStreaming		= false;
+    isStreaming		= true;
 	channels		= 0;
 	duration		= 0;
 	fftCfg			= 0;
 	streamf			= 0;
+    nonSpatialisedStereo = true;
 #ifdef OF_USING_MPG123
 	mp3streamf		= 0;
 #endif
@@ -515,8 +510,8 @@ bool OpenALSoundPlayer::sfReadFile(const std::filesystem::path& path){
             << buffer_float.size() << " for \"" << path << "\"";
 		}
         for (int i = 0 ; i < int(buffer_float.size()) ; i++){
-            buffer_float[i] *= scale ;
-            buffer_short[i] = 32565.0 * buffer_float[i];
+            //buffer_float[i] *= scale ;
+            buffer_short[i] = 32565.0 * buffer_float[i] * scale;
 		}
 	}else{
         sf_count_t frames_read = sf_readf_short(f,&buffer_short[0],sfInfo.frames);
@@ -590,7 +585,7 @@ bool OpenALSoundPlayer::sfStream(const std::filesystem::path& path){
 			return false;
 		}
 
-		stream_subformat = sfInfo.format & SF_FORMAT_SUBMASK ;
+        int stream_subformat = sfInfo.format & SF_FORMAT_SUBMASK ;
 		if (stream_subformat == SF_FORMAT_FLOAT || stream_subformat == SF_FORMAT_DOUBLE){
 			sf_command (streamf, SFC_CALC_SIGNAL_MAX, &stream_scale, sizeof (stream_scale)) ;
 			if (stream_scale < 1e-10)
@@ -598,6 +593,7 @@ bool OpenALSoundPlayer::sfStream(const std::filesystem::path& path){
 			else
 				stream_scale = 32700.0 / stream_scale ;
 		}
+
 		channels = sfInfo.channels;
 		duration = float(sfInfo.frames) / float(sfInfo.samplerate);
 		samplerate = sfInfo.samplerate;
@@ -608,7 +604,7 @@ bool OpenALSoundPlayer::sfStream(const std::filesystem::path& path){
 	if(speed>1) curr_buffer_size *= (int)round(speed);
     buffer_short.resize(curr_buffer_size);
     buffer_float.resize(buffer_short.size());
-	if (stream_subformat == SF_FORMAT_FLOAT || stream_subformat == SF_FORMAT_DOUBLE){
+    if (sample_format == FormatType::Float){
         sf_count_t samples_read = sf_read_float (streamf, &buffer_float[0], buffer_float.size());
 		stream_samples_read += samples_read;
         if(samples_read<(int)buffer_float.size()){
@@ -734,7 +730,7 @@ size_t OpenALSoundPlayer::readFile(const std::filesystem::path& fileName){
         if(!mpg123ReadFile(fileName)) return 0;
 	}
 #else
-	if(!sfReadFile(fileName,buffer,fftAuxBuffer)) return false;
+    if(!sfReadFile(fileName)) return false;
 #endif
 	fftBuffers.resize(channels);
     int numFrames = buffer_float.size()/channels;
@@ -751,8 +747,7 @@ size_t OpenALSoundPlayer::readFile(const std::filesystem::path& fileName){
 //------------------------------------------------------------
 bool OpenALSoundPlayer::load(const std::filesystem::path& _fileName, bool is_stream){
 
-	std::filesystem::path fileName = ofToDataPath(_fileName);
-    enum FormatType sample_format = Int16;
+	std::filesystem::path fileName = ofToDataPath(_fileName);    
 	bMultiPlay = false;
 	isStreaming = is_stream;
 	int err = AL_NO_ERROR;
@@ -814,17 +809,6 @@ bool OpenALSoundPlayer::load(const std::filesystem::path& _fileName, bool is_str
         return false;
     }
 
-    if(sample_format == Int16)
-    {
-        splblockalign = 1;
-        byteblockalign = channels * 2;
-    }
-    else if(sample_format == Float)
-    {
-        splblockalign = 1;
-        byteblockalign = channels * 4;
-    }
-
     /* Figure out the OpenAL format from the file and desired sample type. */
     openALformat = AL_NONE;
     if(channels == 1)
@@ -836,30 +820,45 @@ bool OpenALSoundPlayer::load(const std::filesystem::path& _fileName, bool is_str
     }
     else if(channels == 2)
     {
-        if(sample_format == Int16)
-            openALformat = AL_FORMAT_MONO16;//AL_FORMAT_STEREO16;
-        else if(sample_format == Float)
-            openALformat = AL_FORMAT_MONO_FLOAT32;//AL_FORMAT_STEREO_FLOAT32;
+        if(sample_format == Int16) {
+            if(nonSpatialisedStereo ) {
+                openALformat = AL_FORMAT_STEREO16;
+            } else {
+                openALformat = AL_FORMAT_MONO16;
+            }
+        }
+        else if(sample_format == Float) {
+            if(nonSpatialisedStereo ) {
+                openALformat = AL_FORMAT_STEREO_FLOAT32;
+            } else {
+                openALformat = AL_FORMAT_MONO_FLOAT32;
+            }
+        }
+    }   
+
+    if(nonSpatialisedStereo) {
+        sources.resize(1);
+    } else {
+        sources.resize(channels);
     }
-    ofLogNotice() << "OpenAL Format should be " << getOpenALFormatString(openALformat);
+    alGetError(); // Clear error.
+    alGenSources(sources.size(), &sources[0]);
+    err = alGetError();
+    if (err != AL_NO_ERROR){
+        ofLogError("OpenALSoundPlayer") << "loadSound(): couldn't generate sources for " << fileName << ": "
+        << (int) err << " " << getALErrorString(err);
+        return false;
+    }
 
 	if(isStreaming){
-		buffers.resize(channels*2);
+        buffers.resize(sources.size()*2);
 	}else{
-		buffers.resize(channels);
+        buffers.resize(sources.size());
 	}
 	alGenBuffers(buffers.size(), &buffers[0]);
-    //cout << "sound load -> channels: "<< channels << " buffers.size: " << buffers.size() << " buffer.size(): " << buffer.size() << " duration: " << duration << endl;
-	if(channels==1){
-		sources.resize(1);
-		alGetError(); // Clear error.
-		alGenSources(1, &sources[0]);
-		err = alGetError();
-		if (err != AL_NO_ERROR){
-			ofLogError("OpenALSoundPlayer") << "loadSound(): couldn't generate source for \"" << fileName << "\": "
-			<< (int) err << " " << getALErrorString(err);
-			return false;
-		}
+    //cout << "sound load -> channels: "<< channels << " buffers.size: " << buffers.size() << " buffer_short.size(): " << buffer_short.size() << " duration: " << duration << endl;
+
+    if(sources.size() == 1){
 
         if(isStreaming){
             //reset back to zero
@@ -872,15 +871,14 @@ bool OpenALSoundPlayer::load(const std::filesystem::path& _fileName, bool is_str
             }
 
 			alGetError(); // Clear error.
-            //openALformat=AL_FORMAT_MONO16;
-            if(openALformat == AL_FORMAT_MONO16) {
+            if((openALformat == AL_FORMAT_MONO16) || (openALformat == AL_FORMAT_STEREO16)) {
                 alBufferData(buffers[i],openALformat,&buffer_short[0],buffer_short.size()*2,samplerate);
-            } else {
-                alBufferData(buffers[i],openALformat,&buffer_float[0],buffer_float.size()*2,samplerate);
+            } else if((openALformat == AL_FORMAT_MONO_FLOAT32) || (openALformat == AL_FORMAT_STEREO_FLOAT32)) {
+                alBufferData(buffers[i],openALformat,&buffer_float[0],buffer_float.size()*4,samplerate);
             }
 			err = alGetError();
 			if (err != AL_NO_ERROR){
-				ofLogError("OpenALSoundPlayer:") << "loadSound(): couldn't create buffer for \"" << fileName << "\": "
+                ofLogError("OpenALSoundPlayer:") << "loadSound(): couldn't create buffer for " << fileName << ": "
 				<< (int) err << " " << getALErrorString(err);
 				return false;
 			}
@@ -888,24 +886,32 @@ bool OpenALSoundPlayer::load(const std::filesystem::path& _fileName, bool is_str
 		if(isStreaming){
             alSourceQueueBuffers(sources[0],buffers.size(),&buffers[0]);
 		}else{
-			alSourcei (sources[0], AL_BUFFER,   buffers[0]);
+            alSourcei (sources[0], AL_BUFFER, buffers[0]);
+            err = alGetError();
+            if (err != AL_NO_ERROR){
+                ofLogError("OpenALSoundPlayer:") << "loadSound(): couldn't source for \"" << fileName << "\": "
+                << (int) err << " " << getALErrorString(err);
+                return false;
+            }
 		}
 
-		alSourcef (sources[0], AL_PITCH,    1.0f);
-		alSourcef (sources[0], AL_GAIN,     1.0f);
-	    alSourcef (sources[0], AL_ROLLOFF_FACTOR,  0.0);
-	    alSourcei (sources[0], AL_SOURCE_RELATIVE, AL_TRUE);
-	}else{
+        alSourcef (sources[0], AL_PITCH,    1.0f);
+        alSourcef (sources[0], AL_GAIN,     1.0f);
+        alSourcef (sources[0], AL_ROLLOFF_FACTOR,  0.0);
+        alSourcei (sources[0], AL_SOURCE_RELATIVE, AL_TRUE);
+    } else // multiple sources, e.g. stereo
+    {
         vector<vector<short> > multibuffer_short;
         vector<vector<float> > multibuffer_float;
 
         if(openALformat == AL_FORMAT_MONO16) {
             multibuffer_short.resize(channels);
-        } else {
+        } else if(openALformat == AL_FORMAT_MONO_FLOAT32) {
             multibuffer_float.resize(channels);
+        } else {
+            ofLogError("OpenALSoundPlayer:") << "Unknown multiple source format, aborting!";
+            return false;
         }
-		sources.resize(channels);
-		alGenSources(channels, &sources[0]);
 
         if(isStreaming){
             //reset back to zero
@@ -923,7 +929,7 @@ bool OpenALSoundPlayer::load(const std::filesystem::path& _fileName, bool is_str
                         for(int j=0;j<numFrames;j++){
                             multibuffer_short[i][j] = buffer_short[j*channels+i];
                         }
-                    } else {
+                    } else if(openALformat == AL_FORMAT_MONO_FLOAT32) {
                         multibuffer_float[i].resize(buffer_float.size()/channels);
                         for(int j=0;j<numFrames;j++){
                             multibuffer_float[i][j] = buffer_float[j*channels+i];
@@ -933,7 +939,7 @@ bool OpenALSoundPlayer::load(const std::filesystem::path& _fileName, bool is_str
                     alGetError(); // Clear error.
                     if(openALformat == AL_FORMAT_MONO16) {
                         alBufferData(buffers[s*2+i],openALformat,&multibuffer_short[i][0],buffer_short.size()/channels*2,samplerate);
-                    } else {
+                    } else if(openALformat == AL_FORMAT_MONO_FLOAT32) {
                         alBufferData(buffers[s*2+i],openALformat,&multibuffer_float[i][0],buffer_float.size()/channels*4,samplerate);
                     }
                     err = alGetError();
@@ -953,7 +959,7 @@ bool OpenALSoundPlayer::load(const std::filesystem::path& _fileName, bool is_str
                     for(int j=0;j<numFrames;j++){
                         multibuffer_short[i][j] = buffer_short[j*channels+i];
                     }
-                } else {
+                } else if(openALformat == AL_FORMAT_MONO_FLOAT32) {
                     multibuffer_float[i].resize(buffer_float.size()/channels);
                     for(int j=0;j<numFrames;j++){
                         multibuffer_float[i][j] = buffer_float[j*channels+i];
@@ -962,8 +968,8 @@ bool OpenALSoundPlayer::load(const std::filesystem::path& _fileName, bool is_str
 				alGetError(); // Clear error.
                 if(openALformat == AL_FORMAT_MONO16) {
                     alBufferData(buffers[i],openALformat,&multibuffer_short[i][0],buffer_short.size()/channels*2,samplerate);
-                } else {
-                    alBufferData(buffers[i],openALformat,&multibuffer_float[i][0],buffer_float.size()/channels*2,samplerate);
+                } else if(openALformat == AL_FORMAT_MONO_FLOAT32) {
+                    alBufferData(buffers[i],openALformat,&multibuffer_float[i][0],buffer_float.size()/channels*4,samplerate);
                 }
 				err = alGetError();
 				if (err != AL_NO_ERROR){
@@ -995,7 +1001,7 @@ bool OpenALSoundPlayer::load(const std::filesystem::path& _fileName, bool is_str
             alSourcef (sources[i], AL_ROLLOFF_FACTOR,  0.0);
             alSourcei (sources[i], AL_SOURCE_RELATIVE, AL_TRUE);
         }
-    }
+    } // end multiple sources
 
 	bLoadedOk = true;
 	return bLoadedOk;
@@ -1014,7 +1020,7 @@ void OpenALSoundPlayer::threadedFunction(){
 
     if(openALformat == AL_FORMAT_MONO16) {
         multibuffer_short.resize(channels);
-    } else {
+    } else if(openALformat == AL_FORMAT_MONO_FLOAT32) {
         multibuffer_float.resize(channels);
     }
 
@@ -1022,19 +1028,30 @@ void OpenALSoundPlayer::threadedFunction(){
         sleep(1);
 		std::unique_lock<std::mutex> lock(mutex);
 
-		for(int i=0; i<int(sources.size())/channels; i++){
+        int loop;
+        if(bMultiPlay) {
+            loop = int(sources.size())/channels;
+        } else {
+            loop = 1;
+        }
+        for(int i=0; i < loop; i++){
             ALint state;
-            alGetSourcei(sources[i*channels],AL_SOURCE_STATE,&state);
+            int index;
+            if(bMultiPlay) {
+                index = i*channels;
+            } else {
+                index = 0;
+            }
+            alGetSourcei(sources[index],AL_SOURCE_STATE,&state);
 
 			int processed;
-			alGetSourcei(sources[i*channels], AL_BUFFERS_PROCESSED, &processed);
+            alGetSourcei(sources[index], AL_BUFFERS_PROCESSED, &processed);
             while(processed)
 			{
-                //cout << "source: " << i*channels << " AL_BUFFERS_PROCESSED = " << processed << endl;
                 processed--;
                 stream("");
 
-                if(channels > 1){
+                if((channels > 1) && !nonSpatialisedStereo){
 					for(int j=0;j<channels;j++){
                         if(openALformat == AL_FORMAT_MONO16) {
                             int numFrames = buffer_short.size()/channels;
@@ -1042,7 +1059,7 @@ void OpenALSoundPlayer::threadedFunction(){
                             for(int k=0;k<numFrames;k++){
                                 multibuffer_short[j][k] = buffer_short[k*channels+j];
                             }
-                        } else {
+                        } else if(openALformat == AL_FORMAT_MONO_FLOAT32) {
                             int numFrames = buffer_float.size()/channels;
                             multibuffer_float[j].resize(buffer_float.size()/channels);
                             for(int k=0;k<numFrames;k++){
@@ -1053,23 +1070,20 @@ void OpenALSoundPlayer::threadedFunction(){
                         alSourceUnqueueBuffers(sources[i*channels+j], 1, &albuffer);
                         if(openALformat == AL_FORMAT_MONO16) {
                             alBufferData(albuffer,openALformat,&multibuffer_short[j][0],buffer_short.size()*2/channels,samplerate);
-                        } else
-                        {
+                        } else if(openALformat == AL_FORMAT_MONO_FLOAT32) {
                             alBufferData(albuffer,openALformat,&multibuffer_float[j][0],buffer_float.size()*4/channels,samplerate);
                         }
                         alSourceQueueBuffers(sources[i*channels+j], 1, &albuffer);
-                        //cout << "sourceQueuebuffer(thread)-> sources: " << i*channels+j << endl;
 					}
 				}else{
 					ALuint albuffer;
 					alSourceUnqueueBuffers(sources[i], 1, &albuffer);
-                    if(openALformat == AL_FORMAT_MONO16) {
-                        alBufferData(albuffer,openALformat,&buffer_short[0],buffer_short.size()*2/channels,samplerate);
-                    } else {
-                        alBufferData(albuffer,openALformat,&buffer_float[0],buffer_float.size()*4/channels,samplerate);
+                    if((openALformat == AL_FORMAT_MONO16) || (openALformat == AL_FORMAT_STEREO16)) {
+                        alBufferData(albuffer,openALformat,&buffer_short[0],buffer_short.size()*2,samplerate);
+                    } else if((openALformat == AL_FORMAT_MONO_FLOAT32) || (openALformat == AL_FORMAT_STEREO_FLOAT32)) {
+                        alBufferData(albuffer,openALformat,&buffer_float[0],buffer_float.size()*4,samplerate);
                     }
 					alSourceQueueBuffers(sources[i], 1, &albuffer);
-                    //cout << "sourceQueuebuffer(thread)-> sources: " << i << endl;
 				}
                 if(stream_end && !(state == AL_STOPPED)){
                     //cout << "threadedFunction() - stream end! state: " << state << endl;
@@ -1083,8 +1097,8 @@ void OpenALSoundPlayer::threadedFunction(){
 			#else
 				stream_running = streamf;
 			#endif
-			if(state != AL_PLAYING && stream_running && !stream_end){
-                alSourcePlayv(channels,&sources[i*channels]);
+            if(state != AL_PLAYING && state != AL_PAUSED && stream_running && !stream_end){
+                alSourcePlayv(channels,&sources[0]);
                 cout << "Loop stream!" << endl;
                 stream_end = false;
 			}
@@ -1193,7 +1207,7 @@ float OpenALSoundPlayer::getVolume() const{
 void OpenALSoundPlayer::setVolume(float vol){
 	volume = vol;
 	if(sources.empty()) return;
-	if(channels==1){
+    if(sources.size() == 1){
 		alSourcef (sources[sources.size()-1], AL_GAIN, vol);
 	}else{
 		setPan(pan);
@@ -1230,9 +1244,9 @@ void OpenALSoundPlayer::setPositionMS(int ms){
 //        cout << "Buffers queued (setPositionMS) on source 0: " << queued << "  Buffers processed:" << processed << endl;
 
 	}else{
-        std::unique_lock<std::mutex> lock(mutex);
-		for(int i=0;i<(int)channels;i++){
-			alSourcef(sources[sources.size()-channels+i],AL_SEC_OFFSET,float(ms)/1000.f);
+        //std::unique_lock<std::mutex> lock(mutex);
+        for(int i=0;i<(int)sources.size();i++){
+            alSourcef(sources[i],AL_SEC_OFFSET,float(ms)/1000.f);
 		}
 	}
 }
@@ -1265,9 +1279,14 @@ int OpenALSoundPlayer::getPositionMS() const{
 //------------------------------------------------------------
 void OpenALSoundPlayer::setPan(float p){
 	if(sources.empty()) return;
+    if(nonSpatialisedStereo) {
+        //Panning does nothing, so exit
+        return;
+    }
+
 	p = glm::clamp(p, -1.f, 1.f);
 	pan = p;
-	if(channels==1){
+    if(channels==1){
 		float pos[3] = {p,0,0};
 		alSourcefv(sources[sources.size()-1],AL_POSITION,pos);
 	}else{
@@ -1400,10 +1419,17 @@ void OpenALSoundPlayer::play(){
 void OpenALSoundPlayer::stop(){
     //cout << "stop()" << endl;
 	if(sources.empty()) return;
-    {
+
+    if(bMultiPlay) {
         std::unique_lock<std::mutex> lock(mutex);
-        alSourceStopv(channels,&sources[sources.size()-channels]);
+        alSourceStopv(sources.size(),&sources[sources.size()-channels]);
+    } else {
+        std::unique_lock<std::mutex> lock(mutex);
+        alSourceStopv(sources.size(),&sources[0]);
     }
+
+    setPosition(0);
+
 	if(isStreaming){
         stream_end = true;
         //cout << "stopThread()" << endl;

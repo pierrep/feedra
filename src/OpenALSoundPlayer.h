@@ -23,6 +23,12 @@ typedef unsigned int ALuint;
 
 typedef	struct SNDFILE_tag	SNDFILE ;
 
+enum FormatType {
+    Int16,
+    Float,
+    IMA4,
+    MSADPCM
+};
 
 #ifdef OF_USING_MPG123
 	typedef struct mpg123_handle_struct mpg123_handle;
@@ -75,6 +81,7 @@ class OpenALSoundPlayer : public ofBaseSoundPlayer, public ofThread {
 
 		static float * getSystemSpectrum(int bands);
 
+        float getDuration() const {return duration;}
         int getSampleRate() const {return samplerate;}
         int getNumChannels() const {return channels;}
         bool isStreamEnd() const { return stream_end;}
@@ -150,10 +157,13 @@ class OpenALSoundPlayer : public ofBaseSoundPlayer, public ofThread {
         int fileformat;
         std::string format_string;
         ALenum openALformat;
-		int stream_subformat;
+        //int stream_subformat;
+        enum FormatType sample_format = Int16;
 		double stream_scale;
         std::vector<short> buffer_short;
         std::vector<float> buffer_float;
 
         std::atomic<bool> stream_end;
+
+        bool nonSpatialisedStereo;
 };

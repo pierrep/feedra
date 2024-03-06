@@ -58,6 +58,10 @@ void SoundObject::load(int idx)
         for(auto & setting: json){
             if(!setting.empty())
             {
+                if(!setting[prefix+"-isstream"].empty())
+                {
+                    isStream = setting[prefix+"-isstream"];
+                }
                 if(!setting[prefix+"-path"].empty()) {
                     soundpath = setting[prefix+"-path"];
                     if(!soundpath.empty()) {
@@ -126,6 +130,7 @@ void SoundObject::save()
     string prefix = ofToString(scene_id)+"-"+ofToString(id);
 
     ofJson soundobj;
+    soundobj[prefix+"-isstream"] = isStream;
     soundobj[prefix+"-loop"] = looper.isLooping;
     soundobj[prefix+"-soundname"] = soundname.text;
     soundobj[prefix+"-path"] = soundpath;
@@ -134,7 +139,7 @@ void SoundObject::save()
     soundobj[prefix+"-channels"] = channels;
     soundobj[prefix+"-pan"] = soundPlayer.getPan();
     soundobj[prefix+"-mindelay"] = soundPlayer.minDelay[0];
-    soundobj[prefix+"-maxdelay"] = soundPlayer.maxDelay[0];
+    soundobj[prefix+"-maxdelay"] = soundPlayer.maxDelay[0];    
 
     config->settings.push_back(soundobj);
 
@@ -173,6 +178,8 @@ SoundObject::SoundObject(AppConfig* _config, size_t _scene_id, int _id, int _x, 
     config = _config;
     channels = 0;
     sample_rate = 0;
+    fadeVolume = 1.0f;
+    isFading = false;
 
     id = _id + _scene_id*100;
     setX(_x);
@@ -253,12 +260,12 @@ SoundObject::SoundObject(const SoundObject& parent) {
 
 //--------------------------------------------------------------
 void SoundObject::onClicked(int& args) {
-    ofLogNotice() << "SoundObject id " << id << " clicked";
+    ofLogVerbose() << "SoundObject id " << id << " clicked";
 
     config->activeSound = id;
     int idx = id - config->activeSceneIdx*100 -1;
     config->activeSoundIdx =  idx;
-    ofLogNotice() << "activeSound: " << config->activeSound << " activeSoundIdx: " << config->activeSoundIdx;
+    ofLogVerbose() << "activeSound: " << config->activeSound << " activeSoundIdx: " << config->activeSoundIdx;
 
     ofNotifyEvent(clickedObjectEvent, idx);
 }
@@ -359,18 +366,44 @@ void SoundObject::update()
     if(player.doPlay)
     {
         if(soundPlayer.isPlaying()) {
-            //player.isPlaying = false;
             cout << "pause audio" << id << endl;
-            soundPlayer.setPaused(true);
             player.doPlay = false;
             isPaused = true;
+
+//            // Only fade for samples longer than 10 secs
+//            if(soundPlayer.getDuration() > 10.0f) {
+//                isFading = true;
+//                prevTime = ofGetElapsedTimeMillis();
+//                fadeDirection = 1;
+//                f = [this]() -> void
+//                {
+//                    std::cout << "End pause fade-out" << endl;
+//                    soundPlayer.setPaused(true);
+//                };
+//            }
+//             else
+            {
+                soundPlayer.setPaused(true);
+            }
+            return;
+
         }
-        else if (soundPlayer.isLoaded()) {
-            soundPlayer.setPaused(false);
-            //audioPlayer.play();
+        else if (soundPlayer.isLoaded()) {            
             cout << "play audio" << id << " channels = " << channels << " samplerate = " << sample_rate << endl;
+            soundPlayer.setPaused(false);
             player.doPlay = false;
             isPaused = false;
+
+//            // Only fade for samples longer than 10 secs
+//            if(soundPlayer.getDuration() > 10.0f) {
+//                isFading = true;
+//                prevTime = ofGetElapsedTimeMillis();
+//                fadeDirection = 0;
+//                f = [this]() -> void
+//                {
+//                    std::cout << "End pause fade-in" << endl;
+//                };
+//            }
         }
         stopper.isStopped  = false;
     }
@@ -386,7 +419,23 @@ void SoundObject::update()
         if(!stopper.isStopped) {
             {
                 stopper.isStopped = true;
-                soundPlayer.stop();
+
+//                // Only fade for samples longer than 10 secs
+//                if(soundPlayer.getDuration() > 10.0f) {
+//                    isFading = true;
+//                    prevTime = ofGetElapsedTimeMillis();
+//                    fadeDirection = 1;
+//                    f = [this]() -> void
+//                    {
+//                        std::cout << "End stop fade-out" << endl;
+//                        soundPlayer.stop();
+//                    };
+//                }
+//                 else
+                {
+                    soundPlayer.stop();
+                }
+
             }
         }
         stopper.doStop = false;
@@ -411,9 +460,22 @@ void SoundObject::update()
         player.isPlaying = false;
     }
 
+    if(isFading) {
+        const float fadeDuration = 1000;
+        curTime = ofGetElapsedTimeMillis();
+        fadeVolume = fabs(fadeDirection - (curTime - prevTime)/fadeDuration);
+        //std::cout << "fade: " << fadeVolume << endl;
+        if(curTime - prevTime > fadeDuration)
+        {
+            isFading = false;
+            f();
+            fadeVolume = 1.0f;
+        }
+    }
+
     if(soundPlayer.isLoaded())
     {
-        soundPlayer.setVolume(volumeslider.getValue()*config->getMasterVolume()*config->masterFade);
+        soundPlayer.setVolume(volumeslider.getValue()*config->getMasterVolume()*config->masterFade*fadeVolume);
     }
 
 }

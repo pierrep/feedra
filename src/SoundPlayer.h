@@ -32,6 +32,7 @@ public:
     float getSpeed() const;
     float getPan() const;
     float getVolume() const;
+    float getDuration() const;
     int getSampleRate() const;
     int getNumChannels() const ;
     void recalculateDelay();
