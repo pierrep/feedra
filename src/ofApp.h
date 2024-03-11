@@ -47,6 +47,7 @@ class ofApp : public ofBaseApp {
         SimpleSlider minDelay;
         SimpleSlider maxDelay;
         SimpleSlider pan;
+        SimpleSlider reverbSend;
 
         bool bDoRender;
 

@@ -85,6 +85,8 @@ class OpenALSoundPlayer : public ofBaseSoundPlayer, public ofThread {
         int getSampleRate() const {return samplerate;}
         int getNumChannels() const {return channels;}
         bool isStreamEnd() const { return stream_end;}
+        float getReverbSend() const { return reverbSend;}
+        void setReverbSend(float send) { reverbSend = send;}
 
         int getFileFormat() const {return fileformat;}
         std::string getFormatString() const {return format_string;}
@@ -166,4 +168,9 @@ class OpenALSoundPlayer : public ofBaseSoundPlayer, public ofThread {
         std::atomic<bool> stream_end;
 
         bool nonSpatialisedStereo;
+
+        // OpenAL filter
+        ALuint filter;
+        float reverbSend;
+        bool bUseFilter;
 };

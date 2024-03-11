@@ -1,6 +1,6 @@
 bin/data/settings/
 bin/feedra_debug
+bin/feedra
 bin/libfmod.so
 build/
 feedra.qbs.user
-

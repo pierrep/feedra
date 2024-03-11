@@ -4,6 +4,15 @@
 #include "AppConfig.h"
 #include "OpenALSoundPlayer.h"
 
+typedef struct
+{
+    OpenALSoundPlayer* audioPlayer;
+    int minDelay;
+    int maxDelay;
+    int totalDelay;
+    int curDelay;
+} AudioSample;
+
 class SoundPlayer: public Interactive
 {
 public:
@@ -35,14 +44,19 @@ public:
     float getDuration() const;
     int getSampleRate() const;
     int getNumChannels() const ;
+    int getMinDelay() const;
+    int getMaxDelay() const;
+    float getReverbSend() const;
+    void setReverbSend(float send);
     void recalculateDelay();
 
     AppConfig* config;
-    vector<OpenALSoundPlayer*> audioPlayer;
-    vector<int> minDelay;
-    vector<int> maxDelay;
-    vector<int> totalDelay;
-    vector<int> curDelay;
+    vector<AudioSample> player;
+//    vector<OpenALSoundPlayer*> audioPlayer;
+//    vector<int> minDelay;
+//    vector<int> maxDelay;
+//    vector<int> totalDelay;
+//    vector<int> curDelay;
     bool bPlayingDelay;
     int curSound;
 

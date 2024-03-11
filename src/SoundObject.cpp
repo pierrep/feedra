@@ -102,13 +102,17 @@ void SoundObject::load(int idx)
                 {
                     pan = setting[prefix+"-pan"];
                 }
+                if(!setting[prefix+"-reverbsend"].empty())
+                {
+                    reverbSend = setting[prefix+"-reverbsend"];
+                }
                 if(!setting[prefix+"-mindelay"].empty())
                 {
-                    soundPlayer.minDelay[0] = setting[prefix+"-mindelay"];
+                    soundPlayer.player[0].minDelay = setting[prefix+"-mindelay"];
                 }
                 if(!setting[prefix+"-maxdelay"].empty())
                 {
-                    soundPlayer.maxDelay[0] = setting[prefix+"-maxdelay"];
+                    soundPlayer.player[0].maxDelay = setting[prefix+"-maxdelay"];
                 }
             }
         }
@@ -117,6 +121,7 @@ void SoundObject::load(int idx)
     soundPlayer.setup(config,id);
     soundPlayer.setLoop(looper.isLooping);
     soundPlayer.setPan(pan);
+    soundPlayer.setReverbSend(reverbSend);
 }
 
 //--------------------------------------------------------------
@@ -138,8 +143,11 @@ void SoundObject::save()
     soundobj[prefix+"-samplerate"] = sample_rate;
     soundobj[prefix+"-channels"] = channels;
     soundobj[prefix+"-pan"] = soundPlayer.getPan();
-    soundobj[prefix+"-mindelay"] = soundPlayer.minDelay[0];
-    soundobj[prefix+"-maxdelay"] = soundPlayer.maxDelay[0];    
+    soundobj[prefix+"-reverbsend"] = soundPlayer.getReverbSend();
+
+    // Need to make these per sample
+    soundobj[prefix+"-mindelay"] = soundPlayer.player[0].minDelay;
+    soundobj[prefix+"-maxdelay"] = soundPlayer.player[0].maxDelay;    
 
     config->settings.push_back(soundobj);
 
@@ -177,6 +185,8 @@ SoundObject::SoundObject(AppConfig* _config, size_t _scene_id, int _id, int _x, 
     isSetup = false;
     config = _config;
     channels = 0;
+    pan = 0.0f;
+    reverbSend = 0.0f;
     sample_rate = 0;
     fadeVolume = 1.0f;
     isFading = false;

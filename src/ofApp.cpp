@@ -7,16 +7,9 @@ ofApp::~ofApp()
     ofRemoveListener(minDelay.clickedEvent, this, &ofApp::onClicked);
     ofRemoveListener(maxDelay.clickedEvent, this, &ofApp::onClicked);
     ofRemoveListener(pan.clickedEvent, this, &ofApp::onClicked);
+    ofRemoveListener(reverbSend.clickedEvent, this, &ofApp::onClicked);
 
     saveConfig();
-
-    for(size_t i=0;i < scenes.size();i++) {
-//        for(size_t j = 0; j < scenes[i]->sounds.size();j++)
-//        {
-//            scenes[i]->sounds[j]->disableAllEvents();
-//        }
-//        scenes[i]->disable();
-    }
 
     for(size_t i=0;i < scenes.size();i++) {        
         delete scenes[i];
@@ -161,9 +154,15 @@ void ofApp::setup(){
     pan.setFont(&config.f2());
     pan.setLabelString("Panning");
 
+    reverbSend.setup(4,config.xoffset+600*config.x_scale,ofGetHeight() - 55*config.y_scale,200*config.x_scale,20*config.y_scale,0,1,0,false,false);
+    reverbSend.setScale(config.y_scale, config.x_scale);
+    reverbSend.setFont(&config.f2());
+    reverbSend.setLabelString("Reverb send");
+
     ofAddListener(minDelay.clickedEvent, this, &ofApp::onClicked);
     ofAddListener(maxDelay.clickedEvent, this, &ofApp::onClicked);
     ofAddListener(pan.clickedEvent, this, &ofApp::onClicked);
+    ofAddListener(reverbSend.clickedEvent, this, &ofApp::onClicked);
 
     maxScenes = 0;
     loadScenes();
@@ -214,7 +213,7 @@ void ofApp::setup(){
 //--------------------------------------------------------------
 void ofApp::updateSliders()
 {
-    int md = scenes[config.activeSceneIdx]->sounds[config.activeSoundIdx]->soundPlayer.minDelay[0];
+    int md = scenes[config.activeSceneIdx]->sounds[config.activeSoundIdx]->soundPlayer.getMinDelay();
     //cout << "md = " << md << endl;
     int l = minDelay.getHighValue();
     float pct = (float) md /(float) 1000 * 1.0f/l;
@@ -223,7 +222,7 @@ void ofApp::updateSliders()
 
     maxDelay.setLowValue(minDelay.getValue());
     maxDelay.setHighValue(minDelay.getValue()+30);
-    md = scenes[config.activeSceneIdx]->sounds[config.activeSoundIdx]->soundPlayer.maxDelay[0];
+    md = scenes[config.activeSceneIdx]->sounds[config.activeSoundIdx]->soundPlayer.getMaxDelay();
     //cout << "md = " << md << endl;
     l = minDelay.getHighValue();
     pct = (float) md /(float) 1000 * 1.0f/l;
@@ -233,6 +232,9 @@ void ofApp::updateSliders()
     float p = scenes[config.activeSceneIdx]->sounds[config.activeSoundIdx]->soundPlayer.getPan();
     pct = (p+1.0f) / 2.0f;
     pan.setPercent(pct);
+
+    float send = scenes[config.activeSceneIdx]->sounds[config.activeSoundIdx]->soundPlayer.getReverbSend();
+    reverbSend.setPercent(send);
 }
 
 //--------------------------------------------------------------
@@ -252,12 +254,12 @@ void ofApp::onClicked(SliderData& args) {
         //min value
         maxDelay.setLowValue(minDelay.getValue());
         maxDelay.setHighValue(minDelay.getValue()+30);
-        scenes[config.activeSceneIdx]->sounds[config.activeSoundIdx]->soundPlayer.minDelay[0] = minDelay.getValue()*1000;        
+        scenes[config.activeSceneIdx]->sounds[config.activeSoundIdx]->soundPlayer.player[0].minDelay = minDelay.getValue()*1000;
         scenes[config.activeSceneIdx]->sounds[config.activeSoundIdx]->soundPlayer.recalculateDelay();
     }
     if(args.id == 2) {
         // max value
-        scenes[config.activeSceneIdx]->sounds[config.activeSoundIdx]->soundPlayer.maxDelay[0] = maxDelay.getValue()*1000;
+        scenes[config.activeSceneIdx]->sounds[config.activeSoundIdx]->soundPlayer.player[0].maxDelay = maxDelay.getValue()*1000;
         scenes[config.activeSceneIdx]->sounds[config.activeSoundIdx]->soundPlayer.recalculateDelay();
     }
 
@@ -265,7 +267,10 @@ void ofApp::onClicked(SliderData& args) {
         // panning
         scenes[config.activeSceneIdx]->sounds[config.activeSoundIdx]->soundPlayer.setPan(pan.getValue());
     }
-
+    if(args.id == 4) {
+        // reverb send
+        scenes[config.activeSceneIdx]->sounds[config.activeSoundIdx]->soundPlayer.setReverbSend(reverbSend.getValue());
+    }
 
 }
 
@@ -339,16 +344,6 @@ void ofApp::addNewScene()
     s->setup();
     scenes.push_back(s);
 
-//    for(size_t i=0;i < scenes.size();i++) {
-//        if(config.activeScene != scenes[i]->id) {
-//            for(size_t j = 0; j < scenes[i]->sounds.size();j++)
-//            {
-//                scenes[i]->sounds[j]->disableAllEvents();
-//            }
-//            scenes[i]->disable();
-//        }
-//    }
-
     addScene->y = y + config.scene_spacing;
 
     if(scenes.size() >= config.max_scenes) {
@@ -383,7 +378,6 @@ void ofApp::deleteScene()
         }
 
         updateScenePosition();
-        //cout << "delete scene " << scene_to_delete << endl;
     }
 }
 
@@ -447,9 +441,9 @@ void ofApp::draw(){
     // Current selected sound info
     if(scenes[config.activeSceneIdx]->sounds[config.activeSoundIdx]->soundPlayer.isLoaded()) {
         //cout << "config.activeSceneIdx = " << config.activeSceneIdx << " config.activeSoundIdx = " << config.activeSoundIdx << endl;
-        int mind = scenes[config.activeSceneIdx]->sounds[config.activeSoundIdx]->soundPlayer.minDelay[0];
-        int maxd = scenes[config.activeSceneIdx]->sounds[config.activeSoundIdx]->soundPlayer.maxDelay[0];
-        float total = (float) scenes[config.activeSceneIdx]->sounds[config.activeSoundIdx]->soundPlayer.totalDelay[0]/1000.0f;
+        int mind = scenes[config.activeSceneIdx]->sounds[config.activeSoundIdx]->soundPlayer.player[0].minDelay;
+        int maxd = scenes[config.activeSceneIdx]->sounds[config.activeSoundIdx]->soundPlayer.player[0].maxDelay;
+        float total = (float) scenes[config.activeSceneIdx]->sounds[config.activeSoundIdx]->soundPlayer.player[0].totalDelay/1000.0f;
 
         std::stringstream stream;
         stream << std::fixed << std::setprecision(0) << round(total);
@@ -459,7 +453,7 @@ void ofApp::draw(){
         string path = scenes[config.activeSceneIdx]->sounds[config.activeSoundIdx]->soundpath;
         int chan = scenes[config.activeSceneIdx]->sounds[config.activeSoundIdx]->channels;
         int sr = scenes[config.activeSceneIdx]->sounds[config.activeSoundIdx]->sample_rate;
-        string fs = scenes[config.activeSceneIdx]->sounds[config.activeSoundIdx]->soundPlayer.audioPlayer[0]->getFormatString();
+        string fs = scenes[config.activeSceneIdx]->sounds[config.activeSoundIdx]->soundPlayer.player[0].audioPlayer->getFormatString();
 
         ofSetColor(0);
         config.f1().drawString("Random delay:\n\n"+ofToString(t)+" secs", 270*config.x_scale, ofGetHeight() - 70*config.y_scale);
@@ -475,6 +469,7 @@ void ofApp::draw(){
         minDelay.render();
         maxDelay.render();
         pan.render();
+        reverbSend.render();
     }
     mainVolume.render();
 }

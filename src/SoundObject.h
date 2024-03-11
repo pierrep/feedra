@@ -57,6 +57,7 @@ public:
     int sample_rate;
     int channels;
     float pan;
+    float reverbSend;
 
     bool isFading;
     int fadeDirection;

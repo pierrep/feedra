@@ -6,6 +6,8 @@
 #include "ofLog.h"
 #include "ofEvents.h"
 #include <sndfile.h>
+#include "AL/efx.h"
+#include "AL/efx-presets.h"
 
 #ifdef OF_USING_MPG123
 #include <mpg123.h>
@@ -15,6 +17,15 @@ using namespace std;
 
 static ALCdevice * alDevice = nullptr;
 static ALCcontext * alContext = nullptr;
+
+static bool bUseEffects = false;
+static ALuint effects[2] = { 0, 0 };
+static ALuint slots[2] = { 0, 0 };
+static EFXEAXREVERBPROPERTIES reverbs[2] = {
+    EFX_REVERB_PRESET_ALLEY,
+    EFX_REVERB_PRESET_ARENA
+};
+
 vector<float> OpenALSoundPlayer::window;
 float OpenALSoundPlayer::windowSum = 0.f;
 
@@ -34,6 +45,47 @@ void OpenALSoundUpdate(){
 }
 
 #include "AL/alext.h"
+
+/* Filter object functions */
+static LPALGENFILTERS alGenFilters;
+static LPALDELETEFILTERS alDeleteFilters;
+static LPALISFILTER alIsFilter;
+static LPALFILTERI alFilteri;
+static LPALFILTERIV alFilteriv;
+static LPALFILTERF alFilterf;
+static LPALFILTERFV alFilterfv;
+static LPALGETFILTERI alGetFilteri;
+static LPALGETFILTERIV alGetFilteriv;
+static LPALGETFILTERF alGetFilterf;
+static LPALGETFILTERFV alGetFilterfv;
+
+/* Effect object functions */
+static LPALGENEFFECTS alGenEffects;
+static LPALDELETEEFFECTS alDeleteEffects;
+static LPALISEFFECT alIsEffect;
+static LPALEFFECTI alEffecti;
+static LPALEFFECTIV alEffectiv;
+static LPALEFFECTF alEffectf;
+static LPALEFFECTFV alEffectfv;
+static LPALGETEFFECTI alGetEffecti;
+static LPALGETEFFECTIV alGetEffectiv;
+static LPALGETEFFECTF alGetEffectf;
+static LPALGETEFFECTFV alGetEffectfv;
+
+/* Auxiliary Effect Slot object functions */
+static LPALGENAUXILIARYEFFECTSLOTS alGenAuxiliaryEffectSlots;
+static LPALDELETEAUXILIARYEFFECTSLOTS alDeleteAuxiliaryEffectSlots;
+static LPALISAUXILIARYEFFECTSLOT alIsAuxiliaryEffectSlot;
+static LPALAUXILIARYEFFECTSLOTI alAuxiliaryEffectSloti;
+static LPALAUXILIARYEFFECTSLOTIV alAuxiliaryEffectSlotiv;
+static LPALAUXILIARYEFFECTSLOTF alAuxiliaryEffectSlotf;
+static LPALAUXILIARYEFFECTSLOTFV alAuxiliaryEffectSlotfv;
+static LPALGETAUXILIARYEFFECTSLOTI alGetAuxiliaryEffectSloti;
+static LPALGETAUXILIARYEFFECTSLOTIV alGetAuxiliaryEffectSlotiv;
+static LPALGETAUXILIARYEFFECTSLOTF alGetAuxiliaryEffectSlotf;
+static LPALGETAUXILIARYEFFECTSLOTFV alGetAuxiliaryEffectSlotfv;
+
+/* OpenAL soft specific functions e.g. to get latency */
 static LPALSOURCEDSOFT alSourcedSOFT;
 static LPALSOURCE3DSOFT alSource3dSOFT;
 static LPALSOURCEDVSOFT alSourcedvSOFT;
@@ -46,7 +98,6 @@ static LPALSOURCEI64VSOFT alSourcei64vSOFT;
 static LPALGETSOURCEI64SOFT alGetSourcei64SOFT;
 static LPALGETSOURCE3I64SOFT alGetSource3i64SOFT;
 static LPALGETSOURCEI64VSOFT alGetSourcei64vSOFT;
-
 
 // ----------------------------------------------------------------------------
 // from http://devmaster.net/posts/2893/openal-lesson-6-advanced-loading-and-error-handles
@@ -193,6 +244,62 @@ static string getMpg123EncodingString(int encoding) {
 }
 #endif
 
+/* LoadEffect loads the given initial reverb properties into the given OpenAL
+ * effect object, and returns non-zero on success.
+ */
+static int LoadEffect(ALuint effect, const EFXEAXREVERBPROPERTIES *reverb)
+{
+    ALenum err;
+
+    alGetError();
+
+    /* Prepare the effect for EAX Reverb (standard reverb doesn't contain
+     * the needed panning vectors).
+     */
+    alEffecti(effect, AL_EFFECT_TYPE, AL_EFFECT_EAXREVERB);
+    err = alGetError();
+    if(err != AL_NO_ERROR)
+    {
+        fprintf(stderr, "Failed to set EAX Reverb: %s (0x%04x)\n", alGetString(err), err);
+        return 0;
+    }
+
+    /* Load the reverb properties. */
+    alEffectf(effect, AL_EAXREVERB_DENSITY, reverb->flDensity);
+    alEffectf(effect, AL_EAXREVERB_DIFFUSION, reverb->flDiffusion);
+    alEffectf(effect, AL_EAXREVERB_GAIN, reverb->flGain);
+    alEffectf(effect, AL_EAXREVERB_GAINHF, reverb->flGainHF);
+    alEffectf(effect, AL_EAXREVERB_GAINLF, reverb->flGainLF);
+    alEffectf(effect, AL_EAXREVERB_DECAY_TIME, reverb->flDecayTime);
+    alEffectf(effect, AL_EAXREVERB_DECAY_HFRATIO, reverb->flDecayHFRatio);
+    alEffectf(effect, AL_EAXREVERB_DECAY_LFRATIO, reverb->flDecayLFRatio);
+    alEffectf(effect, AL_EAXREVERB_REFLECTIONS_GAIN, reverb->flReflectionsGain);
+    alEffectf(effect, AL_EAXREVERB_REFLECTIONS_DELAY, reverb->flReflectionsDelay);
+    alEffectfv(effect, AL_EAXREVERB_REFLECTIONS_PAN, reverb->flReflectionsPan);
+    alEffectf(effect, AL_EAXREVERB_LATE_REVERB_GAIN, reverb->flLateReverbGain);
+    alEffectf(effect, AL_EAXREVERB_LATE_REVERB_DELAY, reverb->flLateReverbDelay);
+    alEffectfv(effect, AL_EAXREVERB_LATE_REVERB_PAN, reverb->flLateReverbPan);
+    alEffectf(effect, AL_EAXREVERB_ECHO_TIME, reverb->flEchoTime);
+    alEffectf(effect, AL_EAXREVERB_ECHO_DEPTH, reverb->flEchoDepth);
+    alEffectf(effect, AL_EAXREVERB_MODULATION_TIME, reverb->flModulationTime);
+    alEffectf(effect, AL_EAXREVERB_MODULATION_DEPTH, reverb->flModulationDepth);
+    alEffectf(effect, AL_EAXREVERB_AIR_ABSORPTION_GAINHF, reverb->flAirAbsorptionGainHF);
+    alEffectf(effect, AL_EAXREVERB_HFREFERENCE, reverb->flHFReference);
+    alEffectf(effect, AL_EAXREVERB_LFREFERENCE, reverb->flLFReference);
+    alEffectf(effect, AL_EAXREVERB_ROOM_ROLLOFF_FACTOR, reverb->flRoomRolloffFactor);
+    alEffecti(effect, AL_EAXREVERB_DECAY_HFLIMIT, reverb->iDecayHFLimit);
+
+    /* Check if an error occurred, and return failure if so. */
+    err = alGetError();
+    if(err != AL_NO_ERROR)
+    {
+        fprintf(stderr, "Error setting up reverb: %s\n", alGetString(err));
+        return 0;
+    }
+
+    return 1;
+}
+
 #define BUFFER_STREAM_SIZE 4096
 
 
@@ -212,6 +319,8 @@ OpenALSoundPlayer::OpenALSoundPlayer(){
 	fftCfg			= 0;
 	streamf			= 0;
     nonSpatialisedStereo = true;
+    bUseFilter = false;
+    reverbSend      = 0.0f;
 #ifdef OF_USING_MPG123
 	mp3streamf		= 0;
 #endif
@@ -377,8 +486,75 @@ void OpenALSoundPlayer::printExtensions (const char *header, char separator, con
 
 //---------------------------------------
 // this should only be called once
-void OpenALSoundPlayer::initialize(){    
+void OpenALSoundPlayer::initialize(){
+
 	if( !alDevice ){
+
+        /* C doesn't allow casting between function and non-function pointer types, so
+         * with C99 we need to use a union to reinterpret the pointer type. Pre-C99
+         * still needs to use a normal cast and live with the warning (C++ is fine with
+         * a regular reinterpret_cast).
+         */
+        #if __STDC_VERSION__ >= 199901L
+        #define FUNCTION_CAST(T, ptr) (union{void *p; T f;}){ptr}.f
+        #elif defined(__cplusplus)
+        #define FUNCTION_CAST(T, ptr) reinterpret_cast<T>(ptr)
+        #else
+        #define FUNCTION_CAST(T, ptr) (T)(ptr)
+        #endif
+
+        /* Define a macro to help load the function pointers. */
+    #define LOAD_PROC(T, x)  ((x) = FUNCTION_CAST(T, alGetProcAddress(#x)))
+        LOAD_PROC(LPALGENFILTERS, alGenFilters);
+        LOAD_PROC(LPALDELETEFILTERS, alDeleteFilters);
+        LOAD_PROC(LPALISFILTER, alIsFilter);
+        LOAD_PROC(LPALFILTERI, alFilteri);
+        LOAD_PROC(LPALFILTERIV, alFilteriv);
+        LOAD_PROC(LPALFILTERF, alFilterf);
+        LOAD_PROC(LPALFILTERFV, alFilterfv);
+        LOAD_PROC(LPALGETFILTERI, alGetFilteri);
+        LOAD_PROC(LPALGETFILTERIV, alGetFilteriv);
+        LOAD_PROC(LPALGETFILTERF, alGetFilterf);
+        LOAD_PROC(LPALGETFILTERFV, alGetFilterfv);
+
+        LOAD_PROC(LPALGENEFFECTS, alGenEffects);
+        LOAD_PROC(LPALDELETEEFFECTS, alDeleteEffects);
+        LOAD_PROC(LPALISEFFECT, alIsEffect);
+        LOAD_PROC(LPALEFFECTI, alEffecti);
+        LOAD_PROC(LPALEFFECTIV, alEffectiv);
+        LOAD_PROC(LPALEFFECTF, alEffectf);
+        LOAD_PROC(LPALEFFECTFV, alEffectfv);
+        LOAD_PROC(LPALGETEFFECTI, alGetEffecti);
+        LOAD_PROC(LPALGETEFFECTIV, alGetEffectiv);
+        LOAD_PROC(LPALGETEFFECTF, alGetEffectf);
+        LOAD_PROC(LPALGETEFFECTFV, alGetEffectfv);
+
+        LOAD_PROC(LPALGENAUXILIARYEFFECTSLOTS, alGenAuxiliaryEffectSlots);
+        LOAD_PROC(LPALDELETEAUXILIARYEFFECTSLOTS, alDeleteAuxiliaryEffectSlots);
+        LOAD_PROC(LPALISAUXILIARYEFFECTSLOT, alIsAuxiliaryEffectSlot);
+        LOAD_PROC(LPALAUXILIARYEFFECTSLOTI, alAuxiliaryEffectSloti);
+        LOAD_PROC(LPALAUXILIARYEFFECTSLOTIV, alAuxiliaryEffectSlotiv);
+        LOAD_PROC(LPALAUXILIARYEFFECTSLOTF, alAuxiliaryEffectSlotf);
+        LOAD_PROC(LPALAUXILIARYEFFECTSLOTFV, alAuxiliaryEffectSlotfv);
+        LOAD_PROC(LPALGETAUXILIARYEFFECTSLOTI, alGetAuxiliaryEffectSloti);
+        LOAD_PROC(LPALGETAUXILIARYEFFECTSLOTIV, alGetAuxiliaryEffectSlotiv);
+        LOAD_PROC(LPALGETAUXILIARYEFFECTSLOTF, alGetAuxiliaryEffectSlotf);
+        LOAD_PROC(LPALGETAUXILIARYEFFECTSLOTFV, alGetAuxiliaryEffectSlotfv);
+
+        LOAD_PROC(LPALSOURCEDSOFT, alSourcedSOFT);
+        LOAD_PROC(LPALSOURCE3DSOFT, alSource3dSOFT);
+        LOAD_PROC(LPALSOURCEDVSOFT, alSourcedvSOFT);
+        LOAD_PROC(LPALGETSOURCEDSOFT, alGetSourcedSOFT);
+        LOAD_PROC(LPALGETSOURCE3DSOFT, alGetSource3dSOFT);
+        LOAD_PROC(LPALGETSOURCEDVSOFT, alGetSourcedvSOFT);
+        LOAD_PROC(LPALSOURCEI64SOFT, alSourcei64SOFT);
+        LOAD_PROC(LPALSOURCE3I64SOFT, alSource3i64SOFT);
+        LOAD_PROC(LPALSOURCEI64VSOFT, alSourcei64vSOFT);
+        LOAD_PROC(LPALGETSOURCEI64SOFT, alGetSourcei64SOFT);
+        LOAD_PROC(LPALGETSOURCE3I64SOFT, alGetSource3i64SOFT);
+        LOAD_PROC(LPALGETSOURCEI64VSOFT, alGetSourcei64vSOFT);
+    #undef LOAD_PROC
+
         ALCint major, minor;
 		alDevice = alcOpenDevice( nullptr );
 		if( !alDevice ){
@@ -390,7 +566,8 @@ void OpenALSoundPlayer::initialize(){
             alcGetIntegerv(alDevice, ALC_MINOR_VERSION, 1, &minor);            
 		}
 		// Create OpenAL context and make it current. If fails, close the OpenAL device that was just opened.
-		alContext = alcCreateContext( alDevice, nullptr );
+        int attrlist[] = { ALC_MAX_AUXILIARY_SENDS, 4, 0 };
+        alContext = alcCreateContext( alDevice, attrlist );
 		if( !alContext ){
 			ALCenum err = alcGetError( alDevice ); 
 			ofLogError("OpenALSoundPlayer") << "initialize(): couldn't not create OpenAL context : "<< getALCErrorString( err );
@@ -408,6 +585,7 @@ void OpenALSoundPlayer::initialize(){
 #ifdef OF_USING_MPG123
 		mpg123_init();
 #endif
+
         ofLogNotice() << "Vendor: \""<<  alGetString(AL_VENDOR) << "\"";
         ofLogNotice() << "Renderer: \""<< alGetString(AL_RENDERER) << "\"";
         ofLogNotice() << "Version: " << alGetString(AL_VERSION);
@@ -417,38 +595,52 @@ void OpenALSoundPlayer::initialize(){
         ofLogNotice() << "Mixer frequency: " << data[0] << " hz";
         listDevices();
 
+        if(!alcIsExtensionPresent(alDevice, "ALC_EXT_EFX"))
+        {
+            ofLogError() << "EFX not supported, disabling effects";
+            bUseEffects = false;
+        } else {
+            bUseEffects = true;
+            ofLogNotice() << "EFX enabled, using effects";
+        }
+
+        if(bUseEffects) {
+            int num_sends = 0;
+            alcGetIntegerv(alDevice, ALC_MAX_AUXILIARY_SENDS, 1, &num_sends);
+            if(alcGetError(alDevice) != ALC_NO_ERROR || num_sends < 2)
+            {
+                ofLogError() <<  "Device does not support multiple sends (" << num_sends <<" available)";
+                bUseEffects = false;
+            } else {
+                ofLogNotice() << "Device supports " << num_sends <<" effect sends";
+
+                /* Generate FX slots */
+                alGenEffects(2, effects);
+                if(!LoadEffect(effects[0], &reverbs[0]) || !LoadEffect(effects[1], &reverbs[1]))
+                {
+                    ofLogError( ) <<  "Failed to load effects, aborting...";
+                    bUseEffects = false;
+                    alDeleteEffects(2, effects);
+                    close();
+                    return;
+                }
+
+                /* Create the effect slot objects, one for each "active" effect. */
+                alGenAuxiliaryEffectSlots(2, slots);
+
+                /* Tell the effect slots to use the loaded effect objects, with slot 0 for
+                 * Zone 0 and slot 1 for Zone 1. Note that this effectively copies the
+                 * effect properties. Modifying or deleting the effect object afterward
+                 * won't directly affect the effect slot until they're reapplied like this.
+                 */
+                alAuxiliaryEffectSloti(slots[0], AL_EFFECTSLOT_EFFECT, (ALint)effects[0]);
+                alAuxiliaryEffectSloti(slots[1], AL_EFFECTSLOT_EFFECT, (ALint)effects[1]);
+                assert(alGetError()==AL_NO_ERROR && "Failed to set effect slot");
+            }
+        }
 //        alcGetIntegerv(alDevice, ALC_REFRESH, 1, data+1);
 //        printf("refresh rate : %u hz\n", data[0]/data[1]);
 	}
-
-    /* C doesn't allow casting between function and non-function pointer types, so
-     * with C99 we need to use a union to reinterpret the pointer type. Pre-C99
-     * still needs to use a normal cast and live with the warning (C++ is fine with
-     * a regular reinterpret_cast).
-     */
-    #if __STDC_VERSION__ >= 199901L
-    #define FUNCTION_CAST(T, ptr) (union{void *p; T f;}){ptr}.f
-    #elif defined(__cplusplus)
-    #define FUNCTION_CAST(T, ptr) reinterpret_cast<T>(ptr)
-    #else
-    #define FUNCTION_CAST(T, ptr) (T)(ptr)
-    #endif
-
-    /* Define a macro to help load the function pointers. */
-#define LOAD_PROC(T, x)  ((x) = FUNCTION_CAST(T, alGetProcAddress(#x)))
-    LOAD_PROC(LPALSOURCEDSOFT, alSourcedSOFT);
-    LOAD_PROC(LPALSOURCE3DSOFT, alSource3dSOFT);
-    LOAD_PROC(LPALSOURCEDVSOFT, alSourcedvSOFT);
-    LOAD_PROC(LPALGETSOURCEDSOFT, alGetSourcedSOFT);
-    LOAD_PROC(LPALGETSOURCE3DSOFT, alGetSource3dSOFT);
-    LOAD_PROC(LPALGETSOURCEDVSOFT, alGetSourcedvSOFT);
-    LOAD_PROC(LPALSOURCEI64SOFT, alSourcei64SOFT);
-    LOAD_PROC(LPALSOURCE3I64SOFT, alSource3i64SOFT);
-    LOAD_PROC(LPALSOURCEI64VSOFT, alSourcei64vSOFT);
-    LOAD_PROC(LPALGETSOURCEI64SOFT, alGetSourcei64SOFT);
-    LOAD_PROC(LPALGETSOURCE3I64SOFT, alGetSource3i64SOFT);
-    LOAD_PROC(LPALGETSOURCEI64VSOFT, alGetSourcei64vSOFT);
-#undef LOAD_PROC
 }
 
 //---------------------------------------
@@ -472,6 +664,12 @@ void OpenALSoundPlayer::close(){
 #ifdef OF_USING_MPG123
 			mpg123_exit();
 #endif
+            if(bUseEffects) {
+                alDeleteAuxiliaryEffectSlots(2, slots);
+                alDeleteEffects(2, effects);
+                bUseEffects = false;
+            }
+
 			alcMakeContextCurrent(nullptr);
 			alcDestroyContext(alContext);
 			alContext = nullptr;
@@ -813,6 +1011,7 @@ bool OpenALSoundPlayer::load(const std::filesystem::path& _fileName, bool is_str
     openALformat = AL_NONE;
     if(channels == 1)
     {
+        nonSpatialisedStereo = false;
         if(sample_format == Int16)
             openALformat = AL_FORMAT_MONO16;
         else if(sample_format == Float)
@@ -841,6 +1040,7 @@ bool OpenALSoundPlayer::load(const std::filesystem::path& _fileName, bool is_str
     } else {
         sources.resize(channels);
     }
+
     alGetError(); // Clear error.
     alGenSources(sources.size(), &sources[0]);
     err = alGetError();
@@ -848,6 +1048,26 @@ bool OpenALSoundPlayer::load(const std::filesystem::path& _fileName, bool is_str
         ofLogError("OpenALSoundPlayer") << "loadSound(): couldn't generate sources for " << fileName << ": "
         << (int) err << " " << getALErrorString(err);
         return false;
+    }
+
+    if(bUseEffects) {
+        reverbSend = 0.0f;
+        alGenFilters(1, &filter);
+        alFilteri(filter, AL_FILTER_TYPE, AL_FILTER_LOWPASS);
+
+        alFilterf(filter, AL_LOWPASS_GAIN, reverbSend);
+        alSource3i(sources[0], AL_AUXILIARY_SEND_FILTER, (ALint)slots[0], 0, filter);
+
+        //alSource3i(sources[0], AL_AUXILIARY_SEND_FILTER, (ALint)slots[0], 0, AL_FILTER_NULL);
+        //alSource3i(sources[0], AL_AUXILIARY_SEND_FILTER, (ALint)slots[1], 1, AL_FILTER_NULL);
+        err = alGetError();
+        if (err != AL_NO_ERROR){
+            ofLogError("OpenALSoundPlayer:") << "attaching FX sends failed..."
+            << (int) err << " " << getALErrorString(err);
+            return false;
+        }
+        ofAddListener(ofEvents().update,this,&OpenALSoundPlayer::update);
+        bUseFilter = true;
     }
 
 	if(isStreaming){
@@ -1111,28 +1331,41 @@ void OpenALSoundPlayer::threadedFunction(){
 //------------------------------------------------------------
 void OpenALSoundPlayer::update(ofEventArgs & args){
 
-	for(int i=1; i<int(sources.size())/channels; ){
-		ALint state;
-		alGetSourcei(sources[i*channels],AL_SOURCE_STATE,&state);
+    if(bMultiPlay) {
+        for(int i=1; i<int(sources.size())/channels; ){
+            ALint state;
+            alGetSourcei(sources[i*channels],AL_SOURCE_STATE,&state);
 
-        ALdouble offsets[2];
-        alGetSourcedvSOFT(sources[i*channels], AL_SEC_OFFSET_LATENCY_SOFT, offsets);
-        ofLogVerbose() << " Offset: " << offsets[0] << " - Latency: " << (ALuint)(offsets[1]*1000) << " ms";
-		if(state != AL_PLAYING){
-			alDeleteSources(channels,&sources[i*channels]);
-			for(int j=0;j<channels;j++){
-				sources.erase(sources.begin()+i*channels);
-			}
-		}else{
-			i++;
-		}
-	}
+            ALdouble offsets[2];
+            alGetSourcedvSOFT(sources[i*channels], AL_SEC_OFFSET_LATENCY_SOFT, offsets);
+            ofLogVerbose() << " Offset: " << offsets[0] << " - Latency: " << (ALuint)(offsets[1]*1000) << " ms";
+            if(state != AL_PLAYING){
+                alDeleteSources(channels,&sources[i*channels]);
+                for(int j=0;j<channels;j++){
+                    sources.erase(sources.begin()+i*channels);
+                }
+            }else{
+                i++;
+            }
+        }
+    }
+
+    if(bUseEffects)
+    {
+        alFilterf(filter, AL_LOWPASS_GAIN, reverbSend);
+        alSource3i(sources[0], AL_AUXILIARY_SEND_FILTER, (ALint)slots[0], 0, filter);
+    }
 }
 
 //------------------------------------------------------------
 void OpenALSoundPlayer::unload(){
 	stop();
 	ofRemoveListener(ofEvents().update,this,&OpenALSoundPlayer::update);
+
+    if(bUseEffects)
+    {
+        ofRemoveListener(ofEvents().update,this,&OpenALSoundPlayer::update);
+    }
 
 	// Only lock the thread where necessary.
 	{
@@ -1141,6 +1374,10 @@ void OpenALSoundPlayer::unload(){
 		// Delete sources before buffers.
 		alDeleteSources(sources.size(),&sources[0]);
 		alDeleteBuffers(buffers.size(),&buffers[0]);
+        if(bUseFilter) {
+            alDeleteFilters(1, &filter);
+            bUseFilter = false;
+        }
 
 		sources.clear();
 		buffers.clear();
@@ -1287,8 +1524,8 @@ void OpenALSoundPlayer::setPan(float p){
 	p = glm::clamp(p, -1.f, 1.f);
 	pan = p;
     if(channels==1){
-		float pos[3] = {p,0,0};
-		alSourcefv(sources[sources.size()-1],AL_POSITION,pos);
+        float pos[3] = {pan, 0, -sqrtf(1.0f - pan*pan)};
+        alSourcefv(sources[sources.size()-1],AL_POSITION,pos);
 	}else{
         // calculates left/right volumes from pan-value (constant panning law)
         // see: Curtis Roads: Computer Music Tutorial p 460
