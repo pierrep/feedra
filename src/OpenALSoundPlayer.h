@@ -4,6 +4,7 @@
 
 #include "ofSoundBaseTypes.h"
 #include "ofThread.h"
+#include "ofEvent.h"
 
 #if defined (TARGET_OF_IOS) || defined (TARGET_OSX)
 #include <OpenAL/al.h>
@@ -73,6 +74,7 @@ class OpenALSoundPlayer : public ofBaseSoundPlayer, public ofThread {
         float getVolume() const;
 		bool isPaused() const;
 		bool isLoaded() const;
+        bool isLooping() const;
 
 		static void initialize();
 		static void close();
@@ -90,6 +92,9 @@ class OpenALSoundPlayer : public ofBaseSoundPlayer, public ofThread {
 
         int getFileFormat() const {return fileformat;}
         std::string getFormatString() const {return format_string;}
+
+        //static ofEvent<OpenALSoundPlayer *> playbackEnded;
+        //OpenALSoundPlayer* playerPtr;
 
 	protected:
 		void threadedFunction();

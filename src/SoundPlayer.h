@@ -1,16 +1,21 @@
 #pragma once
 
-#include "Interactive.h"
+#include "UI/Interactive.h"
 #include "AppConfig.h"
 #include "OpenALSoundPlayer.h"
 
-typedef struct
+typedef struct AudioSample
 {
     OpenALSoundPlayer* audioPlayer;
-    int minDelay;
-    int maxDelay;
     int totalDelay;
     int curDelay;
+    float gain; //0.5f - 2.0f ?
+
+    AudioSample() {
+        totalDelay = 0;
+        curDelay = 0;
+        gain = 0;
+    }
 } AudioSample;
 
 class SoundPlayer: public Interactive
@@ -20,6 +25,7 @@ public:
     ~SoundPlayer();
     SoundPlayer(const SoundPlayer& d);
     void setup(AppConfig* conf, int id);
+    void close();
     void play();
     void stop();
     bool load(const std::filesystem::path& fileName, bool stream = false);
@@ -33,22 +39,29 @@ public:
     void setVolume(float vol);
     void setPosition(float pct);
     void setPositionMS(int ms);
+    void setMinDelay(int delay);
+    void setMaxDelay(int delay);
     float getPosition() const;
     int getPositionMS() const;
     bool isPlaying() const;
     bool isPlayingDelay() const;
     bool isLoaded() const;
+    bool isLooping() const;
+    float getGain() const;
     float getSpeed() const;
     float getPan() const;
     float getVolume() const;
     float getDuration() const;
     int getSampleRate() const;
-    int getNumChannels() const ;
+    int getNumChannels() const;
+    int getCurSound() const;
     int getMinDelay() const;
     int getMaxDelay() const;
+    int getTotalDelay() const;
     float getReverbSend() const;
     void setReverbSend(float send);
-    void recalculateDelay();
+    void recalculateDelay(int id);
+    void playbackEnded(OpenALSoundPlayer* &args);
 
     AppConfig* config;
     vector<AudioSample> player;
@@ -57,7 +70,10 @@ public:
 //    vector<int> maxDelay;
 //    vector<int> totalDelay;
 //    vector<int> curDelay;
+    int minDelay;
+    int maxDelay;
     bool bPlayingDelay;
+    //std::atomic_int curSound;
     int curSound;
 
     unsigned long curTime;
@@ -65,6 +81,9 @@ public:
 
     bool bPaused;
     bool bIsLooping;
+    bool bPlayBackEnded;
+    bool bCheckPlayBackEnded;
 
+    string filename;
     int id;
 };

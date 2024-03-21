@@ -14,10 +14,12 @@ SoundObject::SoundObject()
 //--------------------------------------------------------------
 SoundObject::~SoundObject()
 {
-    soundPlayer.stop();
+    if(soundPlayer.isPlaying()) {
+        soundPlayer.stop();
+    }
 
     ofRemoveListener(this->clickedEvent, this, &SoundObject::onClicked);
-    ofRemoveListener(soundname.onTextChange, this, &SoundObject::textFieldEnter);
+    disableAllEvents();
     //ofLogNotice() << "SoundObject destructor called...ID = " << id;
 }
 
@@ -32,6 +34,10 @@ void SoundObject::disableAllEvents()
     soundname.disable();
     volumeslider.disableEvents();
     looper.disableEvents();
+
+    if(player.isLoaded) {
+        soundname.disable();
+    }
 }
 
 //--------------------------------------------------------------
@@ -45,74 +51,99 @@ void SoundObject::enableAllEvents()
     soundname.enable();
     volumeslider.enableEvents();
     looper.enableEvents();
+
+    if(player.isLoaded) {
+        soundname.enable();
+    }
 }
 
 //--------------------------------------------------------------
-void SoundObject::load(int idx)
+void SoundObject::load()
+{
+    load("settings/settings.json");
+}
+
+//--------------------------------------------------------------
+void SoundObject::load(string newpath)
 {
     ofJson json;
-    ofFile file("settings/settings.json");
+    ofFile file(newpath);
+    string base = "scene"+ofToString(scene_id);
     string prefix = ofToString(scene_id)+"-"+ofToString(id);
+    soundpath.clear();
+
     if(file.exists()){
         file >> json;
-        for(auto & setting: json){
-            if(!setting.empty())
+        for(auto & json_obj: json){
+            if(!json_obj.empty())
             {
-                if(!setting[prefix+"-isstream"].empty())
-                {
-                    isStream = setting[prefix+"-isstream"];
-                }
-                if(!setting[prefix+"-path"].empty()) {
-                    soundpath = setting[prefix+"-path"];
-                    if(!soundpath.empty()) {
-                        bool bLoaded = false;
-                        bLoaded = soundPlayer.load(soundpath, isStream);
-                        if(bLoaded) {
-                            soundPlayer.setLoop(looper.isLooping);
-                            //channels = soundPlayer.getNumChannels();
-                            player.isLoaded = true;
-                        } else {
-                            // no need for an error here, loading mechanism will complain
-                            //ofLogError() << " Failed to load " << soundpath;
-                        }
+                ofJson setting = json_obj[prefix];
+                if(!setting.empty()) {
+                    if(!setting["isstream"].empty())
+                    {
+                        isStream = setting["isstream"];
                     }
-                }
-                if(!setting[prefix+"-soundname"].empty())
-                {
-                    soundname.text = setting[prefix+"-soundname"];
-                    soundname.enable();
-                }
-                if(!setting[prefix+"-volume"].empty())
-                {
-                    volumeslider.setPercent(setting[prefix+"-volume"]);
-                }
-                if(!setting[prefix+"-loop"].empty())
-                {
-                    looper.isLooping = setting[prefix+"-loop"];                    
-                }
-                if(!setting[prefix+"-samplerate"].empty())
-                {
-                    sample_rate = setting[prefix+"-samplerate"];
-                }
-                if(!setting[prefix+"-channels"].empty())
-                {
-                    channels = setting[prefix+"-channels"];
-                }
-                if(!setting[prefix+"-pan"].empty())
-                {
-                    pan = setting[prefix+"-pan"];
-                }
-                if(!setting[prefix+"-reverbsend"].empty())
-                {
-                    reverbSend = setting[prefix+"-reverbsend"];
-                }
-                if(!setting[prefix+"-mindelay"].empty())
-                {
-                    soundPlayer.player[0].minDelay = setting[prefix+"-mindelay"];
-                }
-                if(!setting[prefix+"-maxdelay"].empty())
-                {
-                    soundPlayer.player[0].maxDelay = setting[prefix+"-maxdelay"];
+                    ofJson samples = setting["samples"];
+                    for(int i = 0; i < samples.size();i++)
+                    {
+                        if(!samples["sample-"+ofToString(i)].empty()) {
+                            string new_path = samples["sample-"+ofToString(i)]["path"];
+                            soundpath.push_back(new_path);
+
+                            float pitch = samples["sample-"+ofToString(i)]["pitch"];
+                            float gain = samples["sample-"+ofToString(i)]["gain"];
+                            float pan = samples["sample-"+ofToString(i)]["pan"];
+
+                            if(i > soundPlayer.player.size()-1) {
+                                AudioSample s;
+                                s.audioPlayer = new OpenALSoundPlayer();
+                                s.audioPlayer->setSpeed(pitch);
+                                //s.audioPlayer->setVolume(gain);
+                                s.audioPlayer->setPan(pan);
+                                soundPlayer.player.push_back(s);
+                            }
+                            bool bLoaded = soundPlayer.load(new_path, i, isStream);
+                            if(bLoaded) {
+                                //cout << "loaded " << soundpath[i] << endl;
+                                soundPlayer.recalculateDelay(i);
+                                player.isLoaded = true;
+                            }
+                        }
+
+                    }
+                    if(!setting["soundname"].empty())
+                    {
+                        soundname.text = setting["soundname"];
+                        soundname.enable();
+                    }
+                    if(!setting["volume"].empty())
+                    {
+                        volumeslider.setPercent(setting["volume"]);
+                    }
+                    if(!setting["loop"].empty())
+                    {
+                        looper.isLooping = setting["loop"];
+                    }
+                    if(!setting["samplerate"].empty())
+                    {
+                        sample_rate = setting["samplerate"];
+                    }
+                    if(!setting["channels"].empty())
+                    {
+                        channels = setting["channels"];
+                    }
+                    if(!setting["reverbsend"].empty())
+                    {
+                        reverbSend = setting["reverbsend"];
+                    }
+                    if(!setting["mindelay"].empty())
+                    {
+                        soundPlayer.minDelay = setting["mindelay"];
+                    }
+                    if(!setting["maxdelay"].empty())
+                    {
+                        soundPlayer.maxDelay = setting["maxdelay"];
+                    }
                 }
             }
         }
@@ -120,7 +151,6 @@ void SoundObject::load(int idx)
 
     soundPlayer.setup(config,id);
     soundPlayer.setLoop(looper.isLooping);
-    soundPlayer.setPan(pan);
     soundPlayer.setReverbSend(reverbSend);
 }
 
@@ -132,32 +162,41 @@ void SoundObject::save()
         return;
     }
 
+    string base = "scene"+ofToString(scene_id);
     string prefix = ofToString(scene_id)+"-"+ofToString(id);
 
-    ofJson soundobj;
-    soundobj[prefix+"-isstream"] = isStream;
-    soundobj[prefix+"-loop"] = looper.isLooping;
-    soundobj[prefix+"-soundname"] = soundname.text;
-    soundobj[prefix+"-path"] = soundpath;
-    soundobj[prefix+"-volume"] = volumeslider.getValue();
-    soundobj[prefix+"-samplerate"] = sample_rate;
-    soundobj[prefix+"-channels"] = channels;
-    soundobj[prefix+"-pan"] = soundPlayer.getPan();
-    soundobj[prefix+"-reverbsend"] = soundPlayer.getReverbSend();
+    ofJson soundobj;    
+    soundobj[base][prefix]["isstream"] = isStream;
+    soundobj[base][prefix]["loop"] = looper.isLooping;
+    soundobj[base][prefix]["soundname"] = soundname.text;
 
-    // Need to make these per sample
-    soundobj[prefix+"-mindelay"] = soundPlayer.player[0].minDelay;
-    soundobj[prefix+"-maxdelay"] = soundPlayer.player[0].maxDelay;    
+    for(int i = 0; i < soundpath.size();i++)
+    {
+        soundobj[base][prefix]["samples"]["sample-"+ofToString(i)]["path"] = soundpath[i];
+        soundobj[base][prefix]["samples"]["sample-"+ofToString(i)]["gain"] = 1.0f; // TODO
+        soundobj[base][prefix]["samples"]["sample-"+ofToString(i)]["pitch"] = soundPlayer.player[i].audioPlayer->getSpeed();
+        soundobj[base][prefix]["samples"]["sample-"+ofToString(i)]["pan"] = soundPlayer.player[i].audioPlayer->getPan();
+    }
 
-    config->settings.push_back(soundobj);
+    soundobj[base][prefix]["volume"] = volumeslider.getValue();
+    soundobj[base][prefix]["samplerate"] = sample_rate;
+    soundobj[base][prefix]["channels"] = channels;
+    //soundobj[base][prefix]["pan"] = soundPlayer.getPan();
+    soundobj[base][prefix]["reverbsend"] = soundPlayer.getReverbSend();
+
+    soundobj[base][prefix]["mindelay"] = soundPlayer.minDelay;
+    soundobj[base][prefix]["maxdelay"] = soundPlayer.maxDelay;
+
+    //config->settings.push_back(soundobj);
+    config->settings.merge_patch(soundobj);
 
 }
 
 //--------------------------------------------------------------
 void SoundObject::setup()
 {
-    ofAddListener(this->clickedEvent, this, &SoundObject::onClicked);
-    ofAddListener(soundname.onTextChange, this, &SoundObject::textFieldEnter);
+    ofAddListener(this->clickedEvent, this, &SoundObject::onClicked);    
+    ofAddListener(ofEvents().fileDragEvent, this, &SoundObject::onDragEvent);
 
     loader.setup();
     stopper.setup();
@@ -177,6 +216,39 @@ void SoundObject::setup()
 }
 
 //--------------------------------------------------------------
+void SoundObject::onDragEvent(ofDragInfo &args)
+{
+    if(inside(args.position) && (config->activeScene == scene_id)) {
+        soundPlayer.stop();
+        soundPlayer.close();
+        soundpath.clear();
+
+        for(int i = 0; i < args.files.size();i++) {
+            cout << "Dropped files onto ID: "<< id << " " << args.files[i] << endl;
+            string path = args.files[i];
+            OpenALSoundPlayer p;
+            bool isAudio = p.load(path, isStream);
+            if(isAudio) {
+                p.unload();
+                if(i > (int)(soundPlayer.player.size()-1)) {
+                    AudioSample s;
+                    s.audioPlayer = new OpenALSoundPlayer();
+                    soundPlayer.player.push_back(s);
+                }
+                bool bLoaded = soundPlayer.load(path, i, isStream);
+                if(bLoaded) {
+                    setupSound(path);
+                    soundPlayer.recalculateDelay(i);
+                }
+            }
+        }
+        //set name to first file
+        filesystem::path s(args.files[0]);
+        soundname.text = s.filename();
+    }
+}
+
+//--------------------------------------------------------------
 SoundObject::SoundObject(AppConfig* _config, size_t _scene_id, int _id, int _x, int _y, int _w, int _h)
 {
     //ofLogNotice() << "SoundObject constructor called, ID = " << _id;
@@ -185,11 +257,9 @@ SoundObject::SoundObject(AppConfig* _config, size_t _scene_id, int _id, int _x, 
     isSetup = false;
     config = _config;
     channels = 0;
-    pan = 0.0f;
     reverbSend = 0.0f;
     sample_rate = 0;
     fadeVolume = 1.0f;
-    isFading = false;
 
     id = _id + _scene_id*100;
     setX(_x);
@@ -281,12 +351,6 @@ void SoundObject::onClicked(int& args) {
 }
 
 //--------------------------------------------------------------
-void SoundObject::textFieldEnter(string& newText){
-
-    //cout << "new text =  " << newText << endl;
-}
-
-//--------------------------------------------------------------
 void SoundObject::render()
 {    
     ofPushStyle();
@@ -347,19 +411,8 @@ void SoundObject::update()
         if(result.bSuccess) {           
             bool bLoaded = soundPlayer.load(result.filePath, isStream);
             if(bLoaded) {
-                soundpath = result.filePath;
-
-                filesystem::path s(soundpath);
-                config->last_path = s.parent_path().string();
-
-                soundPlayer.setLoop(isLooping);
-
-                soundname.enable();
-                soundname.text = result.fileName;
-
-                sample_rate = soundPlayer.getSampleRate();
-                channels = soundPlayer.getNumChannels();
-                player.isLoaded = true;
+                soundpath.clear();
+                setupSound(result.filePath);
             }
         }
         loader.doLoad = false;
@@ -385,7 +438,7 @@ void SoundObject::update()
 //                isFading = true;
 //                prevTime = ofGetElapsedTimeMillis();
 //                fadeDirection = 1;
-//                f = [this]() -> void
+//                fadeCallback = [this]() -> void
 //                {
 //                    std::cout << "End pause fade-out" << endl;
 //                    soundPlayer.setPaused(true);
@@ -403,17 +456,6 @@ void SoundObject::update()
             soundPlayer.setPaused(false);
             player.doPlay = false;
             isPaused = false;
-
-//            // Only fade for samples longer than 10 secs
-//            if(soundPlayer.getDuration() > 10.0f) {
-//                isFading = true;
-//                prevTime = ofGetElapsedTimeMillis();
-//                fadeDirection = 0;
-//                f = [this]() -> void
-//                {
-//                    std::cout << "End pause fade-in" << endl;
-//                };
-//            }
         }
         stopper.isStopped  = false;
     }
@@ -429,23 +471,7 @@ void SoundObject::update()
         if(!stopper.isStopped) {
             {
                 stopper.isStopped = true;
-
-//                // Only fade for samples longer than 10 secs
-//                if(soundPlayer.getDuration() > 10.0f) {
-//                    isFading = true;
-//                    prevTime = ofGetElapsedTimeMillis();
-//                    fadeDirection = 1;
-//                    f = [this]() -> void
-//                    {
-//                        std::cout << "End stop fade-out" << endl;
-//                        soundPlayer.stop();
-//                    };
-//                }
-//                 else
-                {
-                    soundPlayer.stop();
-                }
-
+                soundPlayer.stop();
             }
         }
         stopper.doStop = false;
@@ -470,22 +496,27 @@ void SoundObject::update()
         player.isPlaying = false;
     }
 
-    if(isFading) {
-        const float fadeDuration = 1000;
-        curTime = ofGetElapsedTimeMillis();
-        fadeVolume = fabs(fadeDirection - (curTime - prevTime)/fadeDuration);
-        //std::cout << "fade: " << fadeVolume << endl;
-        if(curTime - prevTime > fadeDuration)
-        {
-            isFading = false;
-            f();
-            fadeVolume = 1.0f;
-        }
-    }
-
     if(soundPlayer.isLoaded())
     {
         soundPlayer.setVolume(volumeslider.getValue()*config->getMasterVolume()*config->masterFade*fadeVolume);
     }
 
+}
+
+void SoundObject::setupSound(string path)
+{
+    soundpath.push_back(path);
+
+    filesystem::path s(path);
+    config->last_path = s.parent_path().string();
+
+    soundPlayer.setLoop(looper.isLooping);
+
+    soundname.enable();
+    soundname.text = s.filename();
+
+    sample_rate = soundPlayer.getSampleRate();
+    channels = soundPlayer.getNumChannels();
+
+    player.isLoaded = true;
 }

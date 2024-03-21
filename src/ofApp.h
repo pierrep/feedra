@@ -1,11 +1,9 @@
 #pragma once
 
-#include "ofMain.h"
 #include "AppConfig.h"
-#include "SimpleSlider.h"
 #include "Scene.h"
-#include "AddScene.h"
-#include "DeleteScene.h"
+#include "UI/AddScene.h"
+#include "UI/SimpleSlider.h"
 
 class ofApp : public ofBaseApp {
 
@@ -26,18 +24,21 @@ class ofApp : public ofBaseApp {
 		void windowResized(int w, int h);
 		void dragEvent(ofDragInfo dragInfo);
 		void gotMessage(ofMessage msg);		        
-        void loadScenes();
         void updateScenePosition();
         void enableScene(int i);
         void onClicked(SliderData& args);
         void onObjectClicked(int& args);
-        void updateSliders();
+        void updateSliders();        
         void saveConfig();
-        void saveConfig(string path);
+        void saveConfig(string path, bool bCopyFiles);
+        void loadConfig();
+        void loadConfig(string newpath);
         void addNewScene();
         void deleteScene();
         void checkAudioDeviceChange();
+        void drawSoundInfo();
 
+        int pages[3];
         vector<Scene*> scenes;
         AddScene* addScene;
         int maxScenes;
@@ -50,6 +51,7 @@ class ofApp : public ofBaseApp {
         SimpleSlider reverbSend;
 
         bool bDoRender;
+        bool bLoadScenes;
 
         long int curTime;
         long int prevTime;

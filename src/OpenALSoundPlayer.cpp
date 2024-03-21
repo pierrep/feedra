@@ -804,6 +804,7 @@ bool OpenALSoundPlayer::sfStream(const std::filesystem::path& path){
     buffer_float.resize(buffer_short.size());
     if (sample_format == FormatType::Float){
         sf_count_t samples_read = sf_read_float (streamf, &buffer_float[0], buffer_float.size());
+        //cout << "float stream .... samples_read = " << samples_read << endl;
 		stream_samples_read += samples_read;
         if(samples_read<(int)buffer_float.size()){
             buffer_float.resize(samples_read);
@@ -812,8 +813,11 @@ bool OpenALSoundPlayer::sfStream(const std::filesystem::path& path){
             // set to start of stream
             sf_seek(streamf,0,SEEK_SET);
 
-			if(!bLoop) stopThread();
+            if(!bLoop) {
+                stopThread();
+            }
 			stream_samples_read = 0;
+            //cout << "End of float stream, stream_samples_read = 0" << endl;
 			stream_end = true;
 		}
         for (int i = 0 ; i < int(buffer_float.size()) ; i++){
@@ -831,9 +835,11 @@ bool OpenALSoundPlayer::sfStream(const std::filesystem::path& path){
             // set to start of stream
             sf_seek(streamf,0,SEEK_SET);
 
-			if(!bLoop) stopThread();
+            if(!bLoop) {
+                stopThread();
+            }
 			stream_samples_read = 0;
-            //cout << "End of stream, stream_samples_read = 0" << endl;
+            //cout << "End of short stream, stream_samples_read = 0" << endl;
 			stream_end = true;
 		}
         for(int i=0;i<(int)buffer_short.size();i++){
@@ -945,7 +951,7 @@ size_t OpenALSoundPlayer::readFile(const std::filesystem::path& fileName){
 //------------------------------------------------------------
 bool OpenALSoundPlayer::load(const std::filesystem::path& _fileName, bool is_stream){
 
-	std::filesystem::path fileName = ofToDataPath(_fileName);    
+    std::filesystem::path fileName = ofToDataPath(_fileName);
 	bMultiPlay = false;
 	isStreaming = is_stream;
 	int err = AL_NO_ERROR;
@@ -1056,10 +1062,8 @@ bool OpenALSoundPlayer::load(const std::filesystem::path& _fileName, bool is_str
         alFilteri(filter, AL_FILTER_TYPE, AL_FILTER_LOWPASS);
 
         alFilterf(filter, AL_LOWPASS_GAIN, reverbSend);
-        alSource3i(sources[0], AL_AUXILIARY_SEND_FILTER, (ALint)slots[0], 0, filter);
+        alSource3i(sources[0], AL_AUXILIARY_SEND_FILTER, (ALint)slots[1], 0, filter);
 
-        //alSource3i(sources[0], AL_AUXILIARY_SEND_FILTER, (ALint)slots[0], 0, AL_FILTER_NULL);
-        //alSource3i(sources[0], AL_AUXILIARY_SEND_FILTER, (ALint)slots[1], 1, AL_FILTER_NULL);
         err = alGetError();
         if (err != AL_NO_ERROR){
             ofLogError("OpenALSoundPlayer:") << "attaching FX sends failed..."
@@ -1307,6 +1311,7 @@ void OpenALSoundPlayer::threadedFunction(){
 				}
                 if(stream_end && !(state == AL_STOPPED)){
                     //cout << "threadedFunction() - stream end! state: " << state << endl;
+                    //ofNotifyEvent(playbackEnded, playerPtr);
 					break;
 				}
 			}
@@ -1316,14 +1321,12 @@ void OpenALSoundPlayer::threadedFunction(){
 				stream_running = streamf || mp3streamf;
 			#else
 				stream_running = streamf;
-			#endif
-            if(state != AL_PLAYING && state != AL_PAUSED && stream_running && !stream_end){
-                alSourcePlayv(channels,&sources[0]);
+			#endif                
+            if(state != AL_PLAYING && state != AL_PAUSED && stream_running && !stream_end && isThreadRunning()){
+                alSourcePlayv(sources.size(),&sources[0]);
                 cout << "Loop stream!" << endl;
                 stream_end = false;
 			}
-
-            //stream_end = false;
         }
 	}
 }
@@ -1423,6 +1426,12 @@ bool OpenALSoundPlayer::isPaused() const{
 		paused &= (state == AL_PAUSED);
 	}
 	return paused;
+}
+
+//------------------------------------------------------------
+bool OpenALSoundPlayer::isLooping() const
+{
+    return bLoop;
 }
 
 //------------------------------------------------------------
@@ -1639,7 +1648,11 @@ void OpenALSoundPlayer::play(){
 		}
 	}
 
-    alSourcePlayv(channels,&sources[sources.size()-channels]);
+    if(bMultiPlay) {
+        alSourcePlayv(channels,&sources[sources.size()-channels]);
+    } else {
+        alSourcePlayv(sources.size(),&sources[sources.size()-channels]);
+    }
 
 	if(bMultiPlay){
 		ofAddListener(ofEvents().update,this,&OpenALSoundPlayer::update);
@@ -1654,7 +1667,6 @@ void OpenALSoundPlayer::play(){
 
 // ----------------------------------------------------------------------------
 void OpenALSoundPlayer::stop(){
-    //cout << "stop()" << endl;
 	if(sources.empty()) return;
 
     if(bMultiPlay) {

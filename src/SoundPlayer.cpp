@@ -4,20 +4,26 @@ SoundPlayer::SoundPlayer()
 {
     curSound = 0;
     AudioSample s;
-    s.minDelay = 0;
-    s.maxDelay = 0;
-    s.totalDelay = 0;
-    s.curDelay = 0;
     s.audioPlayer = new OpenALSoundPlayer();
     player.push_back(s);
 
     bPlayingDelay = false;
     prevTime = curTime = ofGetElapsedTimeMillis();
     bPaused = true;    
+    bPlayBackEnded = false;
+    bCheckPlayBackEnded = false;
+    minDelay = 0;
+    maxDelay = 0;
 }
 
 //--------------------------------------------------------------
 SoundPlayer::~SoundPlayer()
+{
+    close();
+}
+
+//--------------------------------------------------------------
+void SoundPlayer::close()
 {
     ofLogVerbose() << "SoundPlayer destructor called...";
     for(int i = 0;i < player.size();i++)
@@ -33,12 +39,6 @@ void SoundPlayer::setup(AppConfig* _config, int _id)
 
     config = _config;
     id = _id;
-
-    for(int i = 0; i < player.size();i++) {
-        player[i].totalDelay = ofRandom(player[i].minDelay, player[i].maxDelay);
-        player[i].curDelay = player[i].totalDelay;
-        //cout << "new maxDelay = " <<  player[i].totalDelay << endl;
-    }
 }
 
 //--------------------------------------------------------------
@@ -51,29 +51,50 @@ SoundPlayer::SoundPlayer(const SoundPlayer& parent) {
 //--------------------------------------------------------------
 void SoundPlayer::update()
 {
-    if( !bPaused && !bPlayingDelay && player[curSound].audioPlayer->isStreamEnd()) {
-        if(player[curSound].totalDelay > 0) {
-            recalculateDelay();
-            //cout << "new maxDelay = " <<  player[curSound].totalDelay << endl;
-        }
-        if(bIsLooping) {
-            if(player[curSound].totalDelay > 0) {
-                bPlayingDelay = true;
-            }
-        } else {
-            bPaused = true;
+    if(bCheckPlayBackEnded) {
+        if (!(player[curSound].audioPlayer->isPlaying())) {
+            bPlayBackEnded = true;
+            bCheckPlayBackEnded = false;
         }
     }
+
+    if(bPlayBackEnded) {
+        cout << "playback ended! current sound: " << curSound << " ID = " << id << endl;
+        if(curSound < player.size()-1) {
+            curSound++;
+            recalculateDelay(curSound);
+            setPaused(false);
+            cout << "play new sound: " << curSound << " ID = " << id << endl;
+        } else {
+            curSound = 0;
+        }
+
+        if( !bPaused && !bPlayingDelay) {
+            if(player[curSound].totalDelay > 0) {
+                recalculateDelay(curSound);
+            }
+            if(bIsLooping) {
+                if(player[curSound].totalDelay > 0) {
+                    bPlayingDelay = true;
+                }
+            } else {
+                bPaused = true;
+            }
+        }
+        bPlayBackEnded = false;
+    }
+
     curTime = ofGetElapsedTimeMillis();
     int diff = curTime - prevTime;
     if(bPlayingDelay)
     {
         if(!bPaused) {
-            //cout << "player[curSound].curDelay = " << player[curSound].curDelay << " diff = " << diff << endl;
             player[curSound].curDelay -= diff;
             if(player[curSound].curDelay <= 0) {
                 player[curSound].curDelay = 0;
+                cout << "player["<<curSound<<"].setPaused(false)" << endl;
                 player[curSound].audioPlayer->setPaused(false);
+                bCheckPlayBackEnded = true;
                 bPlayingDelay = false;
             }
         }
@@ -84,18 +105,20 @@ void SoundPlayer::update()
 //--------------------------------------------------------------------
 void SoundPlayer::play(){
    player[curSound].audioPlayer->play();
+   bCheckPlayBackEnded = true;
 }
 
 //--------------------------------------------------------------
 void SoundPlayer::stop()
 {
     if(bPlayingDelay) {
-        bPlayingDelay = false;
+        //bPlayingDelay = false;
+        //player[curSound].curDelay = 0;
     } else {
         player[curSound].audioPlayer->stop();
     }
-    recalculateDelay();
-    //cout << "STOP! new totalDelay = " <<  player[curSound].totalDelay << endl;
+    bCheckPlayBackEnded = false;
+    recalculateDelay(curSound);
     bPaused = true;
 }
 
@@ -103,21 +126,23 @@ void SoundPlayer::stop()
 bool SoundPlayer::load(const std::filesystem::path& fileName, bool stream)
 {
     return load(fileName, 0, stream);
-    return player[curSound].audioPlayer->load(fileName, stream);
 }
 
 //--------------------------------------------------------------------
 bool SoundPlayer::load(const std::filesystem::path& fileName, int idx, bool stream)
 {
-    return player[idx].audioPlayer->load(fileName, stream);
+    bool bResult = player[idx].audioPlayer->load(fileName, stream);
+    return bResult;
+
 }
 
 //--------------------------------------------------------------------
-void SoundPlayer::recalculateDelay()
-{
-    player[curSound].curDelay = player[curSound].totalDelay = ofRandom(player[curSound].minDelay, player[curSound].maxDelay);
-    if(player[curSound].totalDelay > 0) {
-        player[curSound].audioPlayer->setLoop(false);
+void SoundPlayer::recalculateDelay(int id)
+{   
+    player[id].curDelay = player[id].totalDelay = ofRandom(minDelay, maxDelay);
+    //cout << "recalculate delay for cursound[" << id << "] = " << player[id].totalDelay << endl;
+    if(player[id].totalDelay > 0) {
+        player[id].audioPlayer->setLoop(false);
     }
 }
 
@@ -130,9 +155,15 @@ void SoundPlayer::unload(){
 void SoundPlayer::setPaused(bool _bPause){
     bPaused = _bPause;
     if(player[curSound].curDelay > 0) {
-        bPlayingDelay = !_bPause;
+        bPlayingDelay = !bPaused;
+        cout << "bPlayingDelay = " << bPlayingDelay << endl;
     } else {
-        player[curSound].audioPlayer->setPaused(_bPause);
+        player[curSound].audioPlayer->setPaused(bPaused);
+        if(bPaused) {
+            bCheckPlayBackEnded = false;
+        } else {
+            bCheckPlayBackEnded = true;
+        }
     }
 
 }
@@ -179,13 +210,29 @@ void SoundPlayer::setSpeed(float spd){
 //--------------------------------------------------------------------
 void SoundPlayer::setPosition(float pct)
 {
-    player[curSound].audioPlayer->setPosition(pct);
+    if(bPlayingDelay) {
+        player[curSound].curDelay = player[curSound].totalDelay * (1.0f - pct);
+    } else {
+        player[curSound].audioPlayer->setPosition(pct);
+    }
 }
 
 //--------------------------------------------------------------------
 void SoundPlayer::setPositionMS(int ms)
 {
     player[curSound].audioPlayer->setPositionMS(ms);
+}
+
+//--------------------------------------------------------------------
+void SoundPlayer::setMinDelay(int delay)
+{
+    minDelay = delay;
+}
+
+//--------------------------------------------------------------------
+void SoundPlayer::setMaxDelay(int delay)
+{
+    maxDelay = delay;
 }
 
 //--------------------------------------------------------------------
@@ -236,6 +283,12 @@ bool SoundPlayer::isLoaded() const
 }
 
 //--------------------------------------------------------------------
+bool SoundPlayer::isLooping() const
+{
+    return player[curSound].audioPlayer->isLooping();
+}
+
+//--------------------------------------------------------------------
 float SoundPlayer::getSpeed() const
 {
     return player[curSound].audioPlayer->getSpeed();
@@ -266,15 +319,27 @@ int SoundPlayer::getNumChannels() const
 }
 
 //--------------------------------------------------------------------
+int SoundPlayer::getCurSound() const
+{
+    return curSound;
+}
+
+//--------------------------------------------------------------------
 int SoundPlayer::getMinDelay() const
 {
-    return player[curSound].minDelay;
+    return minDelay;
 }
 
 //--------------------------------------------------------------------
 int SoundPlayer::getMaxDelay() const
 {
-    return player[curSound].maxDelay;
+    return maxDelay;
+}
+
+//--------------------------------------------------------------------
+int SoundPlayer::getTotalDelay() const
+{
+    return player[curSound].totalDelay;
 }
 
 //--------------------------------------------------------------------
@@ -286,5 +351,20 @@ float SoundPlayer::getReverbSend() const
 //--------------------------------------------------------------------
 void SoundPlayer::setReverbSend(float send)
 {
-    player[curSound].audioPlayer->setReverbSend(send);
+    for(int i = 0; i < player.size();i++) {
+        player[i].audioPlayer->setReverbSend(send);
+    }
+
+}
+
+//--------------------------------------------------------------------
+void SoundPlayer::playbackEnded(OpenALSoundPlayer* &args)
+{
+//    for(int i = 0; i < player.size();i++)
+//    {
+//        if(player[i].audioPlayer == args) {
+//            bPlayBackEnded = true;
+//        }
+//    }
+
 }

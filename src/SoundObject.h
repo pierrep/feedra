@@ -1,15 +1,17 @@
 #pragma once
 
-#include "TextInputField.h"
-#include "SimpleSlider.h"
+#include "UI/TextInputField.h"
+#include "UI/SimpleSlider.h"
 #include "AppConfig.h"
-#include "Interactive.h"
-#include "Loader.h"
-#include "Player.h"
-#include "PlayBar.h"
-#include "Stop.h"
-#include "Looper.h"
+#include "UI/Interactive.h"
+#include "UI/Loader.h"
+#include "UI/Player.h"
+#include "UI/PlayBar.h"
+#include "UI/Stop.h"
+#include "UI/Looper.h"
 #include "SoundPlayer.h"
+
+//#define MAX_SOUNDS_PER_OBJECT 24
 
 class SoundObject: public Interactive
 {
@@ -23,12 +25,15 @@ public:
     void render();
     void update();
     void onClicked(int& args);
-    void textFieldEnter(string& newText);
     void save();
-    void load(int idx);
+    void load();
+    void load(string newpath);
     void play() {player.doPlay = true;}
+    void stop() {stopper.doStop = true;}
     void disableAllEvents();
     void enableAllEvents();
+    void onDragEvent(ofDragInfo &args);
+    void setupSound(string path);
 
     int id;
 
@@ -51,21 +56,15 @@ public:
 
     SimpleSlider volumeslider;
     TextInputField   soundname;
-    string soundpath;
+    vector<string> soundpath;
     string libraryLocation;
 
     int sample_rate;
     int channels;
-    float pan;
+    //float pan;
     float reverbSend;
 
-    bool isFading;
-    int fadeDirection;
     float fadeVolume;
-
-    long int curTime;
-    long int prevTime;
-    std::function<void()> f;
 
     static ofEvent<int> clickedObjectEvent;
 };
