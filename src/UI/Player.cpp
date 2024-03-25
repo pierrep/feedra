@@ -54,7 +54,7 @@ void Player::onClicked(int& args) {
 }
 
 //--------------------------------------------------------------
-void Player::render(bool isPlayingDelay, float position)
+void Player::render(SoundPlayer& soundPlayer)
 {    
     ofPushStyle();
 
@@ -65,7 +65,7 @@ void Player::render(bool isPlayingDelay, float position)
         ofSetHexColor(0x998c84);
     }
 
-    if(isPlaying) {
+    if(soundPlayer.isPlaying()) {
         //pause button
         ofDrawRectangle(getX(),getY(),getWidth()/3, getHeight());
         ofDrawRectangle(getX()+getWidth()*2.0f/3.0f,getY(),getWidth()/3, getHeight());
@@ -78,7 +78,6 @@ void Player::render(bool isPlayingDelay, float position)
     ofSetLineWidth(1);
     ofNoFill();
     ofDrawRectangle(getX(),getY(),getWidth(), getHeight());
-
 
     ofPopStyle();
 }

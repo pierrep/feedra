@@ -3,6 +3,7 @@
 Interactive::Interactive()
 {
     clicked = false;
+    bEventsEnabled = false;
 
     enableEvents();
 }
@@ -17,18 +18,24 @@ Interactive::~Interactive()
 void Interactive::enableEvents()
 {
     //enable events
-    ofAddListener(ofEvents().mousePressed, this, &Interactive::mousePressed);
-    ofAddListener(ofEvents().mouseMoved, this, &Interactive::mouseMoved);
-    ofAddListener(ofEvents().mouseDragged, this, &Interactive::mouseDragged);
-    ofAddListener(ofEvents().mouseReleased, this, &Interactive::mouseReleased);
+    if(!bEventsEnabled) {
+        ofAddListener(ofEvents().mousePressed, this, &Interactive::mousePressed);
+        ofAddListener(ofEvents().mouseMoved, this, &Interactive::mouseMoved);
+        ofAddListener(ofEvents().mouseDragged, this, &Interactive::mouseDragged);
+        ofAddListener(ofEvents().mouseReleased, this, &Interactive::mouseReleased);
+        bEventsEnabled = true;
+    }
 }
 
 void Interactive::disableEvents()
 {
-    ofRemoveListener(ofEvents().mousePressed, this, &Interactive::mousePressed);
-    ofRemoveListener(ofEvents().mouseMoved, this, &Interactive::mouseMoved);
-    ofRemoveListener(ofEvents().mouseDragged, this, &Interactive::mouseDragged);
-    ofRemoveListener(ofEvents().mouseReleased, this, &Interactive::mouseReleased);
+    if(bEventsEnabled) {
+        ofRemoveListener(ofEvents().mousePressed, this, &Interactive::mousePressed);
+        ofRemoveListener(ofEvents().mouseMoved, this, &Interactive::mouseMoved);
+        ofRemoveListener(ofEvents().mouseDragged, this, &Interactive::mouseDragged);
+        ofRemoveListener(ofEvents().mouseReleased, this, &Interactive::mouseReleased);
+        bEventsEnabled = false;
+    }
 }
 
 Interactive::Interactive(const Interactive &parent)
@@ -41,11 +48,7 @@ Interactive::Interactive(const Interactive &parent)
     width = parent.width;
     height = parent.height;
 
-    //enable events
-    ofAddListener(ofEvents().mousePressed, this, &Interactive::mousePressed);
-    ofAddListener(ofEvents().mouseMoved, this, &Interactive::mouseMoved);
-    ofAddListener(ofEvents().mouseDragged, this, &Interactive::mouseDragged);
-    ofAddListener(ofEvents().mouseReleased, this, &Interactive::mouseReleased);
+    enableEvents();
 }
 
 void Interactive::mouseMoved(ofMouseEventArgs &args) {

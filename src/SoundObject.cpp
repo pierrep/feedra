@@ -2,7 +2,7 @@
 
 #define STRING_LIMIT 17
 
-ofEvent<int> SoundObject::clickedObjectEvent;
+ofEvent<size_t> SoundObject::clickedObjectEvent;
 
 //--------------------------------------------------------------
 SoundObject::SoundObject()
@@ -19,6 +19,7 @@ SoundObject::~SoundObject()
     }
 
     ofRemoveListener(this->clickedEvent, this, &SoundObject::onClicked);
+    ofRemoveListener(ofEvents().fileDragEvent, this, &SoundObject::onDragEvent);
     disableAllEvents();
     //ofLogNotice() << "SoundObject destructor called...ID = " << id;
 }
@@ -86,6 +87,14 @@ void SoundObject::load(string newpath)
                     ofJson samples = setting["samples"];
                     for(int i = 0; i < samples.size();i++)
                     {
+                        if(!setting["mindelay"].empty())
+                        {
+                            soundPlayer.minDelay = setting["mindelay"];
+                        }
+                        if(!setting["maxdelay"].empty())
+                        {
+                            soundPlayer.maxDelay = setting["maxdelay"];
+                        }
                         if(!samples["sample-"+ofToString(i)].empty()) {
                             string new_path = samples["sample-"+ofToString(i)]["path"];
                             soundpath.push_back(new_path);
@@ -136,14 +145,14 @@ void SoundObject::load(string newpath)
                     {
                         reverbSend = setting["reverbsend"];
                     }
-                    if(!setting["mindelay"].empty())
-                    {
-                        soundPlayer.minDelay = setting["mindelay"];
-                    }
-                    if(!setting["maxdelay"].empty())
-                    {
-                        soundPlayer.maxDelay = setting["maxdelay"];
-                    }
+//                    if(!setting["mindelay"].empty())
+//                    {
+//                        soundPlayer.minDelay = setting["mindelay"];
+//                    }
+//                    if(!setting["maxdelay"].empty())
+//                    {
+//                        soundPlayer.maxDelay = setting["maxdelay"];
+//                    }
                 }
             }
         }
@@ -193,6 +202,20 @@ void SoundObject::save()
 }
 
 //--------------------------------------------------------------
+void SoundObject::clear()
+{
+//    soundname.text = "";
+//    isLooping = false;
+//    isPaused = false;
+//    soundPlayer.stop();
+//    soundpath.clear();
+//    channels = 0;
+//    reverbSend = 0.0f;
+//    sample_rate = 0;
+//    fadeVolume = 1.0f;
+}
+
+//--------------------------------------------------------------
 void SoundObject::setup()
 {
     ofAddListener(this->clickedEvent, this, &SoundObject::onClicked);    
@@ -219,17 +242,21 @@ void SoundObject::setup()
 void SoundObject::onDragEvent(ofDragInfo &args)
 {
     if(inside(args.position) && (config->activeScene == scene_id)) {
-        soundPlayer.stop();
-        soundPlayer.close();
-        soundpath.clear();
+        bool bLoaded = false;
 
         for(int i = 0; i < args.files.size();i++) {
-            cout << "Dropped files onto ID: "<< id << " " << args.files[i] << endl;
+            ofLogNotice() << "Dropped file onto pad: "<< id << " " << args.files[i];
             string path = args.files[i];
             OpenALSoundPlayer p;
             bool isAudio = p.load(path, isStream);
             if(isAudio) {
                 p.unload();
+                if(!bLoaded) {
+                    soundPlayer.stop();
+                    soundPlayer.close();
+                    soundpath.clear();
+                    bLoaded = true;
+                }
                 if(i > (int)(soundPlayer.player.size()-1)) {
                     AudioSample s;
                     s.audioPlayer = new OpenALSoundPlayer();
@@ -242,16 +269,19 @@ void SoundObject::onDragEvent(ofDragInfo &args)
                 }
             }
         }
-        //set name to first file
-        filesystem::path s(args.files[0]);
-        soundname.text = s.filename();
+        if(bLoaded) {
+            //set name to first file
+            filesystem::path s(args.files[0]);
+            soundname.text = s.stem();
+            config->activeSoundIdx = id;
+        }
     }
 }
 
 //--------------------------------------------------------------
 SoundObject::SoundObject(AppConfig* _config, size_t _scene_id, int _id, int _x, int _y, int _w, int _h)
 {
-    //ofLogNotice() << "SoundObject constructor called, ID = " << _id;
+    //ofLogNotice() << "SoundObject constructor called, ID = " << _id << " _scene_id = " << _scene_id;
     scene_id = _scene_id;
     isStream = true;
     isSetup = false;
@@ -261,7 +291,7 @@ SoundObject::SoundObject(AppConfig* _config, size_t _scene_id, int _id, int _x, 
     sample_rate = 0;
     fadeVolume = 1.0f;
 
-    id = _id + _scene_id*100;
+    id = _id;
     setX(_x);
     setY(_y);
     setWidth(_w);
@@ -340,14 +370,12 @@ SoundObject::SoundObject(const SoundObject& parent) {
 
 //--------------------------------------------------------------
 void SoundObject::onClicked(int& args) {
-    ofLogVerbose() << "SoundObject id " << id << " clicked";
+    ofLogNotice() << "SoundObject id " << id << " clicked";
 
-    config->activeSound = id;
-    int idx = id - config->activeSceneIdx*100 -1;
-    config->activeSoundIdx =  idx;
-    ofLogVerbose() << "activeSound: " << config->activeSound << " activeSoundIdx: " << config->activeSoundIdx;
+    config->activeSoundIdx =  id;
+    ofLogNotice() << " activeSoundIdx: " << config->activeSoundIdx;
 
-    ofNotifyEvent(clickedObjectEvent, idx);
+    ofNotifyEvent(clickedObjectEvent,  config->activeSoundIdx);
 }
 
 //--------------------------------------------------------------
@@ -360,7 +388,7 @@ void SoundObject::render()
     ofDrawRectRounded(getX(),getY(),getWidth(), getHeight(),10);
 
     ofNoFill();
-    if(config->activeSound == id) {
+    if(config->activeSoundIdx == id) {
         ofSetLineWidth(4);
         ofSetHexColor(0x65aecd);
     } else {
@@ -369,18 +397,14 @@ void SoundObject::render()
     }
     ofDrawRectRounded(getX(),getY(),getWidth(), getHeight(),10);       
 
-    float pos = 0;
-    pos = soundPlayer.getPosition();
-    //if(id == 1)
-    //cout << "pos = " << pos << endl;
     loader.render();
-    stopper.render(soundPlayer.isPlaying(), pos);
-    player.render(soundPlayer.isPlayingDelay(),pos);
+    stopper.render(soundPlayer.isPlaying(), soundPlayer.getPosition());
+    player.render(soundPlayer);
     looper.render();
 
     //if(player.isPlaying || (player.isLoaded && (pos > 0.0f))) {
     if(player.isPlaying || (player.isLoaded)) {
-        playbar.render(soundPlayer.isPlayingDelay(),pos);
+        playbar.render(soundPlayer);
     }
 
     if(soundname.isEditing()) {
@@ -432,22 +456,7 @@ void SoundObject::update()
             cout << "pause audio" << id << endl;
             player.doPlay = false;
             isPaused = true;
-
-//            // Only fade for samples longer than 10 secs
-//            if(soundPlayer.getDuration() > 10.0f) {
-//                isFading = true;
-//                prevTime = ofGetElapsedTimeMillis();
-//                fadeDirection = 1;
-//                fadeCallback = [this]() -> void
-//                {
-//                    std::cout << "End pause fade-out" << endl;
-//                    soundPlayer.setPaused(true);
-//                };
-//            }
-//             else
-            {
-                soundPlayer.setPaused(true);
-            }
+            soundPlayer.setPaused(true);
             return;
 
         }
@@ -513,7 +522,7 @@ void SoundObject::setupSound(string path)
     soundPlayer.setLoop(looper.isLooping);
 
     soundname.enable();
-    soundname.text = s.filename();
+    soundname.text = s.stem();
 
     sample_rate = soundPlayer.getSampleRate();
     channels = soundPlayer.getNumChannels();

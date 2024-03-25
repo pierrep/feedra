@@ -65,15 +65,9 @@ public:
 
     AppConfig* config;
     vector<AudioSample> player;
-//    vector<OpenALSoundPlayer*> audioPlayer;
-//    vector<int> minDelay;
-//    vector<int> maxDelay;
-//    vector<int> totalDelay;
-//    vector<int> curDelay;
     int minDelay;
     int maxDelay;
     bool bPlayingDelay;
-    //std::atomic_int curSound;
     int curSound;
 
     unsigned long curTime;
@@ -86,4 +80,6 @@ public:
 
     string filename;
     int id;
+
+    ofEvent<OpenALSoundPlayer*> playbackEndedEvent;
 };

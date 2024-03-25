@@ -14,7 +14,7 @@ class ofApp : public ofBaseApp {
 		void draw();
 
         void keyPressed  (ofKeyEventArgs & args);
-		void keyReleased(int key);
+        void keyReleased(ofKeyEventArgs & args);
 		void mouseMoved(int x, int y );
 		void mouseDragged(int x, int y, int button);
 		void mousePressed(int x, int y, int button);
@@ -27,7 +27,7 @@ class ofApp : public ofBaseApp {
         void updateScenePosition();
         void enableScene(int i);
         void onClicked(SliderData& args);
-        void onObjectClicked(int& args);
+        void onObjectClicked(size_t& args);
         void updateSliders();        
         void saveConfig();
         void saveConfig(string path, bool bCopyFiles);
@@ -37,6 +37,7 @@ class ofApp : public ofBaseApp {
         void deleteScene();
         void checkAudioDeviceChange();
         void drawSoundInfo();
+        void calculateSources();
 
         int pages[3];
         vector<Scene*> scenes;
@@ -52,6 +53,8 @@ class ofApp : public ofBaseApp {
 
         bool bDoRender;
         bool bLoadScenes;
+        bool bClearPad;
+        int  doClearPad;
 
         long int curTime;
         long int prevTime;

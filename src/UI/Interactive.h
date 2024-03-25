@@ -17,6 +17,7 @@ public:
 
     bool clicked;
     int offsetx, offsety;
+    bool bEventsEnabled;
 
     ofEvent<int> clickedEvent;
 };

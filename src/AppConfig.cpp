@@ -21,20 +21,21 @@ void AppConfig::setup()
     gridWidth = 6;
     gridHeight = 4;
 
-    scene_width = 200*x_scale;
+    scene_width = 240*x_scale;
     scene_height = 45*y_scale;
     scene_spacing = scene_height + 5*x_scale;
-    baseSceneOffset = gridWidth*spacing + xoffset ;
+    baseSceneOffset = gridWidth*spacing ;
     scene_yoffset = 80*y_scale;
-    max_scenes = 12;
+    max_scenes = 14;
 
     activeScene = 0;
-    activeSound = 1;
+    activeSoundIdx = 0;
 
     loopByDefault = false;
 
     smallfont.load("fonts/NewMediaFett.ttf", 9 * x_scale, true, false);
     mainfont.load("fonts/NewMediaFett.ttf", 12 * x_scale, true, false);
+    tinyfont.load("fonts/NewMediaFett.ttf", 7 * x_scale, true, false);
 
     loopicon.load("images/loopicon.png");
 

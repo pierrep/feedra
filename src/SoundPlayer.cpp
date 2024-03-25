@@ -14,12 +14,15 @@ SoundPlayer::SoundPlayer()
     bCheckPlayBackEnded = false;
     minDelay = 0;
     maxDelay = 0;
+
+    ofAddListener(OpenALSoundPlayer::playbackEnded, this, &SoundPlayer::playbackEnded);
 }
 
 //--------------------------------------------------------------
 SoundPlayer::~SoundPlayer()
 {
-    close();
+    close();    
+    ofRemoveListener(OpenALSoundPlayer::playbackEnded, this, &SoundPlayer::playbackEnded);
 }
 
 //--------------------------------------------------------------
@@ -30,7 +33,7 @@ void SoundPlayer::close()
     {
         delete player[i].audioPlayer;
     }
-    player.clear();
+    player.clear();    
 }
 
 //--------------------------------------------------------------
@@ -51,12 +54,12 @@ SoundPlayer::SoundPlayer(const SoundPlayer& parent) {
 //--------------------------------------------------------------
 void SoundPlayer::update()
 {
-    if(bCheckPlayBackEnded) {
-        if (!(player[curSound].audioPlayer->isPlaying())) {
-            bPlayBackEnded = true;
-            bCheckPlayBackEnded = false;
-        }
-    }
+//    if(bCheckPlayBackEnded) {
+//        if (!(player[curSound].audioPlayer->isPlaying())) {
+//            bPlayBackEnded = true;
+//            bCheckPlayBackEnded = false;
+//        }
+//    }
 
     if(bPlayBackEnded) {
         cout << "playback ended! current sound: " << curSound << " ID = " << id << endl;
@@ -74,9 +77,9 @@ void SoundPlayer::update()
                 recalculateDelay(curSound);
             }
             if(bIsLooping) {
-                if(player[curSound].totalDelay > 0) {
+                //if(player[curSound].totalDelay > 0) {
                     bPlayingDelay = true;
-                }
+                //}
             } else {
                 bPaused = true;
             }
@@ -118,6 +121,7 @@ void SoundPlayer::stop()
         player[curSound].audioPlayer->stop();
     }
     bCheckPlayBackEnded = false;
+    curSound = 0;
     recalculateDelay(curSound);
     bPaused = true;
 }
@@ -193,7 +197,7 @@ void SoundPlayer::setSpeed(float spd){
         if(player[curSound].totalDelay > 0) {
             player[curSound].audioPlayer->setLoop(false);
         } else {
-            player[curSound].audioPlayer->setLoop(bLoop);
+            player[curSound].audioPlayer->setLoop(false);
         }
     } else {
         player[curSound].audioPlayer->setLoop(bLoop);
@@ -269,7 +273,8 @@ bool SoundPlayer::isPlaying() const
 //--------------------------------------------------------------------
 bool SoundPlayer::isPlayingDelay() const
 {
-    if(player[curSound].curDelay > 0) {
+    //if(player[curSound].curDelay > 0) {
+    if(bPlayingDelay) {
         return true;
     }
 
@@ -360,11 +365,11 @@ void SoundPlayer::setReverbSend(float send)
 //--------------------------------------------------------------------
 void SoundPlayer::playbackEnded(OpenALSoundPlayer* &args)
 {
-//    for(int i = 0; i < player.size();i++)
-//    {
-//        if(player[i].audioPlayer == args) {
-//            bPlayBackEnded = true;
-//        }
-//    }
+    for(int i = 0; i < player.size();i++)
+    {
+        if(player[i].audioPlayer == args) {
+            bPlayBackEnded = true;
+        }
+    }
 
 }

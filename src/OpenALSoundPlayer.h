@@ -91,10 +91,13 @@ class OpenALSoundPlayer : public ofBaseSoundPlayer, public ofThread {
         void setReverbSend(float send) { reverbSend = send;}
 
         int getFileFormat() const {return fileformat;}
+        ALenum getOpenALFormat() const {return openALformat;}
         std::string getFormatString() const {return format_string;}
+        std::string getSubFormatString() const {return subformat_string;}
+        int getNumSources() {return sources.size();}
 
-        //static ofEvent<OpenALSoundPlayer *> playbackEnded;
-        //OpenALSoundPlayer* playerPtr;
+        static ofEvent<OpenALSoundPlayer *> playbackEnded;
+        OpenALSoundPlayer* playerPtr;
 
 	protected:
 		void threadedFunction();
@@ -163,6 +166,7 @@ class OpenALSoundPlayer : public ofBaseSoundPlayer, public ofThread {
 		int mp3_buffer_size;
         int fileformat;
         std::string format_string;
+        std::string subformat_string;
         ALenum openALformat;
         //int stream_subformat;
         enum FormatType sample_format = Int16;

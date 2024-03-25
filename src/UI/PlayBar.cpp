@@ -53,22 +53,47 @@ void PlayBar::onClicked(int& args) {
 }
 
 //--------------------------------------------------------------
-void PlayBar::render(bool isPlayingDelay, float position)
+void PlayBar::render(SoundPlayer& soundPlayer)
 {    
     ofPushStyle();
 
-    //if(isPlaying || (isLoaded && (position > 0.0f))) {
     ofFill();
-    if(isPlayingDelay) {
+    if(soundPlayer.isPlayingDelay()) {
         ofSetColor(128);
     } else {
-        ofSetColor(50,150,50);
+        //ofSetColor(100,250,100);
+        ofSetHexColor(0xbfe2ac);
     }
-    ofDrawRectangle(getX(), getY(), getWidth()*position, getHeight());
+    ofDrawRectangle(getX(), getY(), getWidth()*soundPlayer.getPosition(), getHeight());
     ofNoFill();
     ofSetLineWidth(1);
     ofSetColor(64);
     ofDrawRectangle(getX(), getY(), getWidth(), getHeight());
+
+    ofSetColor(0);
+    float timeleft;
+    if(soundPlayer.isPlayingDelay()) {
+        timeleft = (1.0f - soundPlayer.getPosition()) * soundPlayer.getTotalDelay()/1000.0f;
+    } else {
+        timeleft = (1.0f - soundPlayer.getPosition()) * soundPlayer.getDuration();
+    }
+    int minutes = timeleft / 60;
+    int seconds = (int)timeleft % 60;
+    int hours = minutes / 60;
+    minutes = minutes % 60;
+
+    std::ostringstream min;
+    min << std::setw(2) << std::setfill('0') << minutes;
+
+    std::ostringstream sec;
+    sec << std::setw(2) << std::setfill('0') << seconds;
+
+    std::stringstream tl;
+    tl << (hours ? ofToString(hours)+":" :"") << min.str()+":" << sec.str();
+    //tl << std::fixed << std::setprecision(2) << timeleft;
+    int w = config->f3().stringWidth(tl.str());
+    int h = config->f3().stringHeight(tl.str());
+    config->f3().drawString(tl.str(),getX()+getWidth()/2-(float)w/2.0f,getY()+getHeight()/2 + (float)h/2.0f);
 
     ofPopStyle();
 }

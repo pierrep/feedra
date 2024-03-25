@@ -25,11 +25,12 @@ public:
     void onClicked(int& args);
     void enable();
     void disable();
+    void endFade();
 
     int id;
     bool selectScene;
     bool isPlaying;
-    int activeSound;
+    int activeSoundIdx;
     AppConfig* config;
 
     string scene_name;
@@ -40,7 +41,7 @@ public:
     TextInputField textfield;
 
     // Fading
-    const float fadeDuration = 1000;
+    const float fadeDuration = 500;
     bool isFading;
     int fadeDirection;
     float fadeVolume;

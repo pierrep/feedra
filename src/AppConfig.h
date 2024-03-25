@@ -13,9 +13,12 @@ public:
     // fonts
     ofTrueTypeFont  mainfont;
     ofTrueTypeFont  smallfont;
+    ofTrueTypeFont  tinyfont;
 
     ofTrueTypeFont& f1() {return mainfont;}
     ofTrueTypeFont& f2() {return smallfont;}
+    ofTrueTypeFont& f3() {return tinyfont;}
+
     const string getLibraryLocation() { return defaultLibraryLocation; }
     const float getMasterVolume() { return masterVolume;}
 
@@ -45,7 +48,6 @@ public:
     int activeScene;
     size_t activeSceneIdx;
     int max_scenes;
-    int activeSound;
     size_t activeSoundIdx;
     string last_path;
 

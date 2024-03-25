@@ -26,6 +26,8 @@ static EFXEAXREVERBPROPERTIES reverbs[2] = {
     EFX_REVERB_PRESET_ARENA
 };
 
+ofEvent<OpenALSoundPlayer *> OpenALSoundPlayer::playbackEnded;
+
 vector<float> OpenALSoundPlayer::window;
 float OpenALSoundPlayer::windowSum = 0.f;
 
@@ -153,21 +155,48 @@ static string getOpenALFormatString(ALenum format)
 }
 
 static string getSoundFileFormatString(int format) {
-
-    switch((format&SF_FORMAT_SUBMASK))
+    switch(format&SF_FORMAT_TYPEMASK)
     {
+    case SF_FORMAT_WAV:
+        return "Wav";
+    case SF_FORMAT_AIFF:
+        return "AIFF";
+    case SF_FORMAT_OGG:
+        return "Ogg";
+    case SF_FORMAT_FLAC:
+        return "FLAC";
+    case SF_FORMAT_RAW:
+        return "Raw";
+    case 0x230000: /* SF_FORMAT_MPEG - MPEG-1/2 audio stream */
+        return "Mp3";
+    }
+
+    return "Unknown format: " + ofToString(format);
+}
+
+static string getSoundFileSubFormatString(int format) {
+
+    switch(format&SF_FORMAT_SUBMASK)
+    {
+    case SF_FORMAT_PCM_S8:
+    case SF_FORMAT_PCM_U8:
+        return "8 bit PCM";
+    case SF_FORMAT_PCM_16:
+        return "16 bit PCM";
     case SF_FORMAT_PCM_24:
         return "24 bit PCM";
     case SF_FORMAT_PCM_32:
         return "32 bit PCM";
     case SF_FORMAT_FLOAT:
-        return "float";
+        return "Float";
     case SF_FORMAT_DOUBLE:
-        return "double";
+        return "Double";
     case SF_FORMAT_VORBIS:
-        return "Ogg/Vorbis";
+        return "Vorbis";
     case SF_FORMAT_OPUS:
         return "Opus";
+    case SF_FORMAT_ALAC_16:
+        return "16 bit Apple Lossless Codec";
     case SF_FORMAT_ALAC_20:
         return "20 bit Apple Lossless Codec";
     case SF_FORMAT_ALAC_24:
@@ -175,19 +204,15 @@ static string getSoundFileFormatString(int format) {
     case SF_FORMAT_ALAC_32:
         return "32 bit Apple Lossless Codec";
     case 0x0080/*SF_FORMAT_MPEG_LAYER_I*/:
-        return "MPEG Layer I";
+        return "MPEG-1 Audio Layer I";
     case 0x0081/*SF_FORMAT_MPEG_LAYER_II*/:
-        return "MPEG Layer II";
+        return "MPEG-1 Audio Layer II";
     case 0x0082/*SF_FORMAT_MPEG_LAYER_III*/:
-        return "mp3";
+        return "MPEG-2 Audio Layer III";
     case SF_FORMAT_IMA_ADPCM:
         return "IMA ADPCM";
     case SF_FORMAT_MS_ADPCM:
         return "Microsoft ADPCM";
-    }
-
-    if((format&SF_FORMAT_TYPEMASK) == SF_FORMAT_FLAC) {
-        return "FLAC";
     }
 
     return "Unknown format: " + ofToString(format);
@@ -197,47 +222,47 @@ static string getSoundFileFormatString(int format) {
 static string getMpg123EncodingString(int encoding) {
 	switch(encoding) {
 		case MPG123_ENC_16:
-			return "MPG123_ENC_16";
+            return "16 bit";
 #if MPG123_API_VERSION>=36
 		case MPG123_ENC_24:
-			return "MPG123_ENC_24";
+            return "24 bit";
 #endif
 		case MPG123_ENC_32:
-			return "MPG123_ENC_32";
+            return "32 bit";
 		case MPG123_ENC_8:
-			return "MPG123_ENC_8";
+            return "8 bit";
 		case MPG123_ENC_ALAW_8:
-			return "MPG123_ENC_ALAW_8";
+            return "ALAW 8 bit";
 		case MPG123_ENC_FLOAT:
-			return "MPG123_ENC_FLOAT";
+            return "Float";
 		case MPG123_ENC_FLOAT_32:
-			return "MPG123_ENC_FLOAT_32";
+            return "32 bit float";
 		case MPG123_ENC_FLOAT_64:
-			return "MPG123_ENC_FLOAT_64";
+            return "64 bit float";
 		case MPG123_ENC_SIGNED:
-			return "MPG123_ENC_SIGNED";
+            return "signed";
 		case MPG123_ENC_SIGNED_16:
-			return "MPG123_ENC_SIGNED_16";
+            return "16 bit signed";
 #if MPG123_API_VERSION>=36
 		case MPG123_ENC_SIGNED_24:
-			return "MPG123_ENC_SIGNED_24";
+            return "24 bit signed";
 #endif
 		case MPG123_ENC_SIGNED_32:
-			return "MPG123_ENC_SIGNED_32";
+            return "32 bit signed";
 		case MPG123_ENC_SIGNED_8:
-			return "MPG123_ENC_SIGNED_8";
+            return "8 bit signed";
 		case MPG123_ENC_ULAW_8:
-			return "MPG123_ENC_ULAW_8";
+            return "ULAW 8 bit";
 		case MPG123_ENC_UNSIGNED_16:
-			return "MPG123_ENC_UNSIGNED_16";
+            return "16 bit unsigned";
 #if MPG123_API_VERSION>=36
 		case MPG123_ENC_UNSIGNED_24:
-			return "MPG123_ENC_UNSIGNED_24";
+            return "24 bit unsigned";
 #endif
 		case MPG123_ENC_UNSIGNED_32:
-			return "MPG123_ENC_UNSIGNED_32";
+            return "32 bit unsigned";
 		case MPG123_ENC_UNSIGNED_8:
-			return "MPG123_ENC_UNSIGNED_8";
+            return "8 bit unsigned";
 		default:
 			return "MPG123_ENC_ANY";
 	}
@@ -566,7 +591,7 @@ void OpenALSoundPlayer::initialize(){
             alcGetIntegerv(alDevice, ALC_MINOR_VERSION, 1, &minor);            
 		}
 		// Create OpenAL context and make it current. If fails, close the OpenAL device that was just opened.
-        int attrlist[] = { ALC_MAX_AUXILIARY_SENDS, 4, 0 };
+        int attrlist[] = { ALC_MAX_AUXILIARY_SENDS, 4, ALC_MONO_SOURCES, 300, ALC_STEREO_SOURCES, 256, 0 };
         alContext = alcCreateContext( alDevice, attrlist );
 		if( !alContext ){
 			ALCenum err = alcGetError( alDevice ); 
@@ -637,6 +662,23 @@ void OpenALSoundPlayer::initialize(){
                 alAuxiliaryEffectSloti(slots[1], AL_EFFECTSLOT_EFFECT, (ALint)effects[1]);
                 assert(alGetError()==AL_NO_ERROR && "Failed to set effect slot");
             }
+        }
+
+        // check max OpenAL sources
+        ALCint size;
+        alcGetIntegerv( alDevice, ALC_ATTRIBUTES_SIZE, 1, &size);
+        std::vector<ALCint> attrs(size);
+        alcGetIntegerv( alDevice, ALC_ALL_ATTRIBUTES, size, &attrs[0] );
+        for(size_t i=0; i < attrs.size(); ++i)
+        {
+           if( attrs[i] == ALC_MONO_SOURCES )
+           {
+              ofLogNotice() << "Max mono sources: " << attrs[i+1];
+           }
+           if( attrs[i] == ALC_STEREO_SOURCES )
+           {
+              ofLogNotice() << "Max stereo sources: " << attrs[i+1];
+           }
         }
 //        alcGetIntegerv(alDevice, ALC_REFRESH, 1, data+1);
 //        printf("refresh rate : %u hz\n", data[0]/data[1]);
@@ -747,6 +789,7 @@ bool OpenALSoundPlayer::mpg123ReadFile(const std::filesystem::path& path){
 	mpg123_enc_enum encoding;
 	long int rate;
 	mpg123_getformat(f,&rate,&channels,(int*)&encoding);
+    subformat_string = getMpg123EncodingString(encoding);
 	if(encoding!=MPG123_ENC_SIGNED_16){
 		ofLogError("OpenALSoundPlayer") << "mpg123ReadFile(): " << getMpg123EncodingString(encoding)
 			<< " encoding for \"" << path << "\"" << " unsupported, expecting MPG123_ENC_SIGNED_16";
@@ -779,7 +822,7 @@ bool OpenALSoundPlayer::sfStream(const std::filesystem::path& path){
 		SF_INFO sfInfo;
 		streamf = sf_open(path.string().c_str(),SFM_READ,&sfInfo);
 		if(!streamf){
-			ofLogError("OpenALSoundPlayer") << "sfStream(): couldn't read \"" << path << "\"";
+            ofLogError("OpenALSoundPlayer") << "sfStream(): couldn't read " << path;
 			return false;
 		}
 
@@ -866,6 +909,7 @@ bool OpenALSoundPlayer::mpg123Stream(const std::filesystem::path& path){
 
 		long int rate;
 		mpg123_getformat(mp3streamf,&rate,&channels,(int*)&stream_encoding);
+        subformat_string = getMpg123EncodingString(stream_encoding);
 		if(stream_encoding!=MPG123_ENC_SIGNED_16){
 			ofLogError("OpenALSoundPlayer") << "mpg123Stream(): " << getMpg123EncodingString(stream_encoding)
 			<< " encoding for \"" << path << "\"" << " unsupported, expecting MPG123_ENC_SIGNED_16";
@@ -969,7 +1013,7 @@ bool OpenALSoundPlayer::load(const std::filesystem::path& _fileName, bool is_str
     SF_INFO sfInfo;
 
     if(ofFilePath::getFileExt(fileName)=="mp3" || ofFilePath::getFileExt(fileName)=="MP3"){
-        fileformat = 0x0082;
+        fileformat = 0x230000;
     } else {
         SNDFILE* f = sf_open(_fileName.string().c_str(),SFM_READ,&sfInfo);
         fileformat = sfInfo.format;
@@ -997,7 +1041,8 @@ bool OpenALSoundPlayer::load(const std::filesystem::path& _fileName, bool is_str
         }
         sf_close(f);
     }
-    format_string = getSoundFileFormatString(fileformat);    
+    format_string = getSoundFileFormatString(fileformat);
+    subformat_string = getSoundFileSubFormatString(fileformat);
 
     int numFrames = 0;
 	if(!isStreaming){
@@ -1080,7 +1125,7 @@ bool OpenALSoundPlayer::load(const std::filesystem::path& _fileName, bool is_str
         buffers.resize(sources.size());
 	}
 	alGenBuffers(buffers.size(), &buffers[0]);
-    //cout << "sound load -> channels: "<< channels << " buffers.size: " << buffers.size() << " buffer_short.size(): " << buffer_short.size() << " duration: " << duration << endl;
+    //ofLogNotice() << "sound load " << _fileName <<" channels: "<< channels << " buffers.size: " << buffers.size() << " buffer_short.size(): " << buffer_short.size() << " duration: " << duration;
 
     if(sources.size() == 1){
 
@@ -1310,8 +1355,9 @@ void OpenALSoundPlayer::threadedFunction(){
 					alSourceQueueBuffers(sources[i], 1, &albuffer);
 				}
                 if(stream_end && !(state == AL_STOPPED)){
-                    //cout << "threadedFunction() - stream end! state: " << state << endl;
-                    //ofNotifyEvent(playbackEnded, playerPtr);
+                    cout << "threadedFunction() - stream end! state: " << state << endl;
+                    playerPtr = this;
+                    ofNotifyEvent(playbackEnded, playerPtr);
 					break;
 				}
 			}
@@ -1454,7 +1500,8 @@ void OpenALSoundPlayer::setVolume(float vol){
 	volume = vol;
 	if(sources.empty()) return;
     if(sources.size() == 1){
-		alSourcef (sources[sources.size()-1], AL_GAIN, vol);
+        alSourcef(sources[sources.size()-1], AL_MAX_GAIN, 5);
+        alSourcef (sources[sources.size()-1], AL_GAIN, vol);
 	}else{
 		setPan(pan);
 	}
@@ -1546,9 +1593,11 @@ void OpenALSoundPlayer::setPan(float p){
         float rightVol = (cosAngle + sinAngle) * 0.7071067811865475; // multiplied by sqrt(2)/2
 		for(int i=0;i<(int)channels;i++){
 			if(i==0){
-				alSourcef(sources[sources.size()-channels+i],AL_GAIN,leftVol*volume);
+                alSourcef(sources[sources.size()-channels+i], AL_MAX_GAIN, 2);
+                alSourcef(sources[sources.size()-channels+i], AL_GAIN,leftVol*volume);
 			}else{
-				alSourcef(sources[sources.size()-channels+i],AL_GAIN,rightVol*volume);
+                alSourcef(sources[sources.size()-channels+i], AL_MAX_GAIN, 2);
+                alSourcef(sources[sources.size()-channels+i], AL_GAIN,rightVol*volume);
 			}
 		}
 	}

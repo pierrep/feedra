@@ -27,12 +27,10 @@ void Scene::setup(string newpath)
     ofAddListener(this->clickedEvent, this, &Scene::onClicked);
 
     // create grid of sound players
-    int sound_id = 0;
     for(size_t i=0;i < config->gridWidth*config->gridHeight;i++) {
         int x = i%config->gridWidth*config->spacing + config->xoffset;
-        int y = (i/config->gridWidth)*config->spacing + config->yoffset;
-        sound_id++;
-        SoundObject* s = new SoundObject(config,id,sound_id,x,y,config->size,config->size);
+        int y = (i/config->gridWidth)*config->spacing + config->yoffset;        
+        SoundObject* s = new SoundObject(config,id,i,x,y,config->size,config->size);
         sounds.push_back(s);
     }
 
@@ -49,12 +47,12 @@ void Scene::setup(string newpath)
 }
 
 //--------------------------------------------------------------
-Scene::Scene(AppConfig* _config, string name, int _id, int _activeSound, int _x, int _y, int _w, int _h)
+Scene::Scene(AppConfig* _config, string name, int _id, int _activeSoundIdx, int _x, int _y, int _w, int _h)
 {
     id = _id;
 
     config = _config;
-    activeSound = _activeSound;
+    activeSoundIdx = _activeSoundIdx;
 
     setWidth(_w);
     setHeight(_h);
@@ -73,7 +71,7 @@ Scene::Scene(AppConfig* _config, string name, int _id, int _activeSound, int _x,
     stop_button.setWidth(20 * config->x_scale);
     stop_button.setHeight(20 * config->y_scale);
 
-    scene_name = "Scene "+ofToString(id);
+    scene_name = "Scene "+ofToString(id+1);
     if(strcmp(name.c_str(),"")== 0) {
         textfield.text = scene_name;
     } else {
@@ -86,6 +84,8 @@ Scene::Scene(AppConfig* _config, string name, int _id, int _activeSound, int _x,
     selectScene = false;
     isPlaying = false;
     isFading = false;
+
+    fadeVolume = 1.0f;
 }
 
 //--------------------------------------------------------------
@@ -177,11 +177,12 @@ void Scene::play()
     fadeDirection = 0;
     fadeCallback = [this]() -> void
     {
-        std::cout << "End pause fade-in" << endl;
+        //std::cout << "End play fade-in" << endl;
     };
 
     for(size_t i=0; i < sounds.size();i++) {
         sounds[i]->soundPlayer.setPaused(false);
+        sounds[i]->stopper.isStopped  = false;
     }
 }
 
@@ -193,7 +194,7 @@ void Scene::pause()
     fadeDirection = 1;
     fadeCallback = [this]() -> void
     {
-        std::cout << "End pause fade-out" << endl;
+        //std::cout << "End pause fade-out" << endl;
         for(size_t i=0; i < sounds.size();i++) {
             sounds[i]->soundPlayer.setPaused(true);
         }
@@ -209,7 +210,7 @@ void Scene::stop()
     fadeDirection = 1;
     fadeCallback = [this]() -> void
     {
-        std::cout << "End pause fade-out" << endl;
+        //std::cout << "End stop fade-out" << endl;
         for(size_t i=0; i < sounds.size();i++) {
             sounds[i]->soundPlayer.stop();
             //sounds[i]->stop();
@@ -221,7 +222,7 @@ void Scene::stop()
 //--------------------------------------------------------------
 void Scene::update()
 {
-    activeSound = config->activeSound;
+    activeSoundIdx = config->activeSoundIdx;
 
     if(play_button.doPlay) {
         if(isPlaying) {
@@ -245,21 +246,16 @@ void Scene::update()
     if(isFading) {
         curTime = ofGetElapsedTimeMillis();
         //if(fadeDirection == 1)
-        {
+        //{
             //double decay_time = 0.01; // time to fall to ~37% of original amplitude
             //double sample_time = 1.0 / 48000;
             //fadeVolume = exp(- sample_time / decay_time);
-        }
-        //else
-        {
-            fadeVolume = fabs(fadeDirection - (curTime - prevTime)/fadeDuration);
-        }
-        std::cout << "fade: " << fadeVolume << endl;
+        //}
+        fadeVolume = fabs(fadeDirection - (curTime - prevTime)/fadeDuration);
+        //std::cout << "fade: " << fadeVolume << endl;
         if(curTime - prevTime > fadeDuration)
         {
-            isFading = false;
-            fadeCallback();
-            fadeVolume = 1.0f;
+            endFade();
         }
     }
 
@@ -270,10 +266,21 @@ void Scene::update()
 }
 
 //--------------------------------------------------------------
+void Scene::endFade()
+{
+    if(isFading) {
+        isFading = false;
+        fadeCallback();
+        fadeVolume = 1.0f;
+    }
+}
+
+//--------------------------------------------------------------
 void Scene::enable()
 {
     play_button.enableEvents();
     delete_scene.enableEvents();
+    stop_button.enableEvents();
     textfield.enable();
 }
 
@@ -282,6 +289,7 @@ void Scene::disable()
 {
     play_button.disableEvents();
     delete_scene.disableEvents();
+    stop_button.disableEvents();
     textfield.disable();
 }
 
