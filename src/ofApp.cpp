@@ -40,6 +40,7 @@ void ofApp::saveConfig(string newpath, bool bCopyFiles)
     ofJson globalsettings;    
     globalsettings["global"]["mainvolume"] = mainVolume.getValue();
     globalsettings["global"]["maxscenes"] = scenes.size();
+    globalsettings["global"]["activesceneid"] = config.activeSceneIdx;
     config.settings.merge_patch(globalsettings);
 
     ofJson sceneInfo;
@@ -111,6 +112,10 @@ void ofApp::loadConfig(string newpath)
         if(!setting["global"]["maxscenes"].empty())
         {
             maxScenes = setting["global"]["maxscenes"];
+        }
+        if(!setting["global"]["activesceneid"].empty())
+        {
+            config.activeSceneIdx = setting["global"]["activesceneid"];
         }
         if(!setting["global"]["mainvolume"].empty())
         {
@@ -209,6 +214,7 @@ void ofApp::setup(){
     bLoadScenes = false;
     bClearPad = false;
     doClearPad = -1;
+    pageState = PageState::MAIN;
 
     config.setup();
 
@@ -269,7 +275,7 @@ void ofApp::setup(){
         scenes[i]->setup();
     }
 
-    enableScene(0);
+    enableScene(config.activeSceneIdx);
 
     updateSliders();
 
@@ -387,7 +393,7 @@ void ofApp::update(){
         for(size_t i=0;i < scenes.size();i++) {
             scenes[i]->setup(result.filePath);
         }
-        enableScene(0);
+        enableScene(config.activeSceneIdx);
         updateSliders();
 
         for(size_t i=0;i < scenes.size();i++) {
@@ -512,13 +518,13 @@ void ofApp::deleteScene()
 }
 
 //--------------------------------------------------------------
-void ofApp::enableScene(int i) {
+void ofApp::enableScene(int idx) {
 
     for(int i =0; i < scenes.size();i++) {
         scenes[i]->endFade();
     }
 
-    config.activeScene = scenes[i]->id;
+    config.activeScene = scenes[idx]->id;
 
     for(int i =0; i < scenes.size();i++) {
         if(config.activeScene == scenes[i]->id) {
@@ -526,7 +532,7 @@ void ofApp::enableScene(int i) {
         }
     }
 
-    config.activeSoundIdx = scenes[i]->activeSoundIdx;
+    config.activeSoundIdx = scenes[idx]->activeSoundIdx;
 
     for(size_t i=0; i < scenes.size();i++) {
         for(size_t j = 0; j < scenes[i]->sounds.size();j++)
@@ -536,11 +542,43 @@ void ofApp::enableScene(int i) {
         scenes[i]->disable();
     }
 
-    for(size_t j = 0; j < scenes[i]->sounds.size();j++)
+    for(size_t j = 0; j < scenes[idx]->sounds.size();j++)
     {
-        scenes[i]->sounds[j]->enableAllEvents();
+        scenes[idx]->sounds[j]->enableAllEvents();
     }
-    scenes[i]->enable();
+    scenes[idx]->enable();
+    cout << "Enable scene: " << idx << endl;
+}
+
+//--------------------------------------------------------------
+void ofApp::disableEvents()
+{
+    for(size_t i=0; i < scenes.size();i++) {
+        for(size_t j = 0; j < scenes[i]->sounds.size();j++)
+        {
+            scenes[i]->sounds[j]->disableAllEvents();
+        }
+        scenes[i]->disable();
+        scenes[i]->disableInteractivity();
+    }
+    cout << "Disable Events" << endl;
+}
+
+//--------------------------------------------------------------
+void ofApp::enableEvents()
+{
+    int idx = config.activeSceneIdx;
+    for(size_t j = 0; j < scenes[idx]->sounds.size();j++)
+    {
+        scenes[idx]->sounds[j]->enableAllEvents();
+    }
+    scenes[idx]->enable();
+
+    for(size_t i=0; i < scenes.size();i++) {
+        scenes[i]->enableInteractivity();
+    }
+
+    cout << "Enable Events: " << idx << endl;
 }
 
 //--------------------------------------------------------------
@@ -560,17 +598,42 @@ void ofApp::draw(){
     int fps = ofGetFrameRate();
     ofSetWindowTitle("Fps: "+ofToString(fps));
 
+    static bool bEnableEvents = false;
+
     if(!bDoRender) return;
 
     ofBackgroundHex(0x9a8e84);
 
+    if(pageState == MAIN)
+    {
+        if(bEnableEvents) {
+            enableEvents();
+            bEnableEvents = false;
+        }
+
+        renderMainPage();
+
+    } else if(pageState == EDIT) {
+        if(!bEnableEvents) {
+            disableEvents();
+        }
+        renderEditPage();
+        bEnableEvents = true;
+    }
+
+}
+
+//--------------------------------------------------------------
+void ofApp::renderMainPage()
+{
     for(size_t i=0; i < scenes.size();i++) {
-         scenes[i]->render();
-     }
+        scenes[i]->render();
+    }
 
     if(scenes.size() < config.max_scenes) {
         addScene->render(0x7b2800);
     } else {
+        //change addScene button if max scenes reached
         //addScene->render(0x404040);
     }
 
@@ -582,9 +645,31 @@ void ofApp::draw(){
 }
 
 //--------------------------------------------------------------
+void ofApp::renderEditPage() {
+
+    string name = scenes[config.activeSceneIdx]->sounds[config.activeSoundIdx]->soundname.text;
+    config.f1().drawString(ofToUpper(name),30*config.x_scale, 30*config.y_scale);
+    SoundPlayer& p = scenes[config.activeSceneIdx]->sounds[config.activeSoundIdx]->soundPlayer;
+    for(size_t i=0; i < p.player.size();i++) {
+        int offset = (i/15)*(config.sample_gui_width+20*config.x_scale);
+        ofVec3f pos(config.xoffset+offset,config.yoffset+(i%15)*42*config.y_scale,0);
+        p.player[i].render(pos);
+    }
+}
+
+//--------------------------------------------------------------
 void ofApp::keyPressed  (ofKeyEventArgs & args){
     int key = args.key;
 
+    if(key == '1'){
+        pageState = MAIN;
+    } else
+    if(key == '2'){
+        pageState = EDIT;
+    }
+    if(key == '3'){
+        pageState = SETTINGS;
+    }
     if((key == 'q' || key == 'Q') && args.hasModifier(OF_KEY_CONTROL)){
         ofExit();
     }

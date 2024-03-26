@@ -12,6 +12,8 @@ Project{
         name: { return FileInfo.baseName(sourceDirectory) }
 
         files: [
+            "src/AudioSample.cpp",
+            "src/AudioSample.h",
             'src/AppConfig.cpp',
             'src/AppConfig.h',
             'src/OpenALSoundPlayer.cpp',

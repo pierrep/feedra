@@ -2,6 +2,7 @@
 
 Scene::Scene()
 {   
+    bInteractive = false;
 }
 
 //--------------------------------------------------------------
@@ -12,7 +13,9 @@ Scene::~Scene()
     }
     sounds.clear();
 
-    ofRemoveListener(Interactive::clickedEvent, this, &Scene::onClicked);
+    if(bInteractive) {
+        disableInteractivity();
+    }
     //ofLogNotice() << "Scene destructor for id: " << id << " called...";
 }
 
@@ -24,7 +27,7 @@ void Scene::setup() {
 //--------------------------------------------------------------
 void Scene::setup(string newpath)
 {    
-    ofAddListener(this->clickedEvent, this, &Scene::onClicked);
+    enableInteractivity();
 
     // create grid of sound players
     for(size_t i=0;i < config->gridWidth*config->gridHeight;i++) {
@@ -281,7 +284,16 @@ void Scene::enable()
     play_button.enableEvents();
     delete_scene.enableEvents();
     stop_button.enableEvents();
-    textfield.enable();
+    textfield.enable();  
+}
+
+//--------------------------------------------------------------
+void Scene::enableInteractivity()
+{
+    if(!bInteractive) {
+        ofAddListener(this->clickedEvent, this, &Scene::onClicked);
+        bInteractive = true;
+    }
 }
 
 //--------------------------------------------------------------
@@ -290,6 +302,14 @@ void Scene::disable()
     play_button.disableEvents();
     delete_scene.disableEvents();
     stop_button.disableEvents();
-    textfield.disable();
+    textfield.disable();        
 }
 
+//--------------------------------------------------------------
+void Scene::disableInteractivity()
+{
+    if(bInteractive) {
+        ofRemoveListener(Interactive::clickedEvent, this, &Scene::onClicked);
+        bInteractive = false;
+    }
+}

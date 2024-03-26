@@ -24,7 +24,9 @@ public:
     void updatePosition(int x,int y);
     void onClicked(int& args);
     void enable();
+    void enableInteractivity();
     void disable();
+    void disableInteractivity();
     void endFade();
 
     int id;
@@ -48,5 +50,8 @@ public:
     long int curTime;
     long int prevTime;
     std::function<void()> fadeCallback;
+
+protected:
+    bool bInteractive;
 };
 

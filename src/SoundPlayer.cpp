@@ -1,4 +1,5 @@
 #include "SoundPlayer.h"
+#include "OpenALSoundPlayer.h"
 
 SoundPlayer::SoundPlayer()
 {
@@ -41,6 +42,7 @@ void SoundPlayer::setup(AppConfig* _config, int _id)
 {
 
     config = _config;
+    player[0].config = _config;
     id = _id;
 }
 

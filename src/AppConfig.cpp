@@ -14,19 +14,21 @@ AppConfig::~AppConfig()
 //--------------------------------------------------------------
 void AppConfig::setup()
 {
-    xoffset = 20*x_scale;
+    xoffset = 15*x_scale;
     yoffset = 80*y_scale;
     size = 120*x_scale;
-    spacing = size + 30*x_scale;
+    spacing = size + 25*x_scale;
     gridWidth = 6;
     gridHeight = 4;
 
-    scene_width = 240*x_scale;
+    scene_width = 255*x_scale;
     scene_height = 45*y_scale;
     scene_spacing = scene_height + 5*x_scale;
-    baseSceneOffset = gridWidth*spacing ;
+    baseSceneOffset = gridWidth*spacing + 10*x_scale;
     scene_yoffset = 80*y_scale;
     max_scenes = 14;
+
+    sample_gui_width = 550*x_scale;
 
     activeScene = 0;
     activeSoundIdx = 0;

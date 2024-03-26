@@ -43,6 +43,8 @@ public:
     int baseSceneOffset;
     int scene_yoffset;
 
+    int sample_gui_width;
+
     bool loopByDefault;
 
     int activeScene;

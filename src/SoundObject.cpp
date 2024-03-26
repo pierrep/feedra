@@ -18,7 +18,7 @@ SoundObject::~SoundObject()
         soundPlayer.stop();
     }
 
-    ofRemoveListener(this->clickedEvent, this, &SoundObject::onClicked);
+    //ofRemoveListener(this->clickedEvent, this, &SoundObject::onClicked);
     ofRemoveListener(ofEvents().fileDragEvent, this, &SoundObject::onDragEvent);
     disableAllEvents();
     //ofLogNotice() << "SoundObject destructor called...ID = " << id;
@@ -39,6 +39,7 @@ void SoundObject::disableAllEvents()
     if(player.isLoaded) {
         soundname.disable();
     }
+    ofRemoveListener(this->clickedEvent, this, &SoundObject::onClicked);
 }
 
 //--------------------------------------------------------------
@@ -56,6 +57,7 @@ void SoundObject::enableAllEvents()
     if(player.isLoaded) {
         soundname.enable();
     }
+    ofAddListener(this->clickedEvent, this, &SoundObject::onClicked);
 }
 
 //--------------------------------------------------------------
@@ -109,12 +111,14 @@ void SoundObject::load(string newpath)
                                 s.audioPlayer->setSpeed(pitch);
                                 //s.audioPlayer->setVolume(gain);
                                 s.audioPlayer->setPan(pan);
+                                s.config = config;
                                 soundPlayer.player.push_back(s);
                             }
                             bool bLoaded = soundPlayer.load(new_path, i, isStream);
                             if(bLoaded) {
                                 //cout << "loaded " << soundpath[i] << endl;
                                 soundPlayer.recalculateDelay(i);
+                                soundPlayer.player[i].sample_path = new_path;
                                 player.isLoaded = true;
                             }
                         }
@@ -260,11 +264,13 @@ void SoundObject::onDragEvent(ofDragInfo &args)
                 if(i > (int)(soundPlayer.player.size()-1)) {
                     AudioSample s;
                     s.audioPlayer = new OpenALSoundPlayer();
+                    s.config = config;
                     soundPlayer.player.push_back(s);
                 }
                 bool bLoaded = soundPlayer.load(path, i, isStream);
                 if(bLoaded) {
                     setupSound(path);
+                    soundPlayer.player[i].sample_path = path;
                     soundPlayer.recalculateDelay(i);
                 }
             }
@@ -290,6 +296,7 @@ SoundObject::SoundObject(AppConfig* _config, size_t _scene_id, int _id, int _x, 
     reverbSend = 0.0f;
     sample_rate = 0;
     fadeVolume = 1.0f;
+    soundPlayer.config = _config;
 
     id = _id;
     setX(_x);
@@ -385,7 +392,7 @@ void SoundObject::render()
 
     ofSetHexColor(0xfbe9d8);
     ofFill();
-    ofDrawRectRounded(getX(),getY(),getWidth(), getHeight(),10);
+    ofDrawRectRounded(getX(),getY(),getWidth(), getHeight(),config->x_scale*5);
 
     ofNoFill();
     if(config->activeSoundIdx == id) {
@@ -395,7 +402,7 @@ void SoundObject::render()
         ofSetLineWidth(3);
         ofSetColor(32);
     }
-    ofDrawRectRounded(getX(),getY(),getWidth(), getHeight(),10);       
+    ofDrawRectRounded(getX(),getY(),getWidth(), getHeight(),config->x_scale*5);
 
     loader.render();
     stopper.render(soundPlayer.isPlaying(), soundPlayer.getPosition());

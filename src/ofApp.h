@@ -38,6 +38,10 @@ class ofApp : public ofBaseApp {
         void checkAudioDeviceChange();
         void drawSoundInfo();
         void calculateSources();
+        void renderMainPage();
+        void renderEditPage();
+        void disableEvents();
+        void enableEvents();
 
         int pages[3];
         vector<Scene*> scenes;
@@ -60,5 +64,8 @@ class ofApp : public ofBaseApp {
         long int prevTime;
         string curDevice;
         string newDevice;
+
+        enum PageState { MAIN, EDIT, SETTINGS };
+        PageState pageState;
 };
 

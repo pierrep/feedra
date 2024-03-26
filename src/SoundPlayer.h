@@ -2,21 +2,7 @@
 
 #include "UI/Interactive.h"
 #include "AppConfig.h"
-#include "OpenALSoundPlayer.h"
-
-typedef struct AudioSample
-{
-    OpenALSoundPlayer* audioPlayer;
-    int totalDelay;
-    int curDelay;
-    float gain; //0.5f - 2.0f ?
-
-    AudioSample() {
-        totalDelay = 0;
-        curDelay = 0;
-        gain = 0;
-    }
-} AudioSample;
+#include "AudioSample.h"
 
 class SoundPlayer: public Interactive
 {
