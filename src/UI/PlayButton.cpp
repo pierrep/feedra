@@ -1,6 +1,6 @@
-#include "Player.h"
+#include "PlayButton.h"
 
-Player::Player()
+PlayButton::PlayButton()
 {
     id = 0;
     isPlaying = false;
@@ -9,21 +9,21 @@ Player::Player()
 }
 
 //--------------------------------------------------------------
-Player::~Player()
+PlayButton::~PlayButton()
 {
-    ofRemoveListener(Interactive::clickedEvent, this, &Player::onClicked);
-    ofLogVerbose() << "Player destructor called...";
+    ofRemoveListener(Interactive::clickedEvent, this, &PlayButton::onClicked);
+    ofLogVerbose() << "PlayButton destructor called...";
 }
 
 //--------------------------------------------------------------
-void Player::setup(AppConfig* _config)
+void PlayButton::setup(AppConfig* _config)
 {
-    ofAddListener(this->clickedEvent, this, &Player::onClicked);
+    ofAddListener(this->clickedEvent, this, &PlayButton::onClicked);
     config = _config;
 }
 
 //--------------------------------------------------------------
-Player::Player(int _id, int _x, int _y, int _w, int _h)
+PlayButton::PlayButton(int _id, int _x, int _y, int _w, int _h)
 {
     id = _id;
 
@@ -34,8 +34,8 @@ Player::Player(int _id, int _x, int _y, int _w, int _h)
 }
 
 //--------------------------------------------------------------
-Player::Player(const Player& parent) {
-    ofLogVerbose() << "Player copy constructor called";
+PlayButton::PlayButton(const PlayButton& parent) {
+    ofLogVerbose() << "PlayButton copy constructor called";
 
     id = parent.id;
     setX(parent.x);
@@ -48,13 +48,13 @@ Player::Player(const Player& parent) {
 }
 
 //--------------------------------------------------------------
-void Player::onClicked(int& args) {
-    //ofLogVerbose() << "Player id: " << id << " clicked";
+void PlayButton::onClicked(int& args) {
+    //ofLogVerbose() << "PlayButton id: " << id << " clicked";
     doPlay = true;
 }
 
 //--------------------------------------------------------------
-void Player::render(SoundPlayer& soundPlayer)
+void PlayButton::render(SoundPlayer& soundPlayer)
 {    
     ofPushStyle();
 
@@ -80,10 +80,4 @@ void Player::render(SoundPlayer& soundPlayer)
     ofDrawRectangle(getX(),getY(),getWidth(), getHeight());
 
     ofPopStyle();
-}
-
-//--------------------------------------------------------------
-void Player::update()
-{
-
 }

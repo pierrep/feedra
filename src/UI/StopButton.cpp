@@ -1,6 +1,6 @@
-#include "Stop.h"
+#include "StopButton.h"
 
-Stop::Stop()
+StopButton::StopButton()
 {
     id = 0;
     doStop = false;
@@ -8,21 +8,21 @@ Stop::Stop()
 }
 
 //--------------------------------------------------------------
-Stop::~Stop()
+StopButton::~StopButton()
 {
-    ofRemoveListener(Interactive::clickedEvent, this, &Stop::onClicked);
+    ofRemoveListener(Interactive::clickedEvent, this, &StopButton::onClicked);
     ofLogVerbose() << "Stop destructor called...";
 }
 
 //--------------------------------------------------------------
-void Stop::setup()
+void StopButton::setup()
 {
 
-    ofAddListener(this->clickedEvent, this, &Stop::onClicked);
+    ofAddListener(this->clickedEvent, this, &StopButton::onClicked);
 }
 
 //--------------------------------------------------------------
-Stop::Stop(int _id, int _x, int _y, int _w, int _h)
+StopButton::StopButton(int _id, int _x, int _y, int _w, int _h)
 {
     id = _id;
 
@@ -33,8 +33,8 @@ Stop::Stop(int _id, int _x, int _y, int _w, int _h)
 }
 
 //--------------------------------------------------------------
-Stop::Stop(const Stop& parent) {
-    ofLogVerbose() << "Stop copy constructor called";
+StopButton::StopButton(const StopButton& parent) {
+    ofLogVerbose() << "StopButton copy constructor called";
 
     id = parent.id;
     setX(parent.x);
@@ -44,13 +44,13 @@ Stop::Stop(const Stop& parent) {
 }
 
 //--------------------------------------------------------------
-void Stop::onClicked(int& args) {
+void StopButton::onClicked(int& args) {
     //ofLogNotice() << "Stop id: " << id << " clicked";
     doStop = true;
 }
 
 //--------------------------------------------------------------
-void Stop::render(bool isPlaying, float _position)
+void StopButton::render(bool isPlaying, float _position)
 {    
     ofPushStyle();
 
@@ -63,10 +63,4 @@ void Stop::render(bool isPlaying, float _position)
 
 
     ofPopStyle();
-}
-
-//--------------------------------------------------------------
-void Stop::update()
-{
-
 }

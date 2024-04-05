@@ -1,27 +1,27 @@
-#include "Loader.h"
+#include "LoadButton.h"
 
-Loader::Loader()
+LoadButton::LoadButton()
 {
     id = 0;
     doLoad = false;
 }
 
 //--------------------------------------------------------------
-Loader::~Loader()
+LoadButton::~LoadButton()
 {
-    ofRemoveListener(Interactive::clickedEvent, this, &Loader::onClicked);
-    ofLogVerbose() << "Loader destructor called...";
+    ofRemoveListener(Interactive::clickedEvent, this, &LoadButton::onClicked);
+    ofLogVerbose() << "LoadButton destructor called...";
 }
 
 //--------------------------------------------------------------
-void Loader::setup()
+void LoadButton::setup()
 {
 
-    ofAddListener(this->clickedEvent, this, &Loader::onClicked);
+    ofAddListener(this->clickedEvent, this, &LoadButton::onClicked);
 }
 
 //--------------------------------------------------------------
-Loader::Loader(int _id, int _x, int _y, int _w, int _h)
+LoadButton::LoadButton(int _id, int _x, int _y, int _w, int _h)
 {
     id = _id;
 
@@ -32,8 +32,8 @@ Loader::Loader(int _id, int _x, int _y, int _w, int _h)
 }
 
 //--------------------------------------------------------------
-Loader::Loader(const Loader& parent) {
-    ofLogVerbose() << "Loader copy constructor called";
+LoadButton::LoadButton(const LoadButton& parent) {
+    ofLogVerbose() << "LoadButton copy constructor called";
 
     id = parent.id;
     setX(parent.x);
@@ -43,13 +43,13 @@ Loader::Loader(const Loader& parent) {
 }
 
 //--------------------------------------------------------------
-void Loader::onClicked(int& args) {
-    ofLogNotice() << "Loader id: " << id << " clicked";
+void LoadButton::onClicked(int& args) {
+    ofLogNotice() << "LoadButton id: " << id << " clicked";
     doLoad = true;
 }
 
 //--------------------------------------------------------------
-void Loader::render()
+void LoadButton::render()
 {    
     ofPushStyle();
 
@@ -67,7 +67,7 @@ void Loader::render()
 }
 
 //--------------------------------------------------------------
-void Loader::update()
+void LoadButton::update()
 {
 
 }

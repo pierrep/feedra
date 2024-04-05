@@ -29,13 +29,17 @@ void AudioSample::render(ofVec3f pos)
 {
 
     ofPushStyle();
+
+    ofSetColor(255);
+    ofDrawRectRounded(pos, config->sample_gui_width,35*config->y_scale,config->x_scale*5);
+
     if(audioPlayer->isPlaying())
     {
         ofSetColor(200);
     } else {
         ofSetColor(255);
     }
-    ofDrawRectRounded(pos, config->sample_gui_width,35*config->y_scale,config->x_scale*5);
+    ofDrawRectRounded(pos, config->sample_gui_width*audioPlayer->getPosition(),35*config->y_scale,config->x_scale*5);
 
     ofSetColor(50);
     std::filesystem::path p(sample_path);

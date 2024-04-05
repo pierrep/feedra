@@ -4,10 +4,10 @@
 #include "UI/SimpleSlider.h"
 #include "AppConfig.h"
 #include "UI/Interactive.h"
-#include "UI/Loader.h"
-#include "UI/Player.h"
+#include "UI/LoadButton.h"
+#include "UI/PlayButton.h"
 #include "UI/PlayBar.h"
-#include "UI/Stop.h"
+#include "UI/StopButton.h"
 #include "UI/Looper.h"
 #include "SoundPlayer.h"
 
@@ -35,6 +35,7 @@ public:
     void enableAllEvents();
     void onDragEvent(ofDragInfo &args);
     void setupSound(string path);
+    bool loadPadSound(int idx, std::string filepath, bool bLoaded);
 
     int id;
 
@@ -42,10 +43,10 @@ public:
     AppConfig* config;
     SoundPlayer soundPlayer;
 
-    Loader loader;
-    Player player;
+    LoadButton loader;
+    PlayButton player;
     PlayBar playbar;
-    Stop stopper;
+    StopButton stopper;
     Looper looper;
 
     size_t scene_id;

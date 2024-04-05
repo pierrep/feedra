@@ -3,6 +3,8 @@
 
 #include "AL/alext.h"
 
+bool ofApp::bMinimised = false;
+
 //--------------------------------------------------------------
 ofApp::~ofApp()
 {    
@@ -190,6 +192,21 @@ void ofApp::calculateSources()
 }
 
 //--------------------------------------------------------------
+void ofApp::window_minimise_callback(GLFWwindow* window, int minimised)
+{
+    if (minimised)
+    {
+        // The window was minimised
+    }
+    else
+    {
+        // The window was restored
+    }
+    bMinimised = minimised;
+    cout << "bMinimised: " <<  minimised << endl;
+}
+
+//--------------------------------------------------------------
 void ofApp::setup(){
     ofSetEscapeQuitsApp(false);
     ofSetWindowTitle("Feedra");    
@@ -208,6 +225,7 @@ void ofApp::setup(){
         glfwGetWindowContentScale(glfwWin->getGLFWWindow(),&config.x_scale,&config.y_scale);
         ofLogNotice() << "glfwGetWindowContentScale  x = " << config.x_scale << " y = " << config.y_scale;
 
+        glfwSetWindowIconifyCallback(glfwWin->getGLFWWindow(),this->window_minimise_callback);
         ofSetWindowShape(ofGetWindowWidth()*config.x_scale,ofGetWindowHeight()*config.y_scale);
     }
     bDoRender = true;
@@ -244,6 +262,12 @@ void ofApp::setup(){
     reverbSend.setScale(config.y_scale, config.x_scale);
     reverbSend.setFont(&config.f2());
     reverbSend.setLabelString("Reverb send");
+
+    setStereo.setX(config.xoffset);
+    setStereo.setY(ofGetHeight() - 140*config.y_scale);
+    setStereo.setWidth(20 * config.x_scale);
+    setStereo.setHeight(20 * config.y_scale);
+    setStereo.setup(&config);
 
     ofAddListener(minDelay.clickedEvent, this, &ofApp::onClicked);
     ofAddListener(maxDelay.clickedEvent, this, &ofApp::onClicked);
@@ -385,6 +409,11 @@ void ofApp::update(){
         }
     }
     doClearPad = -1;
+
+    if(setStereo.bActivate) {
+        setStereo.bActivate = false;
+        setStereo.isActive = !setStereo.isActive;
+    }
 
     if(bLoadScenes) {
         ofFileDialogResult result = ofSystemLoadDialog("Load Feedra scenes", false);
@@ -600,7 +629,7 @@ void ofApp::draw(){
 
     static bool bEnableEvents = false;
 
-    if(!bDoRender) return;
+    if(!bDoRender || bMinimised) return;
 
     ofBackgroundHex(0x9a8e84);
 
@@ -620,6 +649,59 @@ void ofApp::draw(){
         renderEditPage();
         bEnableEvents = true;
     }
+
+//    ofPushStyle();
+//    ofSetLineWidth(2*config.x_scale);
+//    ofNoFill();
+//    //ofSetHexColor(0xFF9933);
+//    ofSetHexColor(0x68533e);
+//    ofTranslate(-150*config.x_scale,-20*config.y_scale,0);
+//    ofBeginShape();
+
+//    ofVertex(150*config.x_scale,700*config.y_scale);
+//    float x0 = 200*config.x_scale;
+//    float y0 = 700*config.y_scale;
+//    float x1 = 210*config.x_scale;
+//    float y1 = 690*config.y_scale;
+//    float x2 = 210*config.x_scale;
+//    float y2 = 680*config.y_scale;
+//    float x3 = 220*config.x_scale;
+//    float y3 = 670*config.y_scale;
+//    ofVertex(x0,y0);
+//    ofBezierVertex(x1,y1,x2,y2,x3,y3);
+
+//    ofVertex(260*config.x_scale,670*config.y_scale);
+//    ofVertex(300*config.x_scale,670*config.y_scale);
+
+//     x0 = 310*config.x_scale;
+//     y0 = 670*config.y_scale;
+//     x1 = 320*config.x_scale;
+//     y1 = 680*config.y_scale;
+//     x2 = 320*config.x_scale;
+//     y2 = 690*config.y_scale;
+//     x3 = 330*config.x_scale;
+//     y3 = 700*config.y_scale;
+//    ofVertex(x0,y0);
+//    ofBezierVertex(x1,y1,x2,y2,x3,y3);
+//    ofVertex(380*config.x_scale,700*config.y_scale);
+
+//    ofEndShape();
+
+//    ofSetColor(64);
+//    ofBeginShape();
+//    ofVertex(150*config.x_scale,668*config.y_scale);
+//    ofVertex(400*config.x_scale,668*config.y_scale);
+//    ofEndShape();
+
+//    ofSetColor(64);
+//    ofBeginShape();
+//    ofVertex(150*config.x_scale,700*config.y_scale);
+//    ofVertex(400*config.x_scale,700*config.y_scale);
+//    ofEndShape();
+//ofPopStyle();
+
+
+    setStereo.render();
 
 }
 

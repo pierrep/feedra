@@ -239,7 +239,16 @@ void TextInputField::draw() {
     if(text.size() > string_limit) {
         tmp_text = text.substr(0,string_limit);
     }
+    float wpix = bounds.getWidth();
+    float textlen = fontRef->stringWidth(tmp_text);
+    float diff = (wpix - textlen)/2.0f;
+    if(isEditing()) {
+        setHorizontalPadding(3);
+    } else {
+        setHorizontalPadding(diff);
+    }
     fontRef->drawString(tmp_text, horizontalPadding, fontRef->getLineHeight() + verticalPadding);
+    //fontRef->drawString(tmp_text, diff, fontRef->getLineHeight() + verticalPadding);
 	ofPopMatrix();
 }
 

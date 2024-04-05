@@ -5,7 +5,7 @@
 #include "UI/Interactive.h"
 #include "UI/PlayScene.h"
 #include "UI/DeleteScene.h"
-#include "UI/Stop.h"
+#include "UI/StopButton.h"
 
 class Scene: public Interactive
 {
@@ -38,7 +38,7 @@ public:
     string scene_name;
     PlayScene play_button;    
     DeleteScene delete_scene;
-    Stop stop_button;
+    StopButton stop_button;
     vector<SoundObject*> sounds;
     TextInputField textfield;
 

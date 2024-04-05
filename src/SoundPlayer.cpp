@@ -332,6 +332,12 @@ int SoundPlayer::getCurSound() const
 }
 
 //--------------------------------------------------------------------
+bool SoundPlayer::getIsStereo() const
+{
+    return player[curSound].audioPlayer->getIsStereo();
+}
+
+//--------------------------------------------------------------------
 int SoundPlayer::getMinDelay() const
 {
     return minDelay;

@@ -4,6 +4,7 @@
 #include "Scene.h"
 #include "UI/AddScene.h"
 #include "UI/SimpleSlider.h"
+#include "UI/CheckBox.h"
 
 class ofApp : public ofBaseApp {
 
@@ -43,6 +44,9 @@ class ofApp : public ofBaseApp {
         void disableEvents();
         void enableEvents();
 
+        static void window_minimise_callback(GLFWwindow* window, int minimised);
+        static bool bMinimised;
+
         int pages[3];
         vector<Scene*> scenes;
         AddScene* addScene;
@@ -54,6 +58,8 @@ class ofApp : public ofBaseApp {
         SimpleSlider maxDelay;
         SimpleSlider pan;
         SimpleSlider reverbSend;
+
+        CheckBox setStereo;
 
         bool bDoRender;
         bool bLoadScenes;

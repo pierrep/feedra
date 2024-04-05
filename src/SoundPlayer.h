@@ -41,6 +41,7 @@ public:
     int getSampleRate() const;
     int getNumChannels() const;
     int getCurSound() const;
+    bool getIsStereo() const;
     int getMinDelay() const;
     int getMaxDelay() const;
     int getTotalDelay() const;

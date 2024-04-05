@@ -3,13 +3,13 @@
 #include "Interactive.h"
 
 
-class Loader: public Interactive
+class LoadButton: public Interactive
 {
 public:
-    Loader();
-    ~Loader();
-    Loader(const Loader& d);
-    Loader(int _id, int _x, int _y, int _w, int _h);
+    LoadButton();
+    ~LoadButton();
+    LoadButton(const LoadButton& d);
+    LoadButton(int _id, int _x, int _y, int _w, int _h);
     void setup();
     void render();
     void update();

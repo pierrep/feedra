@@ -617,7 +617,7 @@ void OpenALSoundPlayer::initialize(){
         ofLogNotice() << "ALC version: " << major << "." << minor;        
         ALCint data[16];
         alcGetIntegerv(alDevice, ALC_FREQUENCY, 1, data);
-        ofLogNotice() << "Mixer frequency: " << data[0] << " hz";
+        ofLogNotice() << "Mixer sample rate: " << data[0] << " hz";
         listDevices();
 
         if(!alcIsExtensionPresent(alDevice, "ALC_EXT_EFX"))
