@@ -43,7 +43,7 @@ void AudioSample::render(ofVec3f pos)
 
     ofSetColor(50);
     std::filesystem::path p(sample_path);
-    string name = p.filename(); //audioPlayer->getFormatString()
+    string name = p.filename().string(); //audioPlayer->getFormatString()
     config->f2().drawString(name,pos.x+20*config->x_scale,pos.y+22*config->y_scale);
 
     ofPopStyle();

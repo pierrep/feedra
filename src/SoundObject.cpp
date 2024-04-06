@@ -254,7 +254,7 @@ void SoundObject::onDragEvent(ofDragInfo &args)
         if(bLoaded) {
             //set name to first file
             filesystem::path s(args.files[0]);
-            soundname.text = s.stem();
+            soundname.text = s.stem().string();
             config->activeSoundIdx = id;
         }
     }
@@ -547,7 +547,7 @@ void SoundObject::setupSound(string path)
     soundPlayer.setLoop(looper.isLooping);
 
     soundname.enable();
-    soundname.text = s.stem();
+    soundname.text = s.stem().string();
 
     sample_rate = soundPlayer.getSampleRate();
     channels = soundPlayer.getNumChannels();

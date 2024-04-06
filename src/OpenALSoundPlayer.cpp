@@ -959,7 +959,7 @@ size_t OpenALSoundPlayer::stream(const std::filesystem::path& fileName){
         if(!sfStream(fileName)) return 0;
 
 	fftBuffers.resize(channels);
-    int numFrames = buffer_float.size()/channels;
+    int numFrames = (int) buffer_float.size()/channels;
 
 	for(int i=0;i<channels;i++){
 		fftBuffers[i].resize(numFrames);
@@ -1093,7 +1093,7 @@ bool OpenALSoundPlayer::load(const std::filesystem::path& _fileName, bool is_str
     }
 
     alGetError(); // Clear error.
-    alGenSources(sources.size(), &sources[0]);
+    alGenSources((ALsizei) sources.size(), &sources[0]);
     err = alGetError();
     if (err != AL_NO_ERROR){
         ofLogError("OpenALSoundPlayer") << "loadSound(): couldn't generate sources for " << fileName << ": "
@@ -1124,7 +1124,7 @@ bool OpenALSoundPlayer::load(const std::filesystem::path& _fileName, bool is_str
 	}else{
         buffers.resize(sources.size());
 	}
-	alGenBuffers(buffers.size(), &buffers[0]);
+	alGenBuffers((ALsizei)buffers.size(), &buffers[0]);
     //ofLogNotice() << "sound load " << _fileName <<" channels: "<< channels << " buffers.size: " << buffers.size() << " buffer_short.size(): " << buffer_short.size() << " duration: " << duration;
 
     if(sources.size() == 1){

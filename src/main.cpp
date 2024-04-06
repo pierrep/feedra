@@ -16,9 +16,11 @@ int main( ){
 #endif
     ofCreateWindow(settings);
     //(GLFWwindow*)ofGetWindowPtr()->setWindowIcon();
+#ifdef TARGET_LINUX
     ofAppGLFWWindow* win;
     win = dynamic_cast<ofAppGLFWWindow *> (ofGetWindowPtr());
     win->setWindowIcon("feedra.png");
+#endif
 	ofRunApp( new ofApp());
 
 }

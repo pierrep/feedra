@@ -54,12 +54,13 @@ void ofApp::saveConfig(string newpath, bool bCopyFiles)
 
         //save sounds
         for(int j=0;j < scenes[i]->sounds.size();j++)
-        {            
+        {       
+#ifdef TARGET_LINUX // FIXME - copying files is OS specific
             if(bCopyFiles) {
                 for(int k = 0; k < scenes[i]->sounds[j]->soundpath.size();k++) {
                     string oldpath = scenes[i]->sounds[j]->soundpath[k];
                     filesystem::path p(oldpath);
-                    string name = p.filename();
+                    string name = p.filename().string();
     #ifdef TARGET_LINUX
                     filesystem::path np(newpath);
                     //string outfile = np.filename();
@@ -78,7 +79,10 @@ void ofApp::saveConfig(string newpath, bool bCopyFiles)
                     scenes[i]->sounds[j]->soundpath[k] = outpath;
                 }
                 scenes[i]->sounds[j]->save();
-            } else {
+            } 
+            else 
+#endif
+            {
                 scenes[i]->sounds[j]->save();
             }
 
@@ -89,7 +93,7 @@ void ofApp::saveConfig(string newpath, bool bCopyFiles)
 
     filesystem::path p(newpath);
     if(p.extension() != ".json") {
-        newpath = (string) p.parent_path() + "/" + (string) p.stem() + ".json";
+        newpath = (string) p.parent_path().string() + "/" + (string)p.stem().string() + ".json";
     }
     string save_name = newpath;
     ofSavePrettyJson(save_name,config.settings);
@@ -613,7 +617,7 @@ void ofApp::enableEvents()
 //--------------------------------------------------------------
 void ofApp::updateScenePosition()
 {
-    for(size_t i=0;i < scenes.size();i++) {
+    for(int i=0;i < (int)scenes.size();i++) {
         int y = i* config.scene_spacing + config.scene_yoffset;
         scenes[i]->updatePosition(scenes[i]->x,y);
     }

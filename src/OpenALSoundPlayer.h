@@ -20,9 +20,16 @@ typedef unsigned int ALuint;
 #include "kiss_fft.h"
 #include "kiss_fftr.h"
 
+#ifdef _WIN32
+#include "sndfile.h"
+#else
+#include <sndfile.h>
+#endif
 
 
+#ifndef _WIN32
 typedef	struct SNDFILE_tag	SNDFILE ;
+#endif
 
 enum FormatType {
     Int16,
@@ -94,8 +101,12 @@ class OpenALSoundPlayer : public ofBaseSoundPlayer, public ofThread {
         ALenum getOpenALFormat() const {return openALformat;}
         std::string getFormatString() const {return format_string;}
         std::string getSubFormatString() const {return subformat_string;}
+<<<<<<< Updated upstream
         int getNumSources() {return sources.size();}
         bool getIsStereo() {return nonSpatialisedStereo;}
+=======
+        int getNumSources() {return (int)sources.size();}
+>>>>>>> Stashed changes
 
         static ofEvent<OpenALSoundPlayer *> playbackEnded;
         OpenALSoundPlayer* playerPtr;
