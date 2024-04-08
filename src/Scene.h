@@ -22,14 +22,14 @@ public:
     void pause();
     void stop();
     void updatePosition(int x,int y);
-    void onClicked(int& args);
+    void onClicked(ClickArgs& args);
     void enable();
     void enableInteractivity();
     void disable();
     void disableInteractivity();
     void endFade();
 
-    int id;
+    //int id;
     bool selectScene;
     bool isPlaying;
     int activeSoundIdx;

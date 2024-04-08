@@ -48,7 +48,7 @@ PlayButton::PlayButton(const PlayButton& parent) {
 }
 
 //--------------------------------------------------------------
-void PlayButton::onClicked(int& args) {
+void PlayButton::onClicked(ClickArgs& args) {
     //ofLogVerbose() << "PlayButton id: " << id << " clicked";
     doPlay = true;
 }

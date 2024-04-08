@@ -13,9 +13,9 @@ public:
     void setup(AppConfig* conf);
     void render();
     void update();
-    void onClicked(int& args);
+    void onClicked(ClickArgs& args);
 
-    int id;
+    //int id;
     bool doPlay;
     bool isPlaying;
 

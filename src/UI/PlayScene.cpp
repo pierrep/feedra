@@ -46,7 +46,7 @@ PlayScene::PlayScene(const PlayScene& parent) {
 }
 
 //--------------------------------------------------------------
-void PlayScene::onClicked(int& args) {
+void PlayScene::onClicked(ClickArgs& args) {
     //ofLogNotice() << "PlayScene id: " << id;
     doPlay = true;
     isPlaying = !isPlaying;

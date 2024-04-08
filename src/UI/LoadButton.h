@@ -13,9 +13,9 @@ public:
     void setup();
     void render();
     void update();
-    void onClicked(int& args);
+    void onClicked(ClickArgs& args);
 
-    int id;
+    //int id;
     bool doLoad;
 
 };

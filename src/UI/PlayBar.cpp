@@ -46,7 +46,7 @@ PlayBar::PlayBar(const PlayBar& parent) {
 }
 
 //--------------------------------------------------------------
-void PlayBar::onClicked(int& args) {
+void PlayBar::onClicked(ClickArgs& args) {
     position = (ofGetMouseX() - getX()) / getWidth();
     //ofLogNotice() << "PlayBar id: " << id << " clicked at position: "<< pos << " ofGetMouseX(): "<< ofGetMouseX() << " getX(): " << getX();
     doScrub = true;

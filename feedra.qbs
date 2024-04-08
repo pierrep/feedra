@@ -16,6 +16,8 @@ Project{
             "src/AudioSample.h",
             "src/AppConfig.cpp",
             "src/AppConfig.h",
+            "src/DialogUtils.cpp",
+            "src/DialogUtils.h",
             "src/OpenALSoundPlayer.cpp",
             "src/OpenALSoundPlayer.h",
             "src/Scene.cpp",

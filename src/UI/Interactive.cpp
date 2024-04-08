@@ -2,7 +2,8 @@
 
 Interactive::Interactive()
 {
-    clicked = false;
+    id = 0;
+    bClicked = false;
     bEventsEnabled = false;
 
     enableEvents();
@@ -42,7 +43,7 @@ Interactive::Interactive(const Interactive &parent)
 {
     ofLogVerbose() << "Interactive copy constructor called";
 
-    clicked = parent.clicked;
+    bClicked = parent.bClicked;
     x = parent.x;
     y = parent.y;
     width = parent.width;
@@ -59,20 +60,23 @@ void Interactive::mouseMoved(ofMouseEventArgs &args) {
 
 void Interactive::mousePressed(ofMouseEventArgs &args) {
     if(inside(args.x, args.y)) {
-        clicked = true;
+        bClicked = true;
         offsetx = x - args.x;
         offsety = y - args.y;
-        ofNotifyEvent(clickedEvent, args.button);
+        ClickArgs ca;
+        ca.id = id;
+        ca.mouseButton = args.button;
+        ofNotifyEvent(clickedEvent, ca);
     }
 }
 
 void Interactive::mouseDragged(ofMouseEventArgs &args) {
-    if(clicked) {
+    if(bClicked) {
         //setX(args.x+offsetx);
         //setY(args.y+offsety);
     }
 }
 
 void Interactive::mouseReleased(ofMouseEventArgs &args) {
-    clicked = false;
+    bClicked = false;
 }

@@ -14,9 +14,6 @@ SoundObject::SoundObject()
 //--------------------------------------------------------------
 SoundObject::~SoundObject()
 {
-    if(soundPlayer.isPlaying()) {
-        soundPlayer.stop();
-    }
 
     //ofRemoveListener(this->clickedEvent, this, &SoundObject::onClicked);
     ofRemoveListener(ofEvents().fileDragEvent, this, &SoundObject::onDragEvent);
@@ -25,18 +22,36 @@ SoundObject::~SoundObject()
 }
 
 //--------------------------------------------------------------
+void SoundObject::enableEditorMode()
+{
+    for(int i = 0; i< soundPlayer.player.size();i++)
+    {
+        soundPlayer.player.at(i).enableEditorMode();
+    }
+}
+
+//--------------------------------------------------------------
+void SoundObject::disableEditorMode()
+{
+    for(int i = 0; i< soundPlayer.player.size();i++)
+    {
+        soundPlayer.player.at(i).disableEditorMode();
+    }
+}
+
+//--------------------------------------------------------------
 void SoundObject::disableAllEvents()
 {
     disableEvents();
     loader.disableEvents();
-    player.disableEvents();
+    playButton.disableEvents();
     playbar.disableEvents();
     stopper.disableEvents();
     soundname.disable();
     volumeslider.disableEvents();
     looper.disableEvents();
 
-    if(player.isLoaded) {
+    if(playButton.isLoaded) {
         soundname.disable();
     }
     ofRemoveListener(this->clickedEvent, this, &SoundObject::onClicked);
@@ -47,14 +62,14 @@ void SoundObject::enableAllEvents()
 {
     enableEvents();
     loader.enableEvents();
-    player.enableEvents();
+    playButton.enableEvents();
     playbar.enableEvents();
     stopper.enableEvents();
     soundname.enable();
     volumeslider.enableEvents();
     looper.enableEvents();
 
-    if(player.isLoaded) {
+    if(playButton.isLoaded) {
         soundname.enable();
     }
     ofAddListener(this->clickedEvent, this, &SoundObject::onClicked);
@@ -76,7 +91,7 @@ void SoundObject::load(string newpath)
     soundpath.clear();
 
     if(file.exists()){
-        file >> json;
+         file >> json;
         for(auto & json_obj: json){
             if(!json_obj.empty())
             {
@@ -112,6 +127,8 @@ void SoundObject::load(string newpath)
                                 //s.audioPlayer->setVolume(gain);
                                 s.audioPlayer->setPan(pan);
                                 s.config = config;
+                                s.setWidth(config->sample_gui_width);
+                                s.setHeight(35*config->y_scale);
                                 soundPlayer.player.push_back(s);
                             }
                             bool bLoaded = soundPlayer.load(new_path, i, isStream);
@@ -119,7 +136,7 @@ void SoundObject::load(string newpath)
                                 //cout << "loaded " << soundpath[i] << endl;
                                 soundPlayer.recalculateDelay(i);
                                 soundPlayer.player[i].sample_path = new_path;
-                                player.isLoaded = true;
+                                playButton.isLoaded = true;
                             }
                         }
 
@@ -227,7 +244,7 @@ void SoundObject::setup()
 
     loader.setup();
     stopper.setup();
-    player.setup(config);
+    playButton.setup(config);
     playbar.setup(config);
     looper.setup(config);
     soundname.setUseListeners(true);
@@ -247,9 +264,14 @@ void SoundObject::onDragEvent(ofDragInfo &args)
 {
     if(inside(args.position) && (config->activeScene == scene_id)) {
         bool bLoaded = false;
-
+        bool bFirstLoad = true;
+        int idx = 0;
         for(int i = 0; i < args.files.size();i++) {
-            bLoaded = loadPadSound(i,args.files[i],bLoaded);
+            bLoaded = loadPadSound(idx,args.files[i],bFirstLoad);
+            if(bLoaded) {
+                bFirstLoad = false;
+                idx++;
+            }
         }
         if(bLoaded) {
             //set name to first file
@@ -260,25 +282,27 @@ void SoundObject::onDragEvent(ofDragInfo &args)
     }
 }
 
-bool SoundObject::loadPadSound(int idx, std::string filepath, bool loaded)
+bool SoundObject::loadPadSound(int idx, std::string filepath, bool firstLoad)
 {
     ofLogNotice() << "Loaded file onto pad: "<< id << " " << filepath;
     string path = filepath;
     OpenALSoundPlayer p;
-    bool isAudio = p.load(path, isStream);
-    bool bLoaded = loaded;
-    if(isAudio) {
+    bool bIsAudio = p.load(path, isStream);
+    bool bFirstLoad = firstLoad;
+    if(bIsAudio) {
         p.unload();
-        if(!loaded) {
+        if(bFirstLoad) {
             soundPlayer.stop();
             soundPlayer.close();
             soundpath.clear();
-            bLoaded = true;
+            bFirstLoad = false;
         }
         if(idx > (int)(soundPlayer.player.size()-1)) {
             AudioSample s;
             s.audioPlayer = new OpenALSoundPlayer();
             s.config = config;
+            s.setWidth(config->sample_gui_width);
+            s.setHeight(35*config->y_scale);
             soundPlayer.player.push_back(s);
         }
         bool bLoaded = soundPlayer.load(path, idx, isStream);
@@ -288,7 +312,7 @@ bool SoundObject::loadPadSound(int idx, std::string filepath, bool loaded)
             soundPlayer.recalculateDelay(idx);
         }
     }
-    return bLoaded;
+    return bIsAudio;
 }
 
 //--------------------------------------------------------------
@@ -318,16 +342,16 @@ SoundObject::SoundObject(AppConfig* _config, size_t _scene_id, int _id, int _x, 
     loader.setWidth(15 * config->x_scale);
     loader.setHeight(15 * config->y_scale);
 
-    player.id = _id;
-    player.setX(_x + 35 * config->x_scale);
-    player.setY(_y + 35 * config->y_scale);
-    player.setWidth(50 * config->x_scale);
-    player.setHeight(50 * config->y_scale);
+    playButton.id = _id;
+    playButton.setX(_x + 35 * config->x_scale);
+    playButton.setY(_y + 35 * config->y_scale);
+    playButton.setWidth(50 * config->x_scale);
+    playButton.setHeight(50 * config->y_scale);
 
     playbar.id = _id;
-    playbar.setX(player.getX());
-    playbar.setY(player.getY()+player.getHeight() + 1);
-    playbar.setWidth(player.getWidth());
+    playbar.setX(playButton.getX());
+    playbar.setY(playButton.getY()+playButton.getHeight() + 1);
+    playbar.setWidth(playButton.getWidth());
     playbar.setHeight(10*config->y_scale);
 
     stopper.id = _id;
@@ -366,11 +390,11 @@ SoundObject::SoundObject(const SoundObject& parent) {
     loader.setWidth(parent.loader.width);
     loader.setHeight(parent.loader.height);
 
-    player.id = parent.player.id;
-    player.setX(parent.player.x);
-    player.setY(parent.player.y);
-    player.setWidth(parent.player.width);
-    player.setHeight(parent.player.height);
+    playButton.id = parent.playButton.id;
+    playButton.setX(parent.playButton.x);
+    playButton.setY(parent.playButton.y);
+    playButton.setWidth(parent.playButton.width);
+    playButton.setHeight(parent.playButton.height);
 
     playbar.id = parent.playbar.id;
     playbar.setX(parent.playbar.x);
@@ -383,7 +407,7 @@ SoundObject::SoundObject(const SoundObject& parent) {
 }
 
 //--------------------------------------------------------------
-void SoundObject::onClicked(int& args) {
+void SoundObject::onClicked(ClickArgs& args) {
     ofLogNotice() << "SoundObject id " << id << " clicked";
 
     config->activeSoundIdx =  id;
@@ -413,11 +437,11 @@ void SoundObject::render()
 
     loader.render();
     stopper.render(soundPlayer.isPlaying(), soundPlayer.getPosition());
-    player.render(soundPlayer);
+    playButton.render(soundPlayer);
     looper.render();
 
     //if(player.isPlaying || (player.isLoaded && (pos > 0.0f))) {
-    if(player.isPlaying || (player.isLoaded)) {
+    if(playButton.isPlaying || (playButton.isLoaded)) {
         playbar.render(soundPlayer);
     }
 
@@ -438,43 +462,29 @@ void SoundObject::render()
 void SoundObject::update()
 {
     if(loader.doLoad) {
-//#ifdef TARGET_WIN32
-   //     ofFileDialogResult result;
-//#else
-        ofFileDialogResultMulti result;
-//#endif        
+        ofFileDialogResultMulti result;    
         string path = config->getLibraryLocation();
+
         if(config->last_path.compare("") != 0)
         {
             path = config->last_path;
         }
-//#ifdef TARGET_WIN32
-//        result = ofSystemLoadDialog("load files", false, path);
-//#else
-        result = ofSystemLoadDialogMulti("load files", false, true, path);
-//#endif
-        
-        if(result.bSuccess) {  
-//#ifdef TARGET_WIN32
-//            bool bLoaded = soundPlayer.load(result.filePath, isStream);
-//            if(bLoaded) {
-//                soundpath.clear();
-//                setupSound(result.filePath);
-//            }
-//#else
-            bool bLoaded = false;
 
+        result = ofSystemLoadDialogMulti("load files",false,true,path);
+        if(result.bSuccess) {           
+            bool bLoaded = false;
+            bool bFirstLoad = true;
+            int idx = 0;
             for(int i = 0; i < result.filePaths.size();i++) {
-                bLoaded = loadPadSound(i,result.filePaths.at(i),bLoaded);
+                bLoaded = loadPadSound(idx,result.filePaths.at(i),bFirstLoad);
+                if(bLoaded) {
+                    bFirstLoad = false;
+                    idx++;
+                }
             }
-//#endif
             if(bLoaded) {
                 //set name to first file
-//#ifdef TARGET_WIN32
-//                filesystem::path s(result.filePath);
-//#else
                 filesystem::path s(result.filePaths.at(0));
-//#endif
                 soundname.text = s.stem().string();
                 config->activeSoundIdx = id;
             }
@@ -482,7 +492,7 @@ void SoundObject::update()
         loader.doLoad = false;
     }
 
-    if(!player.isLoaded)
+    if(!playButton.isLoaded)
     {
         //do not proceed if we have no file loaded
         return;
@@ -490,11 +500,11 @@ void SoundObject::update()
 
     soundPlayer.update();
 
-    if(player.doPlay)
+    if(playButton.doPlay)
     {
         if(soundPlayer.isPlaying()) {
             cout << "pause audio" << id << endl;
-            player.doPlay = false;
+            playButton.doPlay = false;
             isPaused = true;
             soundPlayer.setPaused(true);
             return;
@@ -503,7 +513,7 @@ void SoundObject::update()
         else if (soundPlayer.isLoaded()) {            
             cout << "play audio" << id << " channels = " << channels << " samplerate = " << sample_rate << endl;
             soundPlayer.setPaused(false);
-            player.doPlay = false;
+            playButton.doPlay = false;
             isPaused = false;
         }
         stopper.isStopped  = false;
@@ -540,9 +550,9 @@ void SoundObject::update()
     }
 
     if(soundPlayer.isPlaying()) {
-        player.isPlaying = true;
+        playButton.isPlaying = true;
     } else {
-        player.isPlaying = false;
+        playButton.isPlaying = false;
     }
 
     if(soundPlayer.isLoaded())
@@ -567,5 +577,5 @@ void SoundObject::setupSound(string path)
     sample_rate = soundPlayer.getSampleRate();
     channels = soundPlayer.getNumChannels();
 
-    player.isLoaded = true;
+    playButton.isLoaded = true;
 }

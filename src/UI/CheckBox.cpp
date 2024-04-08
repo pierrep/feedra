@@ -55,7 +55,7 @@ CheckBox::CheckBox(const CheckBox& parent) {
 }
 
 //--------------------------------------------------------------
-void CheckBox::onClicked(int& args) {
+void CheckBox::onClicked(ClickArgs& args) {
     //ofLogNotice() << "Stop id: " << id << " clicked";
     bActivate = true;
 }

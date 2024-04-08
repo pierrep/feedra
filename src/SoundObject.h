@@ -25,27 +25,29 @@ public:
     void setup();
     void render();
     void update();
-    void onClicked(int& args);
+    void onClicked(ClickArgs& args);
     void save();
     void load();
     void load(string newpath);
-    void play() {player.doPlay = true;}
+    void play() {playButton.doPlay = true;}
     void stop() {stopper.doStop = true;}
     void clear();
     void disableAllEvents();
     void enableAllEvents();
     void onDragEvent(ofDragInfo &args);
     void setupSound(string path);
-    bool loadPadSound(int idx, std::string filepath, bool bLoaded);
+    bool loadPadSound(int idx, std::string filepath, bool firstLoad);
+    void enableEditorMode();
+    void disableEditorMode();
 
-    int id;
+    //int id;
 
     //Globals    
     AppConfig* config;
     SoundPlayer soundPlayer;
 
     LoadButton loader;
-    PlayButton player;
+    PlayButton playButton;
     PlayBar playbar;
     StopButton stopper;
     Looper looper;

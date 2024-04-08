@@ -15,9 +15,16 @@ public:
     void enableEvents();
     void disableEvents();
 
-    bool clicked;
+    int id;
+    bool bClicked;
     int offsetx, offsety;
     bool bEventsEnabled;
 
-    ofEvent<int> clickedEvent;
+    struct ClickArgs
+    {
+        int id;
+        int mouseButton;
+    };
+
+    ofEvent<ClickArgs> clickedEvent;
 };

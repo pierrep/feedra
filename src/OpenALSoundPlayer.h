@@ -101,12 +101,9 @@ class OpenALSoundPlayer : public ofBaseSoundPlayer, public ofThread {
         ALenum getOpenALFormat() const {return openALformat;}
         std::string getFormatString() const {return format_string;}
         std::string getSubFormatString() const {return subformat_string;}
-<<<<<<< Updated upstream
+
         int getNumSources() {return sources.size();}
         bool getIsStereo() {return nonSpatialisedStereo;}
-=======
-        int getNumSources() {return (int)sources.size();}
->>>>>>> Stashed changes
 
         static ofEvent<OpenALSoundPlayer *> playbackEnded;
         OpenALSoundPlayer* playerPtr;

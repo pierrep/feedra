@@ -4,13 +4,18 @@
 #include "OpenALSoundPlayer.h"
 #include "ofVec3f.h"
 #include "AppConfig.h"
+#include "Interactive.h"
 
-class AudioSample
+class AudioSample: public Interactive
 {
 public:
+    ~AudioSample();
     AudioSample();
     AudioSample(const AudioSample& parent);
     void render(ofVec3f pos);
+    void onClicked(ClickArgs& args);
+    void enableEditorMode();
+    void disableEditorMode();
 
     OpenALSoundPlayer* audioPlayer;
     int totalDelay;
@@ -19,6 +24,11 @@ public:
     float pitch;
     std::string sample_path;
     AppConfig* config;
+
+    static ofEvent<size_t> clickedObjectEvent;
+
+    bool bEditorMode;
+    bool bSelected;
 };
 
 #endif // AUDIOSAMPLE_H

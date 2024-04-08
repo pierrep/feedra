@@ -13,7 +13,7 @@ public:
     void setup();
     void render(int hexcol);
     void update();
-    void onClicked(int& args);
+    void onClicked(ClickArgs& args);
 
     bool doAddScene;
 

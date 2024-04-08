@@ -45,7 +45,7 @@ Looper::Looper(const Looper& parent) {
 }
 
 //--------------------------------------------------------------
-void Looper::onClicked(int& args) {
+void Looper::onClicked(ClickArgs& args) {
     //ofLogNotice() << "Looper id: " << id << " clicked";
     doLooper = true;
     isLooping = !isLooping;

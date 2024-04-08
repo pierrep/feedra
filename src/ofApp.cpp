@@ -299,13 +299,24 @@ void ofApp::setup(){
     addScene->setup();
 
     // setup scenes
-    for(size_t i=0;i < scenes.size();i++) {
+    for(size_t i=0;i < scenes.size();i++) {       
         scenes[i]->setup();
     }
 
     enableScene(config.activeSceneIdx);
 
     updateSliders();
+
+//    int idx = config.activeSceneIdx;
+//    for(size_t j = 0; j < scenes[idx]->sounds.size();j++)
+//    {
+//        scenes[idx]->sounds[j]->enableAllEvents();
+//    }
+//    scenes[idx]->enable();
+
+//    for(size_t i=0; i < scenes.size();i++) {
+//        scenes[i]->enableInteractivity();
+//    }
 
     for(size_t i=0;i < scenes.size();i++) {
         if(config.activeScene != scenes[i]->id) {
@@ -421,27 +432,30 @@ void ofApp::update(){
 
     if(bLoadScenes) {
         ofFileDialogResult result = ofSystemLoadDialog("Load Feedra scenes", false);
-        loadConfig(result.filePath);
-        // setup scenes
-        for(size_t i=0;i < scenes.size();i++) {
-            scenes[i]->setup(result.filePath);
-        }
-        enableScene(config.activeSceneIdx);
-        updateSliders();
+        if(result.bSuccess) {
+            loadConfig(result.filePath);
+            // setup scenes
+            for(size_t i=0;i < scenes.size();i++) {
+                scenes[i]->setup(result.filePath);
+            }
+            config.activeSceneIdx = 0;
+            enableScene(config.activeSceneIdx);
+            updateSliders();
 
-        for(size_t i=0;i < scenes.size();i++) {
-            if(config.activeScene != scenes[i]->id) {
-                for(size_t j = 0; j < scenes[i]->sounds.size();j++)
-                {
-                    scenes[i]->sounds[j]->disableAllEvents();
+            for(size_t i=0;i < scenes.size();i++) {
+                if(config.activeScene != scenes[i]->id) {
+                    for(size_t j = 0; j < scenes[i]->sounds.size();j++)
+                    {
+                        scenes[i]->sounds[j]->disableAllEvents();
+                    }
                 }
             }
-        }
-        updateScenePosition();
-        addScene->enableEvents();
-        bLoadScenes = false;
+            updateScenePosition();
+            addScene->enableEvents();
+            bLoadScenes = false;
 
-        calculateSources();
+            calculateSources();
+        }
     }
 
     checkAudioDeviceChange();
@@ -455,7 +469,9 @@ void ofApp::update(){
 
     config.masterVolume = mainVolume.getValue();
 
-    scenes[config.activeSceneIdx]->update();
+    for(size_t i=0; i < scenes.size();i++) {
+        scenes[i]->update();
+    }
 
     //Add scene
     if(addScene->doAddScene) {
@@ -474,8 +490,7 @@ void ofApp::addNewScene()
 {
     addScene->doAddScene = false;
 
-    int baseSceneOffset = config.gridWidth*config.spacing ;
-    int x = baseSceneOffset;
+    int x = config.baseSceneOffset;
     int y = scenes.size() * config.scene_spacing + config.scene_yoffset;
     int scene_width = config.scene_width;
     int scene_height = config.scene_height;
@@ -512,13 +527,23 @@ void ofApp::addNewScene()
     s->setup("empty");
     scenes.push_back(s);
 
+    int new_idx = 0;
+    for(int i = 0; i < scenes.size();i++)
+    {
+        if(scenes[i]->id == new_id)
+        {
+            new_idx = i;
+            break;
+        }
+    }
+
     addScene->y = y + config.scene_spacing;
 
     if(scenes.size() >= config.max_scenes) {
         addScene->disableEvents();
     }
 
-    enableScene(new_id);
+    enableScene(new_idx);
 }
 
 //--------------------------------------------------------------
@@ -598,6 +623,18 @@ void ofApp::disableEvents()
 }
 
 //--------------------------------------------------------------
+void ofApp::enableEditorMode()
+{
+    scenes[config.activeSceneIdx]->sounds[config.activeSoundIdx]->enableEditorMode();
+}
+
+//--------------------------------------------------------------
+void ofApp::disableEditorMode()
+{
+    scenes[config.activeSceneIdx]->sounds[config.activeSoundIdx]->disableEditorMode();
+}
+
+//--------------------------------------------------------------
 void ofApp::enableEvents()
 {
     int idx = config.activeSceneIdx;
@@ -641,6 +678,7 @@ void ofApp::draw(){
     {
         if(bEnableEvents) {
             enableEvents();
+            disableEditorMode();
             bEnableEvents = false;
         }
 
@@ -648,6 +686,7 @@ void ofApp::draw(){
 
     } else if(pageState == EDIT) {
         if(!bEnableEvents) {
+            enableEditorMode();
             disableEvents();
         }
         renderEditPage();

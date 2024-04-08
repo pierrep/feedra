@@ -13,9 +13,9 @@ public:
     PlayButton(int _id, int _x, int _y, int _w, int _h);
     void setup(AppConfig* conf);
     void render(SoundPlayer& soundplayer);
-    void onClicked(int& args);
+    void onClicked(ClickArgs& args);
 
-    int id;
+    //int id;
     bool isPlaying;
     bool isLoaded;
     bool doPlay;

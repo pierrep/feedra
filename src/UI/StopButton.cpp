@@ -44,7 +44,7 @@ StopButton::StopButton(const StopButton& parent) {
 }
 
 //--------------------------------------------------------------
-void StopButton::onClicked(int& args) {
+void StopButton::onClicked(ClickArgs& args) {
     //ofLogNotice() << "Stop id: " << id << " clicked";
     doStop = true;
 }

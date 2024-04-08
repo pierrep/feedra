@@ -13,9 +13,9 @@ public:
     CheckBox(int _id, int _x, int _y, int _w, int _h);
     void setup(AppConfig* config);
     void render();
-    void onClicked(int& args);
+    void onClicked(ClickArgs& args);
 
-    int id;
+    //int id;
     bool bActivate;
     bool isActive;
     AppConfig* config;

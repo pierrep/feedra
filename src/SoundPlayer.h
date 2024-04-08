@@ -66,7 +66,7 @@ public:
     bool bCheckPlayBackEnded;
 
     string filename;
-    int id;
+    //int id;
 
     ofEvent<OpenALSoundPlayer*> playbackEndedEvent;
 };

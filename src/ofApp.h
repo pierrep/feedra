@@ -43,6 +43,8 @@ class ofApp : public ofBaseApp {
         void renderEditPage();
         void disableEvents();
         void enableEvents();
+        void enableEditorMode();
+        void disableEditorMode();
 
         static void window_minimise_callback(GLFWwindow* window, int minimised);
         static bool bMinimised;

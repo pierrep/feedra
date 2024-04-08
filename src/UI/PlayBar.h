@@ -15,9 +15,9 @@ public:
     //void render(bool isPlayingDelay, float position, float duration);
     void render(SoundPlayer& soundPlayer);
     void update();
-    void onClicked(int& args);
+    void onClicked(ClickArgs& args);
 
-    int id;
+    //int id;
 
     bool doScrub;
     float position;

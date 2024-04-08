@@ -12,9 +12,9 @@ public:
     StopButton(int _id, int _x, int _y, int _w, int _h);
     void setup();
     void render(bool isPlaying, float position);
-    void onClicked(int& args);
+    void onClicked(ClickArgs& args);
 
-    int id;
+    //int id;
     bool doStop;
     bool isStopped;
 

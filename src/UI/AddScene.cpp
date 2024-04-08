@@ -43,7 +43,7 @@ AddScene::AddScene(const AddScene& parent) {
 }
 
 //--------------------------------------------------------------
-void AddScene::onClicked(int& args) {
+void AddScene::onClicked(ClickArgs& args) {
     ofLogNotice() << "AddScene clicked";
     doAddScene = true;
 }

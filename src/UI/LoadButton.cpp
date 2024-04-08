@@ -43,7 +43,7 @@ LoadButton::LoadButton(const LoadButton& parent) {
 }
 
 //--------------------------------------------------------------
-void LoadButton::onClicked(int& args) {
+void LoadButton::onClicked(ClickArgs& args) {
     ofLogNotice() << "LoadButton id: " << id << " clicked";
     doLoad = true;
 }

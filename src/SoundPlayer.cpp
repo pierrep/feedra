@@ -43,6 +43,8 @@ void SoundPlayer::setup(AppConfig* _config, int _id)
 
     config = _config;
     player[0].config = _config;
+    player[0].setWidth(config->sample_gui_width);
+    player[0].setHeight(35*config->y_scale);
     id = _id;
 }
 
@@ -162,7 +164,7 @@ void SoundPlayer::setPaused(bool _bPause){
     bPaused = _bPause;
     if(player[curSound].curDelay > 0) {
         bPlayingDelay = !bPaused;
-        cout << "bPlayingDelay = " << bPlayingDelay << endl;
+        //cout << "bPlayingDelay = " << bPlayingDelay << endl;
     } else {
         player[curSound].audioPlayer->setPaused(bPaused);
         if(bPaused) {

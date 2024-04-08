@@ -1311,10 +1311,14 @@ void OpenALSoundPlayer::threadedFunction(){
             } else {
                 index = 0;
             }
-            alGetSourcei(sources[index],AL_SOURCE_STATE,&state);
+            if(sources.size()) {
+                alGetSourcei(sources[index],AL_SOURCE_STATE,&state);
+            }
 
-			int processed;
-            alGetSourcei(sources[index], AL_BUFFERS_PROCESSED, &processed);
+            int processed = 0;
+            if(sources.size()) {
+                alGetSourcei(sources[index], AL_BUFFERS_PROCESSED, &processed);
+            }
             while(processed)
 			{
                 processed--;
@@ -1373,6 +1377,7 @@ void OpenALSoundPlayer::threadedFunction(){
                 cout << "Loop stream!" << endl;
                 stream_end = false;
 			}
+
         }
 	}
 }
@@ -1420,20 +1425,19 @@ void OpenALSoundPlayer::unload(){
 	{
 		std::unique_lock<std::mutex> lock(mutex);
 
-		// Delete sources before buffers.
+        // Delete sources before buffers
         if (sources.size() > 0) {
             alDeleteSources(sources.size(), &sources[0]);
         }
         if (buffers.size() > 0) {
             alDeleteBuffers(buffers.size(), &buffers[0]);
         }
+        sources.clear();
+        buffers.clear();
         if(bUseFilter) {
             alDeleteFilters(1, &filter);
             bUseFilter = false;
         }
-
-		sources.clear();
-		buffers.clear();
 	}
 
 	// Free resources and close file descriptors.
@@ -1720,6 +1724,7 @@ void OpenALSoundPlayer::play(){
 
 // ----------------------------------------------------------------------------
 void OpenALSoundPlayer::stop(){
+
 	if(sources.empty()) return;
 
     if(bMultiPlay) {

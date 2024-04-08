@@ -56,6 +56,7 @@ Scene::Scene(AppConfig* _config, string name, int _id, int _activeSoundIdx, int 
 
     config = _config;
     activeSoundIdx = _activeSoundIdx;
+    bInteractive = false;
 
     setWidth(_w);
     setHeight(_h);
@@ -93,13 +94,14 @@ Scene::Scene(AppConfig* _config, string name, int _id, int _activeSoundIdx, int 
 
 //--------------------------------------------------------------
 Scene::Scene(const Scene& parent) {
-    ofLog() << "Scene copy constructor called";
+    ofLogNotice() << "Scene copy constructor called";
 
     id = parent.id;
     setX(parent.x);
     setY(parent.y);
     setWidth(parent.width);
     setHeight(parent.height);
+    bInteractive = parent.bInteractive;
 }
 
 //---------------------------------------------------------
@@ -122,7 +124,7 @@ void Scene::updatePosition(int _x, int _y)
 }
 
 //---------------------------------------------------------
-void Scene::onClicked(int& args) {
+void Scene::onClicked(ClickArgs& args) {
     //ofLogNotice() << "Scene id: " << id << " clicked";
     selectScene = true;
     config->activeScene =  id;
@@ -153,11 +155,21 @@ void Scene::render()
     }
     ofDrawRectangle(getX(),getY(),getWidth(), getHeight());
 
-    if(config->activeScene == id) {
+    bool filePlaying = false;
+    for(size_t i=0; i < sounds.size();i++) {
+         if(sounds[i]->playButton.isPlaying)
+         {
+             filePlaying = true;
+         }
+    }
+    if(config->activeScene == id || filePlaying) {
         play_button.render();
+    }    
+
+    if(config->activeScene == id) {
         delete_scene.render();
         stop_button.render(true,1.0f);
-    }    
+    }
 
     if(config->activeScene == id) {
         ofSetColor(0);
@@ -216,7 +228,6 @@ void Scene::stop()
         //std::cout << "End stop fade-out" << endl;
         for(size_t i=0; i < sounds.size();i++) {
             sounds[i]->soundPlayer.stop();
-            //sounds[i]->stop();
         }
     };
 
@@ -288,21 +299,22 @@ void Scene::enable()
 }
 
 //--------------------------------------------------------------
-void Scene::enableInteractivity()
-{
-    if(!bInteractive) {
-        ofAddListener(this->clickedEvent, this, &Scene::onClicked);
-        bInteractive = true;
-    }
-}
-
-//--------------------------------------------------------------
 void Scene::disable()
 {
     play_button.disableEvents();
     delete_scene.disableEvents();
     stop_button.disableEvents();
     textfield.disable();        
+}
+
+//--------------------------------------------------------------
+void Scene::enableInteractivity()
+{
+    if(!bInteractive) {
+        //cout << "enable interactivity scene id:" << id << endl;
+        ofAddListener(this->clickedEvent, this, &Scene::onClicked);
+        bInteractive = true;
+    }
 }
 
 //--------------------------------------------------------------
