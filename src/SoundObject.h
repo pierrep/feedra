@@ -10,6 +10,7 @@
 #include "UI/StopButton.h"
 #include "UI/Looper.h"
 #include "SoundPlayer.h"
+#include "DialogUtils.h"
 
 //#define MAX_SOUNDS_PER_OBJECT 24
 

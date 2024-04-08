@@ -438,29 +438,44 @@ void SoundObject::render()
 void SoundObject::update()
 {
     if(loader.doLoad) {
+//#ifdef TARGET_WIN32
+   //     ofFileDialogResult result;
+//#else
         ofFileDialogResultMulti result;
+//#endif        
         string path = config->getLibraryLocation();
         if(config->last_path.compare("") != 0)
         {
             path = config->last_path;
         }
-
-        result = ofSystemLoadDialogMulti("load files",false,true,path);
-        if(result.bSuccess) {           
+//#ifdef TARGET_WIN32
+//        result = ofSystemLoadDialog("load files", false, path);
+//#else
+        result = ofSystemLoadDialogMulti("load files", false, true, path);
+//#endif
+        
+        if(result.bSuccess) {  
+//#ifdef TARGET_WIN32
 //            bool bLoaded = soundPlayer.load(result.filePath, isStream);
 //            if(bLoaded) {
 //                soundpath.clear();
 //                setupSound(result.filePath);
 //            }
+//#else
             bool bLoaded = false;
 
             for(int i = 0; i < result.filePaths.size();i++) {
                 bLoaded = loadPadSound(i,result.filePaths.at(i),bLoaded);
             }
+//#endif
             if(bLoaded) {
                 //set name to first file
+//#ifdef TARGET_WIN32
+//                filesystem::path s(result.filePath);
+//#else
                 filesystem::path s(result.filePaths.at(0));
-                soundname.text = s.stem();
+//#endif
+                soundname.text = s.stem().string();
                 config->activeSoundIdx = id;
             }
         }

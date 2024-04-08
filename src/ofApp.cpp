@@ -747,6 +747,8 @@ void ofApp::renderEditPage() {
 void ofApp::keyPressed  (ofKeyEventArgs & args){
     int key = args.key;
 
+    //cout << "key = " << key <<  "cntrl:" << (int)args.hasModifier(OF_KEY_CONTROL) << endl;
+
     if(key == '1'){
         pageState = MAIN;
     } else
@@ -756,19 +758,19 @@ void ofApp::keyPressed  (ofKeyEventArgs & args){
     if(key == '3'){
         pageState = SETTINGS;
     }
-    if((key == 'q' || key == 'Q') && args.hasModifier(OF_KEY_CONTROL)){
+    if((key == 'q' || key == 'Q' || key == 17) && args.hasModifier(OF_KEY_CONTROL)){
         ofExit();
     }
-    if((key == 'd' || key == 'D') && args.hasModifier(OF_KEY_CONTROL)){
+    if((key == 'd' || key == 'D' || key == 4) && args.hasModifier(OF_KEY_CONTROL)){
         bClearPad = true;
     }
-    if((key == 's' || key == 'S') && args.hasModifier(OF_KEY_CONTROL)){
+    if((key == 's' || key == 'S' || key == 19) && args.hasModifier(OF_KEY_CONTROL)){
         ofFileDialogResult result = ofSystemSaveDialog("settings.json", "Save Feedra scenes");
         if(result.bSuccess) {
             saveConfig(result.filePath,true);
         }
     }
-    if((key == 'o' || key == 'O') && args.hasModifier(OF_KEY_CONTROL)){
+    if((key == 'o' || key == 'O' || key == 15) && args.hasModifier(OF_KEY_CONTROL)){
         bLoadScenes = true;
     }
     if(key == ' ' && args.hasModifier(OF_KEY_CONTROL)) {
