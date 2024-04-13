@@ -7,6 +7,10 @@ Interactive::Interactive()
     bEventsEnabled = false;
 
     enableEvents();
+    ofAddListener(ofEvents().mousePressed, this, &Interactive::mousePressed);
+    ofAddListener(ofEvents().mouseMoved, this, &Interactive::mouseMoved);
+    ofAddListener(ofEvents().mouseDragged, this, &Interactive::mouseDragged);
+    ofAddListener(ofEvents().mouseReleased, this, &Interactive::mouseReleased);
 }
 
 Interactive::~Interactive()
@@ -14,16 +18,20 @@ Interactive::~Interactive()
     ofLogVerbose() << "Interactive destructor called...";
 
     disableEvents();
+    ofRemoveListener(ofEvents().mousePressed, this, &Interactive::mousePressed);
+    ofRemoveListener(ofEvents().mouseMoved, this, &Interactive::mouseMoved);
+    ofRemoveListener(ofEvents().mouseDragged, this, &Interactive::mouseDragged);
+    ofRemoveListener(ofEvents().mouseReleased, this, &Interactive::mouseReleased);
 }
 
 void Interactive::enableEvents()
 {
     //enable events
     if(!bEventsEnabled) {
-        ofAddListener(ofEvents().mousePressed, this, &Interactive::mousePressed);
-        ofAddListener(ofEvents().mouseMoved, this, &Interactive::mouseMoved);
-        ofAddListener(ofEvents().mouseDragged, this, &Interactive::mouseDragged);
-        ofAddListener(ofEvents().mouseReleased, this, &Interactive::mouseReleased);
+//        ofAddListener(ofEvents().mousePressed, this, &Interactive::mousePressed);
+//        ofAddListener(ofEvents().mouseMoved, this, &Interactive::mouseMoved);
+//        ofAddListener(ofEvents().mouseDragged, this, &Interactive::mouseDragged);
+//        ofAddListener(ofEvents().mouseReleased, this, &Interactive::mouseReleased);
         bEventsEnabled = true;
     }
 }
@@ -31,10 +39,10 @@ void Interactive::enableEvents()
 void Interactive::disableEvents()
 {
     if(bEventsEnabled) {
-        ofRemoveListener(ofEvents().mousePressed, this, &Interactive::mousePressed);
-        ofRemoveListener(ofEvents().mouseMoved, this, &Interactive::mouseMoved);
-        ofRemoveListener(ofEvents().mouseDragged, this, &Interactive::mouseDragged);
-        ofRemoveListener(ofEvents().mouseReleased, this, &Interactive::mouseReleased);
+//        ofRemoveListener(ofEvents().mousePressed, this, &Interactive::mousePressed);
+//        ofRemoveListener(ofEvents().mouseMoved, this, &Interactive::mouseMoved);
+//        ofRemoveListener(ofEvents().mouseDragged, this, &Interactive::mouseDragged);
+//        ofRemoveListener(ofEvents().mouseReleased, this, &Interactive::mouseReleased);
         bEventsEnabled = false;
     }
 }
@@ -53,12 +61,14 @@ Interactive::Interactive(const Interactive &parent)
 }
 
 void Interactive::mouseMoved(ofMouseEventArgs &args) {
+    if(!bEventsEnabled) return;
 //    int x = args.x;
 //    int y = args.y;
 //    int button = args.button;
 }
 
 void Interactive::mousePressed(ofMouseEventArgs &args) {
+    if(!bEventsEnabled) return;
     if(inside(args.x, args.y)) {
         bClicked = true;
         offsetx = x - args.x;
@@ -71,6 +81,7 @@ void Interactive::mousePressed(ofMouseEventArgs &args) {
 }
 
 void Interactive::mouseDragged(ofMouseEventArgs &args) {
+    if(!bEventsEnabled) return;
     if(bClicked) {
         //setX(args.x+offsetx);
         //setY(args.y+offsety);
@@ -78,5 +89,6 @@ void Interactive::mouseDragged(ofMouseEventArgs &args) {
 }
 
 void Interactive::mouseReleased(ofMouseEventArgs &args) {
+    if(!bEventsEnabled) return;
     bClicked = false;
 }

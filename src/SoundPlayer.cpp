@@ -6,6 +6,7 @@ SoundPlayer::SoundPlayer()
     curSound = 0;
     AudioSample s;
     s.audioPlayer = new OpenALSoundPlayer();
+    s.id = 0;
     player.push_back(s);
 
     bPlayingDelay = false;

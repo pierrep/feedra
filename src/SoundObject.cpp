@@ -14,8 +14,6 @@ SoundObject::SoundObject()
 //--------------------------------------------------------------
 SoundObject::~SoundObject()
 {
-
-    //ofRemoveListener(this->clickedEvent, this, &SoundObject::onClicked);
     ofRemoveListener(ofEvents().fileDragEvent, this, &SoundObject::onDragEvent);
     disableAllEvents();
     //ofLogNotice() << "SoundObject destructor called...ID = " << id;
@@ -116,17 +114,15 @@ void SoundObject::load(string newpath)
                             string new_path = samples["sample-"+ofToString(i)]["path"];
                             soundpath.push_back(new_path);
 
-                            float pitch = samples["sample-"+ofToString(i)]["pitch"];
+                            float pitch = samples["sample-"+ofToString(i)]["pitch"];                            
                             float gain = samples["sample-"+ofToString(i)]["gain"];
                             float pan = samples["sample-"+ofToString(i)]["pan"];
 
                             if(i > soundPlayer.player.size()-1) {
                                 AudioSample s;
                                 s.audioPlayer = new OpenALSoundPlayer();
-                                s.audioPlayer->setSpeed(pitch);
-                                //s.audioPlayer->setVolume(gain);
-                                s.audioPlayer->setPan(pan);
                                 s.config = config;
+                                s.id = soundPlayer.player.size();
                                 s.setWidth(config->sample_gui_width);
                                 s.setHeight(35*config->y_scale);
                                 soundPlayer.player.push_back(s);
@@ -136,6 +132,9 @@ void SoundObject::load(string newpath)
                                 //cout << "loaded " << soundpath[i] << endl;
                                 soundPlayer.recalculateDelay(i);
                                 soundPlayer.player[i].sample_path = new_path;
+                                soundPlayer.player[i].setPitch(pitch);
+                                soundPlayer.player[i].setGain(gain);
+                                soundPlayer.player[i].setPan(pan);
                                 playButton.isLoaded = true;
                             }
                         }
@@ -203,8 +202,8 @@ void SoundObject::save()
     for(int i = 0; i < soundpath.size();i++)
     {
         soundobj[base][prefix]["samples"]["sample-"+ofToString(i)]["path"] = soundpath[i];
-        soundobj[base][prefix]["samples"]["sample-"+ofToString(i)]["gain"] = 1.0f; // TODO
-        soundobj[base][prefix]["samples"]["sample-"+ofToString(i)]["pitch"] = soundPlayer.player[i].audioPlayer->getSpeed();
+        soundobj[base][prefix]["samples"]["sample-"+ofToString(i)]["gain"] = soundPlayer.player[i].getGain();
+        soundobj[base][prefix]["samples"]["sample-"+ofToString(i)]["pitch"] = soundPlayer.player[i].getPitch();
         soundobj[base][prefix]["samples"]["sample-"+ofToString(i)]["pan"] = soundPlayer.player[i].audioPlayer->getPan();
     }
 
@@ -238,8 +237,7 @@ void SoundObject::clear()
 
 //--------------------------------------------------------------
 void SoundObject::setup()
-{
-    ofAddListener(this->clickedEvent, this, &SoundObject::onClicked);    
+{  
     ofAddListener(ofEvents().fileDragEvent, this, &SoundObject::onDragEvent);
 
     loader.setup();
@@ -257,6 +255,8 @@ void SoundObject::setup()
     volumeslider.setScale(config->y_scale, config->x_scale);
     volumeslider.setFont(&config->f2());
     //\volumeslider.setLabelString("volume");
+
+    disableAllEvents();
 }
 
 //--------------------------------------------------------------
@@ -301,6 +301,7 @@ bool SoundObject::loadPadSound(int idx, std::string filepath, bool firstLoad)
             AudioSample s;
             s.audioPlayer = new OpenALSoundPlayer();
             s.config = config;
+            s.id = soundPlayer.player.size();
             s.setWidth(config->sample_gui_width);
             s.setHeight(35*config->y_scale);
             soundPlayer.player.push_back(s);
@@ -557,7 +558,7 @@ void SoundObject::update()
 
     if(soundPlayer.isLoaded())
     {
-        soundPlayer.setVolume(volumeslider.getValue()*config->getMasterVolume()*config->masterFade*fadeVolume);
+        soundPlayer.setVolume(volumeslider.getValue()*config->getMasterVolume()*config->masterFade*fadeVolume*soundPlayer.player.at(soundPlayer.getCurSound()).getGain());
     }
 
 }

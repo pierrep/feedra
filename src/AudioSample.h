@@ -16,19 +16,28 @@ public:
     void onClicked(ClickArgs& args);
     void enableEditorMode();
     void disableEditorMode();
+    void setPitch(float val);
+    void setGain(float val);
+    void setPan(float val) {audioPlayer->setPan(val);}
+    float getPitch(){ return pitch;}
+    float getGain(){ return gain;}
+    float getPan(){ return audioPlayer->getPan();}
 
     OpenALSoundPlayer* audioPlayer;
-    int totalDelay;
-    int curDelay;
-    float gain; //0.5f - 2.0f ?
-    float pitch;
     std::string sample_path;
     AppConfig* config;
 
-    static ofEvent<size_t> clickedObjectEvent;
-
     bool bEditorMode;
     bool bSelected;
+    static int count; // used to auto-generate a unique id
+    static ofEvent<int> clickedSampleEvent;
+
+    int totalDelay;
+    int curDelay;
+
+protected:
+    float gain; //0.5f - 2.0f ?
+    float pitch;
 };
 
 #endif // AUDIOSAMPLE_H

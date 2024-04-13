@@ -88,7 +88,6 @@ void ofApp::saveConfig(string newpath, bool bCopyFiles)
 
         }
     }
-    //config.settings.push_back(sceneInfo);
     config.settings.merge_patch(sceneInfo);
 
     filesystem::path p(newpath);
@@ -232,6 +231,10 @@ void ofApp::setup(){
         glfwSetWindowIconifyCallback(glfwWin->getGLFWWindow(),this->window_minimise_callback);
         ofSetWindowShape(ofGetWindowWidth()*config.x_scale,ofGetWindowHeight()*config.y_scale);
     }
+
+    // Set the current default audio device
+    curDevice = newDevice = OpenALSoundPlayer::getDefaultDevice();
+
     bDoRender = true;
     bLoadScenes = false;
     bClearPad = false;
@@ -267,6 +270,20 @@ void ofApp::setup(){
     reverbSend.setFont(&config.f2());
     reverbSend.setLabelString("Reverb send");
 
+    //Edit sliders
+    pitchSlider.setup(5,config.xoffset+800*config.x_scale, ofGetHeight() - 120*config.y_scale,200*config.x_scale,20*config.y_scale,0,3,0,false,false);
+    pitchSlider.setScale(config.y_scale, config.x_scale);
+    pitchSlider.setFont(&config.f2());
+    pitchSlider.setLabelString("Pitch");
+    pitchSlider.disableEvents();
+
+    gainSlider.setup(6,config.xoffset+800*config.x_scale, ofGetHeight() - 80*config.y_scale,200*config.x_scale,20*config.y_scale,1,6,1,false,false);
+    gainSlider.setScale(config.y_scale, config.x_scale);
+    gainSlider.setFont(&config.f2());
+    gainSlider.setLabelString("Gain");
+    gainSlider.disableEvents();
+
+    //Checkbox
     setStereo.setX(config.xoffset);
     setStereo.setY(ofGetHeight() - 140*config.y_scale);
     setStereo.setWidth(20 * config.x_scale);
@@ -277,9 +294,12 @@ void ofApp::setup(){
     ofAddListener(maxDelay.clickedEvent, this, &ofApp::onClicked);
     ofAddListener(pan.clickedEvent, this, &ofApp::onClicked);
     ofAddListener(reverbSend.clickedEvent, this, &ofApp::onClicked);
+    ofAddListener(pitchSlider.clickedEvent, this, &ofApp::onClicked);
+    ofAddListener(gainSlider.clickedEvent, this, &ofApp::onClicked);
 
     maxScenes = 0;
 
+    // Load global config data
     loadConfig();
 
     // create scenes
@@ -298,45 +318,12 @@ void ofApp::setup(){
     addScene = new AddScene(&config,config.baseSceneOffset, scenes[maxScenes-1]->y + config.scene_spacing,config.scene_height,config.scene_height);
     addScene->setup();
 
-    // setup scenes
-    for(size_t i=0;i < scenes.size();i++) {       
-        scenes[i]->setup();
-    }
-
-    enableScene(config.activeSceneIdx);
-
-    updateSliders();
-
-//    int idx = config.activeSceneIdx;
-//    for(size_t j = 0; j < scenes[idx]->sounds.size();j++)
-//    {
-//        scenes[idx]->sounds[j]->enableAllEvents();
-//    }
-//    scenes[idx]->enable();
-
-//    for(size_t i=0; i < scenes.size();i++) {
-//        scenes[i]->enableInteractivity();
-//    }
-
-    for(size_t i=0;i < scenes.size();i++) {
-        if(config.activeScene != scenes[i]->id) {
-            for(size_t j = 0; j < scenes[i]->sounds.size();j++)
-            {
-                scenes[i]->sounds[j]->disableAllEvents();
-            }
-        }
-    }
-
-    ofAddListener(SoundObject::clickedObjectEvent, this, &ofApp::onObjectClicked);
-
-    // Set the current default audio device
-    curDevice = newDevice = OpenALSoundPlayer::getDefaultDevice();
-
-    calculateSources();
+    bLoading = true;
+    bLoadingScenes = true;
 }
 
 //--------------------------------------------------------------
-void ofApp::updateSliders()
+void ofApp::updateMainSliders()
 {
     int md = scenes[config.activeSceneIdx]->sounds[config.activeSoundIdx]->soundPlayer.getMinDelay();
     //cout << "md = " << md << endl;
@@ -363,14 +350,37 @@ void ofApp::updateSliders()
 }
 
 //--------------------------------------------------------------
+void ofApp::updateEditSliders()
+{
+    float pitch = scenes[config.activeSceneIdx]->sounds[config.activeSoundIdx]->soundPlayer.player.at(config.activeSampleIdx).getPitch();    
+    float total = pitchSlider.getHighValue() - pitchSlider.getLowValue();
+    float pct = (pitch - pitchSlider.getLowValue()) / total;
+    cout << "pitch: " << pitch << " total: " << total << " percent: " << pct << endl;
+    pitchSlider.setPercent(pct);
+
+    float gain = scenes[config.activeSceneIdx]->sounds[config.activeSoundIdx]->soundPlayer.player.at(config.activeSampleIdx).getGain();
+    total = gainSlider.getHighValue() - gainSlider.getLowValue();
+    pct = (gain - gainSlider.getLowValue()) / total;
+    cout << "gain: " << gain << " total: " << total << " percent: " << pct << endl;
+    gainSlider.setPercent(pct);
+
+
+}
+
+//--------------------------------------------------------------
 void ofApp::onObjectClicked(size_t& args)
 {
     //cout << "object clicked: " << args << endl;
-
-    updateSliders();
-
+    updateMainSliders();
     doClearPad = args;
+}
 
+//--------------------------------------------------------------
+void ofApp::onSampleClicked(int& args)
+{
+    cout << "sample clicked: " << args << endl;
+    config.activeSampleIdx = args;
+    updateEditSliders();    
 }
 
 //--------------------------------------------------------------
@@ -406,11 +416,22 @@ void ofApp::onClicked(SliderData& args) {
         // reverb send
         scenes[config.activeSceneIdx]->sounds[config.activeSoundIdx]->soundPlayer.setReverbSend(reverbSend.getValue());
     }
-
+    if(args.id == 5) {
+        // pitch
+        scenes[config.activeSceneIdx]->sounds[config.activeSoundIdx]->soundPlayer.player.at(config.activeSampleIdx).setPitch(pitchSlider.getValue());
+        //cout << " pitch = " << pitchSlider.getValue() << endl;
+    }
+    if(args.id == 6) {
+        // gain
+        scenes[config.activeSceneIdx]->sounds[config.activeSoundIdx]->soundPlayer.player.at(config.activeSampleIdx).setGain(gainSlider.getValue());
+        //cout << " gain = " << gainSlider.getValue() << endl;
+    }
 }
 
 //--------------------------------------------------------------
 void ofApp::update(){
+    if(bLoading) return;
+
     // clear pad
     if(bClearPad) {
         if(doClearPad >= 0) {
@@ -440,7 +461,7 @@ void ofApp::update(){
             }
             config.activeSceneIdx = 0;
             enableScene(config.activeSceneIdx);
-            updateSliders();
+            updateMainSliders();
 
             for(size_t i=0;i < scenes.size();i++) {
                 if(config.activeScene != scenes[i]->id) {
@@ -462,6 +483,7 @@ void ofApp::update(){
 
     for(size_t i=0; i < scenes.size();i++) {
          if(scenes[i]->selectScene) {
+            cout << "found selected scene" << endl;
             scenes[i]->selectScene = false;
             enableScene(i);
          }
@@ -577,28 +599,31 @@ void ofApp::deleteScene()
 
 //--------------------------------------------------------------
 void ofApp::enableScene(int idx) {
-
+cout << "start enable scene" << endl;
     for(int i =0; i < scenes.size();i++) {
         scenes[i]->endFade();
     }
-
+    config.prevSceneIdx = config.activeSceneIdx;
     config.activeScene = scenes[idx]->id;
-
     for(int i =0; i < scenes.size();i++) {
         if(config.activeScene == scenes[i]->id) {
             config.activeSceneIdx = i;
         }
     }
-
     config.activeSoundIdx = scenes[idx]->activeSoundIdx;
 
-    for(size_t i=0; i < scenes.size();i++) {
-        for(size_t j = 0; j < scenes[i]->sounds.size();j++)
-        {
-            scenes[i]->sounds[j]->disableAllEvents();
-        }
-        scenes[i]->disable();
+//    for(size_t i=0; i < scenes.size();i++) {
+//        for(size_t j = 0; j < scenes[i]->sounds.size();j++)
+//        {
+//            scenes[i]->sounds[j]->disableAllEvents();
+//        }
+//        scenes[i]->disable();
+//    }
+    for(size_t j = 0; j < scenes[config.prevSceneIdx]->sounds.size();j++)
+    {
+        scenes[config.prevSceneIdx]->sounds[j]->disableAllEvents();
     }
+    scenes[config.prevSceneIdx]->disable();
 
     for(size_t j = 0; j < scenes[idx]->sounds.size();j++)
     {
@@ -625,12 +650,19 @@ void ofApp::disableEvents()
 //--------------------------------------------------------------
 void ofApp::enableEditorMode()
 {
+    gainSlider.enableEvents();
+    pitchSlider.enableEvents();
+    config.activeSampleIdx = 0;
+    updateEditSliders();
     scenes[config.activeSceneIdx]->sounds[config.activeSoundIdx]->enableEditorMode();
+
 }
 
 //--------------------------------------------------------------
 void ofApp::disableEditorMode()
 {
+    gainSlider.disableEvents();
+    pitchSlider.disableEvents();
     scenes[config.activeSceneIdx]->sounds[config.activeSoundIdx]->disableEditorMode();
 }
 
@@ -665,6 +697,49 @@ void ofApp::updateScenePosition()
 
 //--------------------------------------------------------------
 void ofApp::draw(){
+
+    if(bLoading) {
+        ofSetWindowTitle("Loading");
+        static int progress = 0;
+
+        if(bLoadingScenes) {
+            //Load everything else!
+            scenes[progress]->setup();
+            progress++;
+            if(progress >= scenes.size())
+            {
+                bLoadingScenes = false;
+            } else {
+                ofPushStyle();
+                ofSetColor(255);
+                float barw = 200.0f;
+                float barh = 40.0f;
+                ofDrawRectangle(ofGetWidth()/2 - barw/2.0f, ofGetHeight()/2 - barh/2.0f, barw*config.x_scale,barh*config.y_scale);
+                ofSetColor(0,0,255);
+                ofDrawRectangle(ofGetWidth()/2 - barw/2.0f, ofGetHeight()/2 - barh/2.0f,(barw/scenes.size()*progress)*config.x_scale,barh*config.y_scale);
+                ofPopStyle();
+                return;
+            }
+        }
+
+        ofLogNotice() << "Finished loading scenes, setting up Feedra";
+        config.prevSceneIdx = 0;
+        enableScene(config.activeSceneIdx);
+        updateMainSliders();
+//        for(size_t i=0;i < scenes.size();i++) {
+//            if(config.activeScene != scenes[i]->id) {
+//                for(size_t j = 0; j < scenes[i]->sounds.size();j++)
+//                {
+//                    scenes[i]->sounds[j]->disableAllEvents();
+//                }
+//            }
+//        }
+        ofAddListener(SoundObject::clickedObjectEvent, this, &ofApp::onObjectClicked);
+        ofAddListener(AudioSample::clickedSampleEvent, this, &ofApp::onSampleClicked);
+        calculateSources();
+        bLoading = false;
+        return;
+    }
     int fps = ofGetFrameRate();
     ofSetWindowTitle("Fps: "+ofToString(fps));
 
@@ -780,6 +855,9 @@ void ofApp::renderEditPage() {
         ofVec3f pos(config.xoffset+offset,config.yoffset+(i%15)*42*config.y_scale,0);
         p.player[i].render(pos);
     }
+
+    pitchSlider.render();
+    gainSlider.render();
 }
 
 //--------------------------------------------------------------
@@ -855,7 +933,6 @@ void ofApp::checkAudioDeviceChange()
 
 void ofApp::drawSoundInfo()
 {
-    //cout << "config.activeSceneIdx = " << config.activeSceneIdx << " config.activeSoundIdx = " << config.activeSoundIdx << endl;
     int mind = scenes[config.activeSceneIdx]->sounds[config.activeSoundIdx]->soundPlayer.getMinDelay();
     int maxd = scenes[config.activeSceneIdx]->sounds[config.activeSoundIdx]->soundPlayer.getMaxDelay();
     float total = (float) scenes[config.activeSceneIdx]->sounds[config.activeSoundIdx]->soundPlayer.getTotalDelay()/1000.0f;

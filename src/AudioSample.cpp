@@ -2,6 +2,9 @@
 #include "OpenALSoundPlayer.h"
 #include "ofMain.h"
 
+int AudioSample::count = -1;
+ofEvent<int> AudioSample::clickedSampleEvent;
+
 AudioSample::~AudioSample()
 {
     if(bEditorMode)
@@ -11,6 +14,8 @@ AudioSample::~AudioSample()
 }
 AudioSample::AudioSample()
 {
+    count++;
+    id = 0;
     totalDelay = 0;
     curDelay = 0;
     gain = 1.0f;
@@ -24,10 +29,11 @@ AudioSample::AudioSample()
 //--------------------------------------------------------------
 AudioSample::AudioSample(const AudioSample& parent)
 {
+    id = parent.id;
     totalDelay = parent.totalDelay;
     curDelay = parent.curDelay;
     gain = parent.gain;
-    pitch = parent.gain;
+    pitch = parent.pitch;
     config = parent.config;
     bEditorMode = parent.bEditorMode;
     bSelected = parent.bSelected;
@@ -37,6 +43,20 @@ AudioSample::AudioSample(const AudioSample& parent)
 
     setWidth(parent.getWidth());
     setHeight(parent.getHeight());
+}
+
+//--------------------------------------------------------------
+void AudioSample::setPitch(float val)
+{
+    //cout << "set pitch = " << val << endl;
+    pitch = val;
+    audioPlayer->setSpeed(val);
+}
+
+//--------------------------------------------------------------
+void AudioSample::setGain(float val)
+{
+    gain = val;
 }
 
 //--------------------------------------------------------------
@@ -55,13 +75,13 @@ void AudioSample::render(ofVec3f pos)
     } else {
         ofSetColor(255);
     }
-
-    if(bSelected) {
+    ofDrawRectRounded(pos, config->sample_gui_width*audioPlayer->getPosition(),35*config->y_scale,config->x_scale*5);
+    if(config->activeSampleIdx == id) {
         ofNoFill();
         ofSetColor(255,0,0);
-        ofDrawRectRounded(pos, config->sample_gui_width*audioPlayer->getPosition(),35*config->y_scale,config->x_scale*5);
+        ofSetLineWidth(2*config->x_scale);
+        ofDrawRectRounded(getPosition(), getWidth(),getHeight(),config->x_scale*5);
     }
-    ofDrawRectRounded(pos, config->sample_gui_width*audioPlayer->getPosition(),35*config->y_scale,config->x_scale*5);
 
     ofSetColor(50);
     std::filesystem::path p(sample_path);
@@ -95,6 +115,7 @@ void AudioSample::disableEditorMode()
 
 //--------------------------------------------------------------
 void AudioSample::onClicked(ClickArgs& args) {
-    ofLogNotice() << "Clicked AudioSample: " << sample_path;
+    ofLogNotice() << "Clicked " << id << " AudioSample: " << sample_path;
 
+    ofNotifyEvent(clickedSampleEvent,  id);
 }

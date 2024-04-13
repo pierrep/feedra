@@ -1508,7 +1508,7 @@ void OpenALSoundPlayer::setVolume(float vol){
 	volume = vol;
 	if(sources.empty()) return;
     if(sources.size() == 1){
-        alSourcef(sources[sources.size()-1], AL_MAX_GAIN, 5);
+        alSourcef(sources[sources.size()-1], AL_MAX_GAIN, 6);
         alSourcef (sources[sources.size()-1], AL_GAIN, vol);
 	}else{
 		setPan(pan);
@@ -1601,10 +1601,10 @@ void OpenALSoundPlayer::setPan(float p){
         float rightVol = (cosAngle + sinAngle) * 0.7071067811865475; // multiplied by sqrt(2)/2
 		for(int i=0;i<(int)channels;i++){
 			if(i==0){
-                alSourcef(sources[sources.size()-channels+i], AL_MAX_GAIN, 2);
+                alSourcef(sources[sources.size()-channels+i], AL_MAX_GAIN, 6);
                 alSourcef(sources[sources.size()-channels+i], AL_GAIN,leftVol*volume);
 			}else{
-                alSourcef(sources[sources.size()-channels+i], AL_MAX_GAIN, 2);
+                alSourcef(sources[sources.size()-channels+i], AL_MAX_GAIN, 6);
                 alSourcef(sources[sources.size()-channels+i], AL_GAIN,rightVol*volume);
 			}
 		}
@@ -1634,9 +1634,15 @@ void OpenALSoundPlayer::setPaused(bool bP){
 
 //------------------------------------------------------------
 void OpenALSoundPlayer::setSpeed(float spd){
-	for(int i=0;i<channels;i++){
-		alSourcef(sources[sources.size()-channels+i],AL_PITCH,spd);
-	}
+    if(bMultiPlay) {
+        for(int i=0;i<channels;i++){
+            alSourcef(sources[sources.size()-channels+i],AL_PITCH,spd);
+        }
+    } else {
+        for(int i=0;i < sources.size();i++){
+            alSourcef(sources[i],AL_PITCH,spd);
+        }
+    }
 	speed = spd;
 }
 

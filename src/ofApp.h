@@ -29,7 +29,9 @@ class ofApp : public ofBaseApp {
         void enableScene(int i);
         void onClicked(SliderData& args);
         void onObjectClicked(size_t& args);
-        void updateSliders();        
+        void onSampleClicked(int& args);
+        void updateMainSliders();
+        void updateEditSliders();
         void saveConfig();
         void saveConfig(string path, bool bCopyFiles);
         void loadConfig();
@@ -56,10 +58,15 @@ class ofApp : public ofBaseApp {
         AppConfig config;
         SimpleSlider mainVolume;
 
+        //Main sliders
         SimpleSlider minDelay;
         SimpleSlider maxDelay;
         SimpleSlider pan;
         SimpleSlider reverbSend;
+
+        //Edit sliders
+        SimpleSlider gainSlider;
+        SimpleSlider pitchSlider;
 
         CheckBox setStereo;
 
@@ -75,5 +82,8 @@ class ofApp : public ofBaseApp {
 
         enum PageState { MAIN, EDIT, SETTINGS };
         PageState pageState;
+
+        bool bLoading;
+        bool bLoadingScenes;
 };
 

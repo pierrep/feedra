@@ -91,7 +91,7 @@ static void restoreAppWindowFocus(){
 //    return FALSE;
 //}
 
-struct FileDialogData{
+struct FileDialogDataMulti{
     GtkFileChooserAction action;
     std::string windowTitle;
     std::string defaultName;
@@ -102,7 +102,7 @@ struct FileDialogData{
 };
 
 gboolean file_dialog_gtk_multi(gpointer userdata){
-    FileDialogData * dialogData = (FileDialogData*)userdata;
+    FileDialogDataMulti * dialogData = (FileDialogDataMulti*)userdata;
     const gchar* button_name = nullptr;
     switch(dialogData->action){
     case GTK_FILE_CHOOSER_ACTION_OPEN:
@@ -162,10 +162,6 @@ struct TextDialogData{
     std::mutex mutex;
 };
 
-
-
-
-
 static void initGTKMulti(){
     static bool initialized = false;
     if(!initialized){
@@ -182,7 +178,7 @@ static void initGTKMulti(){
 
 static std::vector<std::string> gtkFileDialog(GtkFileChooserAction action,std::string windowTitle,std::string defaultName=""){
     initGTKMulti();
-    FileDialogData dialogData;
+    FileDialogDataMulti dialogData;
     dialogData.action = action;
     dialogData.windowTitle = windowTitle;
     dialogData.defaultName = defaultName;
@@ -400,10 +396,10 @@ ofFileDialogResultMulti ofSystemLoadDialogMulti(std::string windowTitle, bool bF
     //----------------------------------------------------------------------------------------
 
 
-
-    if( results.filePaths[0].length() > 0 ){
-        results.bSuccess = true;
-        //results.fileName = ofFilePath::getFileName(results.filePath);
+    if(results.filePaths.size() > 0) {
+        if( results.filePaths[0].length() > 0 ){
+            results.bSuccess = true;
+        }
     }
 
     return results;

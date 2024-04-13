@@ -9,7 +9,6 @@ public:
     ~AppConfig();
     void setup();
 
-
     // fonts
     ofTrueTypeFont  mainfont;
     ofTrueTypeFont  smallfont;
@@ -26,34 +25,29 @@ public:
 
     float masterVolume;
     float masterFade;
-
     float x_scale;
     float y_scale;
-
     int xoffset;
     int yoffset;
     int size;
     int spacing;
     int gridWidth;
     int gridHeight;
-
     int scene_spacing;
     int scene_width;
     int scene_height;
     int baseSceneOffset;
     int scene_yoffset;
-
     int sample_gui_width;
-
     bool loopByDefault;
-
     int activeScene;
-    size_t activeSceneIdx;
     int max_scenes;
+    size_t activeSceneIdx;
+    size_t prevSceneIdx;
     size_t activeSoundIdx;
+    size_t activeSampleIdx;
     string last_path;
 
     ofImage loopicon;
-
     ofJson settings;
 };
