@@ -61,6 +61,12 @@ class TextInputField {
 	void setUseListeners(bool);
 	bool getUseListeners() const;
 
+    enum TextAlignment {LEFT,RIGHT,CENTRE};
+
+    void setTextAlignment(TextAlignment align);
+    void setNumeric(bool val) {bUseNumeric = val;}
+    void allowNegative(bool val) {bAllowNegatives = val;};
+
 	/// Draw inside this->bounds
 	void draw();
 
@@ -106,18 +112,21 @@ class TextInputField {
     void setStringLimit(size_t max) {
         string_limit = max;
     }
+    void setDoubleClick(bool val) {bUseDoubleClick = val;}
 	
   protected:
 	float lastTimeCursorMoved;
 	
 	float verticalPadding;
-	float horizontalPadding;
+    float horizontalPadding;
+    TextAlignment textAlignment;
 
 	TextInput::FontRenderer* fontRef;
 	
     bool enabled;
 	bool editing;
-	bool useListeners;
+    bool useListeners;
+    bool bUseNumeric;
 
 	bool mouseDownInRect;
 	
@@ -130,6 +139,7 @@ class TextInputField {
 	void removeListeners();
 	bool hasListeners;
 
+    bool bUseDoubleClick;
     float prevClick;
     float currentClick;
     float doubleClickTime;
@@ -138,5 +148,6 @@ class TextInputField {
     map<int, char> shiftMap;
 
     size_t string_limit;
+    bool bAllowNegatives;
 };
 

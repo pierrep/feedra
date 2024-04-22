@@ -51,15 +51,18 @@ TextInputField::TextInputField() {
 
     fontRef = new TextInput::BitmapFontRenderer();
 	
-    //verticalPadding = 3;
     verticalPadding = 0;
 	horizontalPadding = 3;
 	lastTimeCursorMoved = ofGetElapsedTimef();
+    textAlignment = TextAlignment::LEFT;
 
     doubleClickTime = 500; // milliseconds
     currentClick = prevClick = ofGetElapsedTimeMillis();
+    bUseDoubleClick = false;
 
     string_limit = text.max_size();
+    bUseNumeric = false;
+    bAllowNegatives = true;
 }
 
 //----------
@@ -156,6 +159,12 @@ bool TextInputField::getUseListeners() const {
 }
 
 //----------
+void TextInputField::setTextAlignment(TextAlignment align)
+{
+    textAlignment = align;
+}
+
+//----------
 void TextInputField::draw() {
 	ofPushMatrix();
 	ofTranslate(bounds.x, bounds.y);
@@ -178,7 +187,7 @@ void TextInputField::draw() {
 		if(beginCursorY==endCursorY) {
 			// single line selection
             ofDrawRectangle(horizontalPadding + startX, verticalPadding + fontRef->getLineHeight()*beginCursorY,
-				   endX - startX, fontRef->getLineHeight());
+                   endX - startX, fontRef->getLineHeight());
 		} else {
 			
 			// multiline selection.
@@ -219,9 +228,13 @@ void TextInputField::draw() {
 		
 		
 		// calculate this every loop.
-		int cursorX, cursorY;
+        int cursorX = 0, cursorY = 0;
         getCursorCoords(cursorPosition, cursorX, cursorY);
-	//	printf("Pos: %d    X: %d   Y: %d\n", cursorPosition, cursorX, cursorY);
+        if(cursorX > string_limit) {
+            cout << "past limit! x = " << cursorX << " cursorPosition = " << cursorPosition << endl;
+            cursorX = cursorPosition = string_limit;
+        }
+        //printf("Pos: %d    X: %d   Y: %d\n", cursorPosition, cursorX, cursorY);
 		int cursorPos = horizontalPadding + fontRef->stringWidth(lines[cursorY].substr(0, cursorX));
         
 		int cursorTop = verticalPadding + fontRef->getLineHeight()*cursorY;
@@ -241,11 +254,29 @@ void TextInputField::draw() {
     }
     float wpix = bounds.getWidth();
     float textlen = fontRef->stringWidth(tmp_text);
-    float diff = (wpix - textlen)/2.0f;
-    if(isEditing()) {
-        setHorizontalPadding(3);
-    } else {
-        setHorizontalPadding(diff);
+    float w_diff = (wpix - textlen)/2.0f;
+
+    float hpix = bounds.getHeight();
+    float textheight = fontRef->getLineHeight();
+    float h_diff = (hpix - textheight)/3.0f; //2.0f*x_scale : need to adjust this constant according to screen scaling
+
+    switch(textAlignment)
+    {
+        case(TextAlignment::CENTRE):
+//            if(isEditing()) {
+//                setHorizontalPadding(3);
+//                setVerticalPadding(h_diff);
+//            } else
+            {
+                setHorizontalPadding(w_diff);
+                setVerticalPadding(h_diff);
+            }
+        break;
+
+        default:
+            setHorizontalPadding(3);
+        break;
+
     }
     fontRef->drawString(tmp_text, horizontalPadding, fontRef->getLineHeight() + verticalPadding);
     //fontRef->drawString(tmp_text, diff, fontRef->getLineHeight() + verticalPadding);
@@ -291,9 +322,17 @@ void TextInputField::keyPressed(ofKeyEventArgs& args) {
         return;
     }
 	#endif
+
+    if((key == 'a' || key == 'A' || key == 1) && args.hasModifier(OF_KEY_CONTROL)){
+        selecting = true;
+        selectionBegin = 0;
+        selectionEnd = text.size();
+        cursorPosition = selectionEnd;
+        return;
+    }
     
 	if ((key >=32 && key <=126) || key=='\t' || key==OF_KEY_RETURN) {
-		if(selecting) {
+        if(selecting) {
 			text.erase(text.begin() + selectionBegin,
 					   text.begin() + selectionEnd
 					   );
@@ -305,6 +344,25 @@ void TextInputField::keyPressed(ofKeyEventArgs& args) {
 			
 	if (key == OF_KEY_RETURN) {
 		if(!multiline) {
+            if(bUseNumeric) {
+                int val;
+                std::size_t num = 0;
+                if(text.size() > 0) {
+                    try {
+                        val = stoi(text,&num);
+                    } catch (...) {
+                        text = "0";
+                    }
+                } else {
+                    text = "0";
+                }
+                // check if numerical result same length as input string
+                if((num != text.length()) || ((val < 0) && !bAllowNegatives ))
+                {
+                    val = 0;
+                    text = std::to_string(val);
+                }                
+            }
 			endEditing();
 			this->notifyHitReturn();
 			return;
@@ -347,21 +405,23 @@ void TextInputField::keyPressed(ofKeyEventArgs& args) {
 	}
 	
 	if ((key >=32 && key <=126) || key=='\t') {
-        if(this->shiftHeld) {
-            
-            char toInsert;
-            if( !(key > 96 && key < 123) && !(key > 65 && key < 90) && shiftMap.find(key) != shiftMap.end() ) {
-                toInsert = shiftMap[key];//toInsert = key - 32;
+        if(cursorPosition < string_limit-1) {
+            if(this->shiftHeld) {
+
+                char toInsert;
+                if( !(key > 96 && key < 123) && !(key > 65 && key < 90) && shiftMap.find(key) != shiftMap.end() ) {
+                    toInsert = shiftMap[key];//toInsert = key - 32;
+                } else {
+                    toInsert = key;
+                }
+
+                text.insert(text.begin()+cursorPosition, toInsert);
             } else {
-                toInsert = key;
+                text.insert(text.begin()+cursorPosition, key);
             }
-            
-            text.insert(text.begin()+cursorPosition, toInsert);
-        } else {
-            text.insert(text.begin()+cursorPosition, key);
+            cursorPosition++;
+            this->notifyTextChange();
         }
-		cursorPosition++;
-		this->notifyTextChange();
 	}
 	
 	if (key==OF_KEY_BACKSPACE) {
@@ -514,9 +574,9 @@ void TextInputField::mouseDragged(ofMouseEventArgs& args) {
 	if (bounds.inside(args.x, args.y)) {
 		int pos = getCursorPositionFromMouse(args.x, args.y);
 		if (pos != cursorPosition) {
-            //selecting = true;
-            //selectionBegin = MIN(pos, cursorPosition);
-            //selectionEnd = MAX(pos, cursorPosition);
+            selecting = true;
+            selectionBegin = MIN(pos, cursorPosition);
+            selectionEnd = MAX(pos, cursorPosition);
 		}
 		else {
 			selecting = false;
@@ -533,14 +593,20 @@ void TextInputField::mouseReleased(ofMouseEventArgs& args) {
 	if (bounds.inside(args.x, args.y)) {
         currentClick = ofGetElapsedTimeMillis();
 		if (!this->editing && mouseDownInRect) {
-            if(currentClick - prevClick < doubleClickTime){
+            if(bUseDoubleClick) {
+                if(currentClick - prevClick < doubleClickTime){
+                    beginEditing();
+                }
+            } else {
                 beginEditing();
             }
             prevClick = currentClick;
 		}
 	}
 	else {
-		endEditing();
+        if(!selecting) {
+            endEditing();
+        }
 	}
 }
 
@@ -617,6 +683,7 @@ void TextInputField::getCursorCoords(int pos, int &cursorX, int &cursorY) {
 		}
 		c += lines[i].size() + 1;
 	}
+    //ofLogError() << "getCursorCoords returned invalid value";
 }
 
 //----------

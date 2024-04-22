@@ -222,20 +222,6 @@ void SoundObject::save()
 }
 
 //--------------------------------------------------------------
-void SoundObject::clear()
-{
-//    soundname.text = "";
-//    isLooping = false;
-//    isPaused = false;
-//    soundPlayer.stop();
-//    soundpath.clear();
-//    channels = 0;
-//    reverbSend = 0.0f;
-//    sample_rate = 0;
-//    fadeVolume = 1.0f;
-}
-
-//--------------------------------------------------------------
 void SoundObject::setup()
 {  
     ofAddListener(ofEvents().fileDragEvent, this, &SoundObject::onDragEvent);
@@ -247,6 +233,7 @@ void SoundObject::setup()
     looper.setup(config);
     soundname.setUseListeners(true);
     soundname.setStringLimit(STRING_LIMIT);
+    soundname.setTextAlignment(TextInputField::TextAlignment::CENTRE);
     soundname.disable();
 
     isSetup = true;

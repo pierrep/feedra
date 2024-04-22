@@ -31,7 +31,6 @@ public:
     void load(string newpath);
     void play() {playButton.doPlay = true;}
     void stop() {stopper.doStop = true;}
-    void clear();
     void disableAllEvents();
     void enableAllEvents();
     void onDragEvent(ofDragInfo &args);
