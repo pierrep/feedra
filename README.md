@@ -1,5 +1,4 @@
 # Feedra
-
 An interative audio atmosphere generator
 
 This software is in development and new features will be incoming.
