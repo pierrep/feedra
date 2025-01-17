@@ -27,8 +27,8 @@ typedef unsigned int ALuint;
 #endif
 
 
-#ifndef _WIN32
-typedef	struct SNDFILE_tag	SNDFILE ;
+#ifdef _WIN32
+//typedef	struct SNDFILE_tag	SNDFILE ;
 #endif
 
 enum FormatType {

@@ -17,7 +17,6 @@ StopButton::~StopButton()
 //--------------------------------------------------------------
 void StopButton::setup()
 {
-
     ofAddListener(this->clickedEvent, this, &StopButton::onClicked);
 }
 

@@ -7,10 +7,7 @@ ofEvent<int> AudioSample::clickedSampleEvent;
 
 AudioSample::~AudioSample()
 {
-    if(bEditorMode)
-    {
-        disableEditorMode();
-    }
+    ofRemoveListener(this->clickedEvent, this, &AudioSample::onClicked);
 }
 AudioSample::AudioSample()
 {
@@ -23,6 +20,7 @@ AudioSample::AudioSample()
     config = nullptr;
     bEditorMode = false;
     bSelected = false;
+    ofAddListener(this->clickedEvent, this, &AudioSample::onClicked);
     //cout << "constructor, config = " << config << endl;
 }
 
@@ -43,6 +41,7 @@ AudioSample::AudioSample(const AudioSample& parent)
 
     setWidth(parent.getWidth());
     setHeight(parent.getHeight());
+    ofAddListener(this->clickedEvent, this, &AudioSample::onClicked);
 }
 
 //--------------------------------------------------------------
@@ -96,11 +95,8 @@ void AudioSample::enableEditorMode()
 {
     if(!bEditorMode) {
         enableEvents();
-        ofAddListener(this->clickedEvent, this, &AudioSample::onClicked);
         bEditorMode = true;
     }
-
-
 }
 
 //--------------------------------------------------------------
@@ -108,13 +104,14 @@ void AudioSample::disableEditorMode()
 {
     if(bEditorMode) {
         disableEvents();
-        ofRemoveListener(this->clickedEvent, this, &AudioSample::onClicked);
         bEditorMode = false;
     }
 }
 
 //--------------------------------------------------------------
 void AudioSample::onClicked(ClickArgs& args) {
+    if(!bEditorMode) return;
+
     ofLogNotice() << "Clicked " << id << " AudioSample: " << sample_path;
 
     ofNotifyEvent(clickedSampleEvent,  id);

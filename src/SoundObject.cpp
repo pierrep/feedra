@@ -11,12 +11,130 @@ SoundObject::SoundObject()
     id = -1;
     scene_id = 0;
 }
+
+//--------------------------------------------------------------
+SoundObject::SoundObject(AppConfig* _config, size_t _scene_id, int _id, int _x, int _y, int _w, int _h)
+{
+    //ofLogNotice() << "SoundObject constructor called, ID = " << _id << " _scene_id = " << _scene_id;
+    scene_id = _scene_id;
+    isStream = true;
+    isSetup = false;
+    config = _config;
+    channels = 0;
+    reverbSend = 0.0f;
+    sample_rate = 0;
+    fadeVolume = 1.0f;
+    soundPlayer.config = _config;
+
+    id = _id;
+    setX(_x);
+    setY(_y);
+    setWidth(_w);
+    setHeight(_h);
+    isLooping = config->loopByDefault;
+
+    loader.id = _id;
+    loader.setX(_x + 10 * config->x_scale);
+    loader.setY(_y + 10 * config->y_scale);
+    loader.setWidth(15 * config->x_scale);
+    loader.setHeight(15 * config->y_scale);
+
+    playButton.id = _id;
+    playButton.setX(_x + 35 * config->x_scale);
+    playButton.setY(_y + 35 * config->y_scale);
+    playButton.setWidth(50 * config->x_scale);
+    playButton.setHeight(50 * config->y_scale);
+
+    playbar.id = _id;
+    playbar.setX(playButton.getX());
+    playbar.setY(playButton.getY()+playButton.getHeight() + 1);
+    playbar.setWidth(playButton.getWidth());
+    playbar.setHeight(10*config->y_scale);
+
+    stopper.id = _id;
+    stopper.setWidth(15 * config->x_scale);
+    stopper.setHeight(15 * config->y_scale);
+    stopper.setX(_x + _w - stopper.getWidth() - 10 * config->x_scale);
+    stopper.setY(_y + 10 * config->y_scale);
+
+    looper.id = _id;
+    looper.setWidth(15 * config->x_scale);
+    looper.setHeight(15 * config->y_scale);
+    looper.setX(_x + _w - getHeight()/2.0f - looper.getWidth()/2.0f);
+    looper.setY(_y + 10 * config->y_scale);
+
+    soundname.text = "";
+    soundname.setFont(config->f2());
+    soundname.bounds = ofRectangle(_x + 10* config->x_scale, _y + 100* config->y_scale, 100*config->x_scale, 16*config->y_scale);
+}
+
+//--------------------------------------------------------------
+SoundObject::SoundObject(const SoundObject& parent) {
+    //ofLogNotice() << "SoundObject copy constructor called, ID = "<< parent.id;
+    isStream = parent.isStream;
+    isSetup = parent.isSetup;
+    config = parent.config;
+    id = parent.id;
+    setX(parent.x);
+    setY(parent.y);
+    setWidth(parent.width);
+    setHeight(parent.height);
+    isLooping = parent.isLooping;
+
+    loader.id = parent.loader.id;
+    loader.setX(parent.loader.x);
+    loader.setY(parent.loader.y);
+    loader.setWidth(parent.loader.width);
+    loader.setHeight(parent.loader.height);
+
+    playButton.id = parent.playButton.id;
+    playButton.setX(parent.playButton.x);
+    playButton.setY(parent.playButton.y);
+    playButton.setWidth(parent.playButton.width);
+    playButton.setHeight(parent.playButton.height);
+
+    playbar.id = parent.playbar.id;
+    playbar.setX(parent.playbar.x);
+    playbar.setY(parent.playbar.y);
+    playbar.setWidth(parent.playbar.width);
+    playbar.setHeight(parent.playbar.height);
+
+    soundname = parent.soundname;
+    soundname.setFont(config->f2());
+}
 //--------------------------------------------------------------
 SoundObject::~SoundObject()
 {
     ofRemoveListener(ofEvents().fileDragEvent, this, &SoundObject::onDragEvent);
+    ofRemoveListener(this->clickedEvent, this, &SoundObject::onClicked);
     disableAllEvents();
     //ofLogNotice() << "SoundObject destructor called...ID = " << id;
+}
+
+//--------------------------------------------------------------
+void SoundObject::setup()
+{
+    ofAddListener(ofEvents().fileDragEvent, this, &SoundObject::onDragEvent);
+    ofAddListener(this->clickedEvent, this, &SoundObject::onClicked);
+
+    loader.setup();
+    stopper.setup();
+    playButton.setup(config);
+    playbar.setup(config);
+    looper.setup(config);
+    soundname.setUseListeners(true);
+    soundname.setStringLimit(STRING_LIMIT);
+    soundname.setTextAlignment(TextInputField::TextAlignment::CENTRE);
+    soundname.disable();
+
+    isSetup = true;
+
+    volumeslider.setup(id,getX(),getY() -20*config->y_scale, 80*config->x_scale, 15*config->y_scale, 0, 1, 0.7, false, false);
+    volumeslider.setScale(config->y_scale, config->x_scale);
+    volumeslider.setFont(&config->f2());
+    //\volumeslider.setLabelString("volume");
+
+    disableAllEvents();
 }
 
 //--------------------------------------------------------------
@@ -52,7 +170,6 @@ void SoundObject::disableAllEvents()
     if(playButton.isLoaded) {
         soundname.disable();
     }
-    ofRemoveListener(this->clickedEvent, this, &SoundObject::onClicked);
 }
 
 //--------------------------------------------------------------
@@ -70,7 +187,6 @@ void SoundObject::enableAllEvents()
     if(playButton.isLoaded) {
         soundname.enable();
     }
-    ofAddListener(this->clickedEvent, this, &SoundObject::onClicked);
 }
 
 //--------------------------------------------------------------
@@ -222,31 +338,6 @@ void SoundObject::save()
 }
 
 //--------------------------------------------------------------
-void SoundObject::setup()
-{  
-    ofAddListener(ofEvents().fileDragEvent, this, &SoundObject::onDragEvent);
-
-    loader.setup();
-    stopper.setup();
-    playButton.setup(config);
-    playbar.setup(config);
-    looper.setup(config);
-    soundname.setUseListeners(true);
-    soundname.setStringLimit(STRING_LIMIT);
-    soundname.setTextAlignment(TextInputField::TextAlignment::CENTRE);
-    soundname.disable();
-
-    isSetup = true;
-
-    volumeslider.setup(id,getX(),getY() -20*config->y_scale, 80*config->x_scale, 15*config->y_scale, 0, 1, 0.7, false, false);
-    volumeslider.setScale(config->y_scale, config->x_scale);
-    volumeslider.setFont(&config->f2());
-    //\volumeslider.setLabelString("volume");
-
-    disableAllEvents();
-}
-
-//--------------------------------------------------------------
 void SoundObject::onDragEvent(ofDragInfo &args)
 {
     if(inside(args.position) && (config->activeScene == scene_id)) {
@@ -304,98 +395,8 @@ bool SoundObject::loadPadSound(int idx, std::string filepath, bool firstLoad)
 }
 
 //--------------------------------------------------------------
-SoundObject::SoundObject(AppConfig* _config, size_t _scene_id, int _id, int _x, int _y, int _w, int _h)
-{
-    //ofLogNotice() << "SoundObject constructor called, ID = " << _id << " _scene_id = " << _scene_id;
-    scene_id = _scene_id;
-    isStream = true;
-    isSetup = false;
-    config = _config;
-    channels = 0;
-    reverbSend = 0.0f;
-    sample_rate = 0;
-    fadeVolume = 1.0f;
-    soundPlayer.config = _config;
-
-    id = _id;
-    setX(_x);
-    setY(_y);
-    setWidth(_w);
-    setHeight(_h);
-    isLooping = config->loopByDefault;
-
-    loader.id = _id;
-    loader.setX(_x + 10 * config->x_scale);
-    loader.setY(_y + 10 * config->y_scale);
-    loader.setWidth(15 * config->x_scale);
-    loader.setHeight(15 * config->y_scale);
-
-    playButton.id = _id;
-    playButton.setX(_x + 35 * config->x_scale);
-    playButton.setY(_y + 35 * config->y_scale);
-    playButton.setWidth(50 * config->x_scale);
-    playButton.setHeight(50 * config->y_scale);
-
-    playbar.id = _id;
-    playbar.setX(playButton.getX());
-    playbar.setY(playButton.getY()+playButton.getHeight() + 1);
-    playbar.setWidth(playButton.getWidth());
-    playbar.setHeight(10*config->y_scale);
-
-    stopper.id = _id;
-    stopper.setWidth(15 * config->x_scale);
-    stopper.setHeight(15 * config->y_scale);
-    stopper.setX(_x + _w - stopper.getWidth() - 10 * config->x_scale);
-    stopper.setY(_y + 10 * config->y_scale);
-
-    looper.id = _id;
-    looper.setWidth(15 * config->x_scale);
-    looper.setHeight(15 * config->y_scale);
-    looper.setX(_x + _w - getHeight()/2.0f - looper.getWidth()/2.0f);
-    looper.setY(_y + 10 * config->y_scale);
-
-    soundname.text = "";
-    soundname.setFont(config->f2());
-    soundname.bounds = ofRectangle(_x + 10* config->x_scale, _y + 100* config->y_scale, 100*config->x_scale, 16*config->y_scale);
-}
-
-//--------------------------------------------------------------
-SoundObject::SoundObject(const SoundObject& parent) {
-    //ofLogNotice() << "SoundObject copy constructor called, ID = "<< parent.id;
-    isStream = parent.isStream;
-    isSetup = parent.isSetup;
-    config = parent.config;
-    id = parent.id;
-    setX(parent.x);
-    setY(parent.y);
-    setWidth(parent.width);
-    setHeight(parent.height);
-    isLooping = parent.isLooping;
-
-    loader.id = parent.loader.id;
-    loader.setX(parent.loader.x);
-    loader.setY(parent.loader.y);
-    loader.setWidth(parent.loader.width);
-    loader.setHeight(parent.loader.height);
-
-    playButton.id = parent.playButton.id;
-    playButton.setX(parent.playButton.x);
-    playButton.setY(parent.playButton.y);
-    playButton.setWidth(parent.playButton.width);
-    playButton.setHeight(parent.playButton.height);
-
-    playbar.id = parent.playbar.id;
-    playbar.setX(parent.playbar.x);
-    playbar.setY(parent.playbar.y);
-    playbar.setWidth(parent.playbar.width);
-    playbar.setHeight(parent.playbar.height);
-
-    soundname = parent.soundname;
-    soundname.setFont(config->f2());
-}
-
-//--------------------------------------------------------------
 void SoundObject::onClicked(ClickArgs& args) {
+    if(!bEventsEnabled) return;
     ofLogNotice() << "SoundObject id " << id << " clicked";
 
     config->activeSoundIdx =  id;

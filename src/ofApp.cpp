@@ -8,7 +8,7 @@ bool ofApp::bMinimised = false;
 //--------------------------------------------------------------
 ofApp::~ofApp()
 {    
-    ofRemoveListener(minDelay.clickedEvent, this, &ofApp::onClicked);
+    //ofRemoveListener(minDelay.clickedEvent, this, &ofApp::onClicked);
     ofRemoveListener(maxDelay.clickedEvent, this, &ofApp::onClicked);
     ofRemoveListener(pan.clickedEvent, this, &ofApp::onClicked);
     ofRemoveListener(reverbSend.clickedEvent, this, &ofApp::onClicked);
@@ -238,7 +238,6 @@ void ofApp::setup(){
     bDoRender = true;
     bLoadScenes = false;
     bClearPad = false;
-    doClearPad = -1;
     pageState = PageState::MAIN;
 
     config.setup();
@@ -248,11 +247,12 @@ void ofApp::setup(){
     mainVolume.setFont(&config.f2());
     mainVolume.setLabelString("Main Volume");
 
-    minDelay.setup(1,270*config.x_scale,ofGetHeight() - 120*config.y_scale,200*config.x_scale,20*config.y_scale,0,60,0,false,false);
-    minDelay.setScale(config.y_scale, config.x_scale);
-    minDelay.setFont(&config.f2());
-    minDelay.setNumberDisplayPrecision(0);
-    minDelay.setLabelString("Min delay");
+    //minDelay.setup(&config,1,270*config.x_scale,ofGetHeight() - 120*config.y_scale);
+
+    //minDelay.setScale(config.y_scale, config.x_scale);
+    //minDelay.setFont(&config.f2());
+    //minDelay.setNumberDisplayPrecision(0);
+    //minDelay.setLabelString("Min delay");
 
     maxDelay.setup(2,270*config.x_scale,ofGetHeight() - 80*config.y_scale,200*config.x_scale,20*config.y_scale,0,120,0,false,false);
     maxDelay.setScale(config.y_scale, config.x_scale);
@@ -290,8 +290,6 @@ void ofApp::setup(){
     setStereo.setHeight(20 * config.y_scale);
     setStereo.setup(&config);
 
-    ofAddListener(minDelay.clickedEvent, this, &ofApp::onClicked);
-    ofAddListener(maxDelay.clickedEvent, this, &ofApp::onClicked);
     ofAddListener(pan.clickedEvent, this, &ofApp::onClicked);
     ofAddListener(reverbSend.clickedEvent, this, &ofApp::onClicked);
     ofAddListener(pitchSlider.clickedEvent, this, &ofApp::onClicked);
@@ -326,23 +324,23 @@ void ofApp::setup(){
 void ofApp::updateMainSliders()
 {
     int md = scenes[config.activeSceneIdx]->sounds[config.activeSoundIdx]->soundPlayer.getMinDelay();
-    //cout << "md = " << md << endl;
-    int l = minDelay.getHighValue();
-    float pct = (float) md /(float) 1000 * 1.0f/l;
-    //cout << "pct = " << pct << endl;
-    minDelay.setPercent(pct);
+//    //cout << "md = " << md << endl;
+//    int l = minDelay.getHighValue();
+//    float pct = (float) md /(float) 1000 * 1.0f/l;
+//    //cout << "pct = " << pct << endl;
+//    minDelay.setPercent(pct);
 
-    maxDelay.setLowValue(minDelay.getValue());
-    maxDelay.setHighValue(minDelay.getValue()+30);
+//    maxDelay.setLowValue(minDelay.getValue());
+//    maxDelay.setHighValue(minDelay.getValue()+30);
     md = scenes[config.activeSceneIdx]->sounds[config.activeSoundIdx]->soundPlayer.getMaxDelay();
-    //cout << "md = " << md << endl;
-    l = minDelay.getHighValue();
-    pct = (float) md /(float) 1000 * 1.0f/l;
-    //cout << "pct = " << pct << endl;
-    maxDelay.setPercent(pct);
+//    //cout << "md = " << md << endl;
+//    l = minDelay.getHighValue();
+//    pct = (float) md /(float) 1000 * 1.0f/l;
+//    //cout << "pct = " << pct << endl;
+//    maxDelay.setPercent(pct);
 
     float p = scenes[config.activeSceneIdx]->sounds[config.activeSoundIdx]->soundPlayer.getPan();
-    pct = (p+1.0f) / 2.0f;
+    float pct = (p+1.0f) / 2.0f;
     pan.setPercent(pct);
 
     float send = scenes[config.activeSceneIdx]->sounds[config.activeSoundIdx]->soundPlayer.getReverbSend();
@@ -363,8 +361,6 @@ void ofApp::updateEditSliders()
     pct = (gain - gainSlider.getLowValue()) / total;
     cout << "gain: " << gain << " total: " << total << " percent: " << pct << endl;
     gainSlider.setPercent(pct);
-
-
 }
 
 //--------------------------------------------------------------
@@ -389,13 +385,13 @@ void ofApp::onClicked(SliderData& args) {
 
     if(args.id == 1) {
         //min value
-        maxDelay.setLowValue(minDelay.getValue());
-        maxDelay.setHighValue(minDelay.getValue()+30);
-        scenes[config.activeSceneIdx]->sounds[config.activeSoundIdx]->soundPlayer.setMinDelay(minDelay.getValue()*1000);
-        int num = scenes[config.activeSceneIdx]->sounds[config.activeSoundIdx]->soundPlayer.player.size();
-        for(int i = 0; i < num;i++)
+        //maxDelay.setLowValue(minDelay.getValue());
+        //maxDelay.setHighValue(minDelay.getValue()+30);
+        //scenes[config.activeSceneIdx]->sounds[config.activeSoundIdx]->soundPlayer.setMinDelay(minDelay.getValue()*1000);
+        //int num = scenes[config.activeSceneIdx]->sounds[config.activeSoundIdx]->soundPlayer.player.size();
+        //for(int i = 0; i < num;i++)
         {
-            scenes[config.activeSceneIdx]->sounds[config.activeSoundIdx]->soundPlayer.recalculateDelay(i);
+        //    scenes[config.activeSceneIdx]->sounds[config.activeSoundIdx]->soundPlayer.recalculateDelay(i);
         }
     }
     if(args.id == 2) {
@@ -434,17 +430,15 @@ void ofApp::update(){
 
     // clear pad
     if(bClearPad) {
-        if(doClearPad >= 0) {
-            int x = scenes[config.activeSceneIdx]->sounds[doClearPad]->x;
-            int y = scenes[config.activeSceneIdx]->sounds[doClearPad]->y;
-            int id = scenes[config.activeSceneIdx]->sounds[doClearPad]->id;
-            delete scenes[config.activeSceneIdx]->sounds[doClearPad];
-            scenes[config.activeSceneIdx]->sounds[doClearPad] = new SoundObject(&config,config.activeScene,id,x,y,config.size,config.size);
-            scenes[config.activeSceneIdx]->sounds[doClearPad]->setup();
-            bClearPad = false;
-        }
+        int x = scenes[config.activeSceneIdx]->sounds[config.activeSoundIdx]->x;
+        int y = scenes[config.activeSceneIdx]->sounds[config.activeSoundIdx]->y;
+        int id = scenes[config.activeSceneIdx]->sounds[config.activeSoundIdx]->id;
+        delete scenes[config.activeSceneIdx]->sounds[config.activeSoundIdx];
+        scenes[config.activeSceneIdx]->sounds[config.activeSoundIdx] = new SoundObject(&config,config.activeScene,id,x,y,config.size,config.size);
+        scenes[config.activeSceneIdx]->sounds[config.activeSoundIdx]->setup();
+        scenes[config.activeSceneIdx]->sounds[config.activeSoundIdx]->enableAllEvents();
+        bClearPad = false;
     }
-    doClearPad = -1;
 
     if(setStereo.bActivate) {
         setStereo.bActivate = false;
@@ -864,7 +858,7 @@ void ofApp::renderEditPage() {
 void ofApp::keyPressed  (ofKeyEventArgs & args){
     int key = args.key;
 
-    //cout << "key = " << key <<  "cntrl:" << (int)args.hasModifier(OF_KEY_CONTROL) << endl;
+    cout << "key = " << key <<  "cntrl:" << (int)args.hasModifier(OF_KEY_CONTROL) << endl;
 
     if(key == '1'){
         pageState = MAIN;
@@ -962,7 +956,7 @@ void ofApp::drawSoundInfo()
     config.f2().drawString("path: "+path, config.xoffset, ofGetHeight() - 15*config.y_scale);
 
 
-    minDelay.render();
+    //minDelay.render();
     maxDelay.render();
     pan.render();
     reverbSend.render();

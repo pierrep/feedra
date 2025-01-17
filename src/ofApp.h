@@ -5,6 +5,7 @@
 #include "UI/AddScene.h"
 #include "UI/SimpleSlider.h"
 #include "UI/CheckBox.h"
+#include "UI/NumberBox.h"
 
 class ofApp : public ofBaseApp {
 
@@ -59,7 +60,9 @@ class ofApp : public ofBaseApp {
         SimpleSlider mainVolume;
 
         //Main sliders
-        SimpleSlider minDelay;
+        //NumberBox minDelay;
+        //SimpleSlider minDelay;
+
         SimpleSlider maxDelay;
         SimpleSlider pan;
         SimpleSlider reverbSend;

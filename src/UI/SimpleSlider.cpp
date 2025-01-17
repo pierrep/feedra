@@ -47,6 +47,10 @@ void SimpleSlider::setup(int _id,float _x, float _y, float _w, float _h, float l
 	
     if(!bEventsEnabled){
         enableEvents();
+        ofAddListener(ofEvents().mouseMoved, this, &SimpleSlider::mouseMoved);
+        ofAddListener(ofEvents().mousePressed, this, &SimpleSlider::mousePressed);
+        ofAddListener(ofEvents().mouseReleased, this, &SimpleSlider::mouseReleased);
+        ofAddListener(ofEvents().mouseDragged, this, &SimpleSlider::mouseDragged);
 	}
 }
 
@@ -54,10 +58,7 @@ void SimpleSlider::enableEvents()
 {
     //ofLogNotice() << " Enable slider events, id = " << id;
     //ofAddListener(ofEvents().draw, this, &SimpleSlider::draw);
-    ofAddListener(ofEvents().mouseMoved, this, &SimpleSlider::mouseMoved);
-    ofAddListener(ofEvents().mousePressed, this, &SimpleSlider::mousePressed);
-    ofAddListener(ofEvents().mouseReleased, this, &SimpleSlider::mouseReleased);
-    ofAddListener(ofEvents().mouseDragged, this, &SimpleSlider::mouseDragged);
+
     bEventsEnabled = true;
 }
 
@@ -65,10 +66,6 @@ void SimpleSlider::disableEvents()
 {
     //ofLogNotice() << " Disable slider events, id = " << id;
     //ofRemoveListener(ofEvents().draw, this, &SimpleSlider::draw);
-    ofRemoveListener(ofEvents().mouseMoved, this, &SimpleSlider::mouseMoved);
-    ofRemoveListener(ofEvents().mousePressed, this, &SimpleSlider::mousePressed);
-    ofRemoveListener(ofEvents().mouseReleased, this, &SimpleSlider::mouseReleased);
-    ofRemoveListener(ofEvents().mouseDragged, this, &SimpleSlider::mouseDragged);
     bEventsEnabled = false;
 }
 
@@ -76,6 +73,10 @@ void SimpleSlider::disableEvents()
 void SimpleSlider::clear(){
     if(bEventsEnabled){
         disableEvents();
+        ofRemoveListener(ofEvents().mouseMoved, this, &SimpleSlider::mouseMoved);
+        ofRemoveListener(ofEvents().mousePressed, this, &SimpleSlider::mousePressed);
+        ofRemoveListener(ofEvents().mouseReleased, this, &SimpleSlider::mouseReleased);
+        ofRemoveListener(ofEvents().mouseDragged, this, &SimpleSlider::mouseDragged);
 	}
 }
 

@@ -15,6 +15,7 @@ Scene::~Scene()
 
     if(bInteractive) {
         disableInteractivity();
+        ofRemoveListener(Interactive::clickedEvent, this, &Scene::onClicked);
     }
     //ofLogNotice() << "Scene destructor for id: " << id << " called...";
 }
@@ -27,6 +28,7 @@ void Scene::setup() {
 //--------------------------------------------------------------
 void Scene::setup(string newpath)
 {    
+    ofAddListener(this->clickedEvent, this, &Scene::onClicked);
     enableInteractivity();
 
     // create grid of sound players
@@ -311,8 +313,7 @@ void Scene::disable()
 void Scene::enableInteractivity()
 {
     if(!bInteractive) {
-        //cout << "enable interactivity scene id:" << id << endl;
-        ofAddListener(this->clickedEvent, this, &Scene::onClicked);
+        //cout << "enable interactivity scene id:" << id << endl;        
         bInteractive = true;
     }
 }
@@ -320,8 +321,7 @@ void Scene::enableInteractivity()
 //--------------------------------------------------------------
 void Scene::disableInteractivity()
 {
-    if(bInteractive) {
-        ofRemoveListener(Interactive::clickedEvent, this, &Scene::onClicked);
+    if(bInteractive) {        
         bInteractive = false;
     }
 }
