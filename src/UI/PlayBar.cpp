@@ -73,7 +73,7 @@ void PlayBar::render(SoundPlayer& soundPlayer)
     ofSetColor(0);
     float timeleft;
     if(soundPlayer.isPlayingDelay()) {
-        timeleft = (1.0f - soundPlayer.getPosition()) * soundPlayer.getTotalDelay()/1000.0f;
+        timeleft = (1.0f - soundPlayer.getPosition()) * soundPlayer.getTotalDelay();
     } else {
         timeleft = (1.0f - soundPlayer.getPosition()) * soundPlayer.getDuration();
     }

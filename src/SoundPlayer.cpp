@@ -10,7 +10,7 @@ SoundPlayer::SoundPlayer()
     player.push_back(s);
 
     bPlayingDelay = false;
-    prevTime = curTime = ofGetElapsedTimeMillis();
+    prevTime = curTime = ofGetElapsedTimef();
     bPaused = true;    
     bPlayBackEnded = false;
     bCheckPlayBackEnded = false;
@@ -92,12 +92,12 @@ void SoundPlayer::update()
         bPlayBackEnded = false;
     }
 
-    curTime = ofGetElapsedTimeMillis();
-    int diff = curTime - prevTime;
+    curTime = ofGetElapsedTimef();
+    float diffTime = curTime - prevTime;
     if(bPlayingDelay)
     {
         if(!bPaused) {
-            player[curSound].curDelay -= diff;
+            player[curSound].curDelay -= diffTime;
             if(player[curSound].curDelay <= 0) {
                 player[curSound].curDelay = 0;
                 cout << "player["<<curSound<<"].setPaused(false)" << endl;
@@ -148,7 +148,8 @@ bool SoundPlayer::load(const std::filesystem::path& fileName, int idx, bool stre
 //--------------------------------------------------------------------
 void SoundPlayer::recalculateDelay(int id)
 {   
-    player[id].curDelay = player[id].totalDelay = ofRandom(minDelay, maxDelay);
+    player[id].totalDelay = ofRandom(minDelay, maxDelay);
+    player[id].curDelay = player[id].totalDelay;
     //cout << "recalculate delay for cursound[" << id << "] = " << player[id].totalDelay << endl;
     if(player[id].totalDelay > 0) {
         player[id].audioPlayer->setLoop(false);
@@ -248,7 +249,7 @@ void SoundPlayer::setMaxDelay(int delay)
 float SoundPlayer::getPosition() const
 {
     if(isPlayingDelay()) {
-        float remain =   1.0f - (float)(player[curSound].curDelay/(float) player[curSound].totalDelay);
+        float remain =   1.0f - (player[curSound].curDelay/player[curSound].totalDelay);
         //cout << "remain = " << remain << endl;
         if(remain <= 0) remain = 0.0000001f;
         return remain;
@@ -278,7 +279,6 @@ bool SoundPlayer::isPlaying() const
 //--------------------------------------------------------------------
 bool SoundPlayer::isPlayingDelay() const
 {
-    //if(player[curSound].curDelay > 0) {
     if(bPlayingDelay) {
         return true;
     }
@@ -353,7 +353,7 @@ int SoundPlayer::getMaxDelay() const
 }
 
 //--------------------------------------------------------------------
-int SoundPlayer::getTotalDelay() const
+float SoundPlayer::getTotalDelay() const
 {
     return player[curSound].totalDelay;
 }

@@ -44,7 +44,7 @@ public:
     bool getIsStereo() const;
     int getMinDelay() const;
     int getMaxDelay() const;
-    int getTotalDelay() const;
+    float getTotalDelay() const;
     float getReverbSend() const;
     void setReverbSend(float send);
     void recalculateDelay(int id);
@@ -57,8 +57,8 @@ public:
     bool bPlayingDelay;
     int curSound;
 
-    unsigned long curTime;
-    unsigned long prevTime;
+    float curTime;
+    float prevTime;
 
     bool bPaused;
     bool bIsLooping;
@@ -66,7 +66,6 @@ public:
     bool bCheckPlayBackEnded;
 
     string filename;
-    //int id;
 
     ofEvent<OpenALSoundPlayer*> playbackEndedEvent;
 };

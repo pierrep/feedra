@@ -163,7 +163,6 @@ void SoundObject::disableAllEvents()
     playButton.disableEvents();
     playbar.disableEvents();
     stopper.disableEvents();
-    soundname.disable();
     volumeslider.disableEvents();
     looper.disableEvents();
 
@@ -180,7 +179,6 @@ void SoundObject::enableAllEvents()
     playButton.enableEvents();
     playbar.enableEvents();
     stopper.enableEvents();
-    soundname.enable();
     volumeslider.enableEvents();
     looper.enableEvents();
 
@@ -259,7 +257,7 @@ void SoundObject::load(string newpath)
                     if(!setting["soundname"].empty())
                     {
                         soundname.text = setting["soundname"];
-                        soundname.enable();
+                        soundname.disable();
                     }
                     if(!setting["volume"].empty())
                     {
@@ -281,14 +279,14 @@ void SoundObject::load(string newpath)
                     {
                         reverbSend = setting["reverbsend"];
                     }
-//                    if(!setting["mindelay"].empty())
-//                    {
-//                        soundPlayer.minDelay = setting["mindelay"];
-//                    }
-//                    if(!setting["maxdelay"].empty())
-//                    {
-//                        soundPlayer.maxDelay = setting["maxdelay"];
-//                    }
+                    if(!setting["mindelay"].empty())
+                    {
+                        soundPlayer.minDelay = setting["mindelay"];
+                    }
+                    if(!setting["maxdelay"].empty())
+                    {
+                        soundPlayer.maxDelay = setting["maxdelay"];
+                    }
                 }
             }
         }

@@ -3,7 +3,7 @@
 NumberBox::NumberBox()
 {
     id = 0;
-
+    labelFont = nullptr;
 }
 
 //--------------------------------------------------------------
@@ -19,6 +19,8 @@ void NumberBox::setup(AppConfig* _config, int _id, int _x, int _y)
 {    
     config = _config;
     id = _id;
+    setX(_x);
+    setY(_y);
     float tfw = 80; // text field width
     float tfh = 30; // text field height
     textBox.setup();
@@ -31,6 +33,10 @@ void NumberBox::setup(AppConfig* _config, int _id, int _x, int _y)
     textBox.enable();
     textBox.setNumeric(true);
     textBox.allowNegative(false);
+
+    labelString = "";
+    bDrawLabel = false;
+
     ofAddListener(textBox.onTextChange, this, &NumberBox::onTextChanged);
 
     std::function<void()> renderFunc = [this]() -> void
@@ -76,6 +82,8 @@ void NumberBox::setup(AppConfig* _config, int _id, int _x, int _y)
 NumberBox::NumberBox(int _id, int _x, int _y, int _w, int _h)
 {
     id = _id;
+    labelFont = nullptr;
+    bDrawLabel = false;
 
     setX(_x);
     setY(_y);
@@ -88,15 +96,33 @@ NumberBox::NumberBox(const NumberBox& parent) {
     ofLogVerbose() << "NumberBox copy constructor called";
 
     id = parent.id;
+    labelFont = parent.labelFont;
+    bDrawLabel = parent.bDrawLabel;
+
     setX(parent.x);
     setY(parent.y);
     setWidth(parent.width);
     setHeight(parent.height);
 }
 
+//----------------------------------------------------
+void NumberBox::setFont(ofTrueTypeFont* _font){
+    labelFont = _font;
+    bDrawLabel = true;
+}
+
+//----------------------------------------------------
+void NumberBox::setLabelString(string str){
+    labelString = str;
+    bDrawLabel = true;
+}
+
 //--------------------------------------------------------------
 void NumberBox::onTextChanged(string& args) {
-
+    NumberBoxData d;
+    d.id = id;
+    d.value = getValue();
+    ofNotifyEvent(numberChangedEvent, d);
 }
 
 //--------------------------------------------------------------
@@ -106,7 +132,7 @@ void NumberBox::onClicked(ClickArgs& args) {
 
     if((args.id == 1) && (args.mouseButton.type == ofMouseEventArgs::Pressed))
     {
-        decrementValue();
+        decrementValue();        
     }
     if((args.id == 2) && (args.mouseButton.type == ofMouseEventArgs::Pressed))
     {
@@ -135,6 +161,11 @@ void NumberBox::decrementValue()
         }
     }
     textBox.text = std::to_string(val);
+
+    NumberBoxData d;
+    d.id = id;
+    d.value = getValue();
+    ofNotifyEvent(numberChangedEvent, d);
 }
 
 void NumberBox::incrementValue()
@@ -154,6 +185,11 @@ void NumberBox::incrementValue()
         val = val + 1;
     }
     textBox.text = std::to_string(val);
+
+    NumberBoxData d;
+    d.id = id;
+    d.value = getValue();
+    ofNotifyEvent(numberChangedEvent, d);
 }
 
 //--------------------------------------------------------------
@@ -169,6 +205,13 @@ int NumberBox::getValue()
 
     return val;
 }
+
+//--------------------------------------------------------------
+void NumberBox::setValue(int val)
+{
+    textBox.text = std::to_string(val);
+}
+
 //--------------------------------------------------------------
 void NumberBox::render()
 {
@@ -188,11 +231,30 @@ void NumberBox::render()
     decButton.render();
 
     ofPushStyle();
+
+    if(bDrawLabel)
+    {
+        float labelStringHeight = 4*config->y_scale;
+        if(labelFont != nullptr) {
+            ofSetColor(255);
+            labelFont->drawString( labelString, getX(), getY()-labelStringHeight);
+        } else {
+            ofDrawBitmapString( labelString, getX(), getY()-labelStringHeight);
+        }
+    }
+
     if(textBox.isEditing()) {
         ofSetHexColor(0x81bbe1);
     } else {
-        ofSetColor(64);
+        ofSetColor(255);
     }
+
+    //Text box fill
+    ofSetHexColor(0xfbe9d8);
+    ofFill();
+    ofDrawRectRounded(textBox.bounds,5*config->x_scale);
+
+    //Text box Border
     ofSetLineWidth(2);
     ofNoFill();
     ofDrawRectRounded(textBox.bounds,5*config->x_scale);

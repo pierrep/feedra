@@ -7,11 +7,9 @@ bool ofApp::bMinimised = false;
 
 //--------------------------------------------------------------
 ofApp::~ofApp()
-{    
-    //ofRemoveListener(minDelay.clickedEvent, this, &ofApp::onClicked);
-    ofRemoveListener(maxDelay.clickedEvent, this, &ofApp::onClicked);
-    ofRemoveListener(pan.clickedEvent, this, &ofApp::onClicked);
-    ofRemoveListener(reverbSend.clickedEvent, this, &ofApp::onClicked);
+{
+    ofRemoveListener(pan.clickedEvent, this, &ofApp::onSliderClicked);
+    ofRemoveListener(reverbSend.clickedEvent, this, &ofApp::onSliderClicked);
 
     saveConfig();
 
@@ -247,17 +245,12 @@ void ofApp::setup(){
     mainVolume.setFont(&config.f2());
     mainVolume.setLabelString("Main Volume");
 
-    //minDelay.setup(&config,1,270*config.x_scale,ofGetHeight() - 120*config.y_scale);
+    minDelay.setup(&config,1,270*config.x_scale,ofGetHeight() - 140*config.y_scale);
+    minDelay.setFont(&config.f2());
+    minDelay.setLabelString("Min delay");
 
-    //minDelay.setScale(config.y_scale, config.x_scale);
-    //minDelay.setFont(&config.f2());
-    //minDelay.setNumberDisplayPrecision(0);
-    //minDelay.setLabelString("Min delay");
-
-    maxDelay.setup(2,270*config.x_scale,ofGetHeight() - 80*config.y_scale,200*config.x_scale,20*config.y_scale,0,120,0,false,false);
-    maxDelay.setScale(config.y_scale, config.x_scale);
+    maxDelay.setup(&config,2,270*config.x_scale,ofGetHeight() - 90*config.y_scale);
     maxDelay.setFont(&config.f2());
-    maxDelay.setNumberDisplayPrecision(0);
     maxDelay.setLabelString("Max delay");
 
     pan.setup(3,config.xoffset+600*config.x_scale,ofGetHeight() - 120*config.y_scale,200*config.x_scale,20*config.y_scale,-1,1,0,false,false);
@@ -290,10 +283,12 @@ void ofApp::setup(){
     setStereo.setHeight(20 * config.y_scale);
     setStereo.setup(&config);
 
-    ofAddListener(pan.clickedEvent, this, &ofApp::onClicked);
-    ofAddListener(reverbSend.clickedEvent, this, &ofApp::onClicked);
-    ofAddListener(pitchSlider.clickedEvent, this, &ofApp::onClicked);
-    ofAddListener(gainSlider.clickedEvent, this, &ofApp::onClicked);
+    ofAddListener(pan.clickedEvent, this, &ofApp::onSliderClicked);
+    ofAddListener(reverbSend.clickedEvent, this, &ofApp::onSliderClicked);
+    ofAddListener(pitchSlider.clickedEvent, this, &ofApp::onSliderClicked);
+    ofAddListener(gainSlider.clickedEvent, this, &ofApp::onSliderClicked);
+    ofAddListener(minDelay.numberChangedEvent, this, &ofApp::onNumberChanged);
+    ofAddListener(maxDelay.numberChangedEvent, this, &ofApp::onNumberChanged);
 
     maxScenes = 0;
 
@@ -323,21 +318,11 @@ void ofApp::setup(){
 //--------------------------------------------------------------
 void ofApp::updateMainSliders()
 {
-    int md = scenes[config.activeSceneIdx]->sounds[config.activeSoundIdx]->soundPlayer.getMinDelay();
-//    //cout << "md = " << md << endl;
-//    int l = minDelay.getHighValue();
-//    float pct = (float) md /(float) 1000 * 1.0f/l;
-//    //cout << "pct = " << pct << endl;
-//    minDelay.setPercent(pct);
+    int min_d = scenes[config.activeSceneIdx]->sounds[config.activeSoundIdx]->soundPlayer.getMinDelay();
+    minDelay.setValue(min_d);
 
-//    maxDelay.setLowValue(minDelay.getValue());
-//    maxDelay.setHighValue(minDelay.getValue()+30);
-    md = scenes[config.activeSceneIdx]->sounds[config.activeSoundIdx]->soundPlayer.getMaxDelay();
-//    //cout << "md = " << md << endl;
-//    l = minDelay.getHighValue();
-//    pct = (float) md /(float) 1000 * 1.0f/l;
-//    //cout << "pct = " << pct << endl;
-//    maxDelay.setPercent(pct);
+    int max_d = scenes[config.activeSceneIdx]->sounds[config.activeSoundIdx]->soundPlayer.getMaxDelay();
+    maxDelay.setValue(max_d);
 
     float p = scenes[config.activeSceneIdx]->sounds[config.activeSoundIdx]->soundPlayer.getPan();
     float pct = (p+1.0f) / 2.0f;
@@ -364,45 +349,48 @@ void ofApp::updateEditSliders()
 }
 
 //--------------------------------------------------------------
-void ofApp::onObjectClicked(size_t& args)
+void ofApp::onObjectClicked(size_t& arg)
 {
-    //cout << "object clicked: " << args << endl;
+    //cout << "object clicked: " << arg << endl;
     updateMainSliders();
-    doClearPad = args;
+    doClearPad = arg;
 }
 
 //--------------------------------------------------------------
-void ofApp::onSampleClicked(int& args)
+void ofApp::onSampleClicked(int& arg)
 {
-    cout << "sample clicked: " << args << endl;
-    config.activeSampleIdx = args;
+    cout << "sample clicked: " << arg << endl;
+    config.activeSampleIdx = arg;
     updateEditSliders();    
 }
 
 //--------------------------------------------------------------
-void ofApp::onClicked(SliderData& args) {
-    //ofLogNotice() << " clicked id: " << args.id << "  value: " << args.value;
-
-    if(args.id == 1) {
-        //min value
-        //maxDelay.setLowValue(minDelay.getValue());
-        //maxDelay.setHighValue(minDelay.getValue()+30);
-        //scenes[config.activeSceneIdx]->sounds[config.activeSoundIdx]->soundPlayer.setMinDelay(minDelay.getValue()*1000);
-        //int num = scenes[config.activeSceneIdx]->sounds[config.activeSoundIdx]->soundPlayer.player.size();
-        //for(int i = 0; i < num;i++)
-        {
-        //    scenes[config.activeSceneIdx]->sounds[config.activeSoundIdx]->soundPlayer.recalculateDelay(i);
-        }
-    }
-    if(args.id == 2) {
-        // max value
-        scenes[config.activeSceneIdx]->sounds[config.activeSoundIdx]->soundPlayer.setMaxDelay(maxDelay.getValue()*1000);
+void ofApp::onNumberChanged(NumberBoxData& args)
+{
+    if(args.id == 1)
+    {
+        //min delay value
+        scenes[config.activeSceneIdx]->sounds[config.activeSoundIdx]->soundPlayer.setMinDelay(minDelay.getValue());
         int num = scenes[config.activeSceneIdx]->sounds[config.activeSoundIdx]->soundPlayer.player.size();
         for(int i = 0; i < num;i++)
         {
             scenes[config.activeSceneIdx]->sounds[config.activeSoundIdx]->soundPlayer.recalculateDelay(i);
         }
     }
+    if(args.id == 2) {
+        // max delay value
+        scenes[config.activeSceneIdx]->sounds[config.activeSoundIdx]->soundPlayer.setMaxDelay(maxDelay.getValue());
+        int num = scenes[config.activeSceneIdx]->sounds[config.activeSoundIdx]->soundPlayer.player.size();
+        for(int i = 0; i < num;i++)
+        {
+            scenes[config.activeSceneIdx]->sounds[config.activeSoundIdx]->soundPlayer.recalculateDelay(i);
+        }
+    }
+}
+
+//--------------------------------------------------------------
+void ofApp::onSliderClicked(SliderData& args) {
+    //ofLogNotice() << " clicked id: " << args.id << "  value: " << args.value;
 
     if(args.id == 3) {
         // panning
@@ -860,13 +848,13 @@ void ofApp::keyPressed  (ofKeyEventArgs & args){
 
     cout << "key = " << key <<  "cntrl:" << (int)args.hasModifier(OF_KEY_CONTROL) << endl;
 
-    if(key == '1'){
+    if((key == '1') && args.hasModifier(OF_KEY_CONTROL)){
         pageState = MAIN;
     } else
-    if(key == '2'){
+    if((key == '2') && args.hasModifier(OF_KEY_CONTROL)){
         pageState = EDIT;
     }
-    if(key == '3'){
+    if((key == '3') && args.hasModifier(OF_KEY_CONTROL)){
         pageState = SETTINGS;
     }
     if((key == 'q' || key == 'Q' || key == 17) && args.hasModifier(OF_KEY_CONTROL)){
@@ -909,13 +897,13 @@ void ofApp::keyPressed  (ofKeyEventArgs & args){
 //--------------------------------------------------------------
 void ofApp::checkAudioDeviceChange()
 {
-    curTime = ofGetElapsedTimeMillis();
-    if((curTime - prevTime) > 1000)
+    curAppTime = ofGetElapsedTimeMillis();
+    if((curAppTime - prevAppTime) > 1000)
     {
         //Need to list devices first
         int num_devices = OpenALSoundPlayer::listDevices(false);
         newDevice = OpenALSoundPlayer::getDefaultDevice();
-        prevTime = curTime;
+        prevAppTime = curAppTime;
 
         if(newDevice.compare(curDevice) != 0) {
             OpenALSoundPlayer::reopenDevice(newDevice.c_str());
@@ -929,10 +917,11 @@ void ofApp::drawSoundInfo()
 {
     int mind = scenes[config.activeSceneIdx]->sounds[config.activeSoundIdx]->soundPlayer.getMinDelay();
     int maxd = scenes[config.activeSceneIdx]->sounds[config.activeSoundIdx]->soundPlayer.getMaxDelay();
-    float total = (float) scenes[config.activeSceneIdx]->sounds[config.activeSoundIdx]->soundPlayer.getTotalDelay()/1000.0f;
+    float total = (float) scenes[config.activeSceneIdx]->sounds[config.activeSoundIdx]->soundPlayer.getTotalDelay();
 
     std::stringstream stream;
-    stream << std::fixed << std::setprecision(0) << round(total);
+    //stream << std::fixed << std::setprecision() << round(total);
+    stream << std::fixed << std::setprecision(3) << total;
     std::string t = stream.str();
 
     int curSound = scenes[config.activeSceneIdx]->sounds[config.activeSoundIdx]->soundPlayer.getCurSound();
@@ -956,7 +945,7 @@ void ofApp::drawSoundInfo()
     config.f2().drawString("path: "+path, config.xoffset, ofGetHeight() - 15*config.y_scale);
 
 
-    //minDelay.render();
+    minDelay.render();
     maxDelay.render();
     pan.render();
     reverbSend.render();

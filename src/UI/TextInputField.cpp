@@ -93,6 +93,7 @@ TextInput::FontRenderer * TextInputField::getFontRenderer() {
 void TextInputField::enable(){
 	if(!this->enabled){
         this->enabled = true;
+        //cout << "Enable, text = " << text << endl;
         // resize bounds to fit font if we haven't already
         if(!multiline) {
             //bounds.height = fontRef->getLineHeight();// + verticalPadding*2;
@@ -107,6 +108,7 @@ void TextInputField::disable(){
 	}
 	if(this->enabled){
 		this->enabled = false;
+        //cout << "Disable, text = " << text << endl;
     }
 	
 }
@@ -118,8 +120,10 @@ bool TextInputField::isEnabled() const {
 
 //----------
 void TextInputField::beginEditing() {
+
     if(!this->editing){
-        ofSendMessage(TEXTFIELD_IS_ACTIVE);
+        //ofSendMessage(TEXTFIELD_IS_ACTIVE);
+        //cout << "Begin editing, text = " << text << endl;
         this->editing = true;
         drawCursor = true;
 		if(autoClear) {
@@ -130,8 +134,10 @@ void TextInputField::beginEditing() {
 
 //----------
 void TextInputField::endEditing() {
+
     if(this->editing){
-        ofSendMessage(TEXTFIELD_IS_INACTIVE);
+        //ofSendMessage(TEXTFIELD_IS_INACTIVE);
+        //cout << "End editing, text = " << text << endl;
         this->editing = false;
         this->drawCursor = false;
 		this->shiftHeld = false;
@@ -292,6 +298,10 @@ void TextInputField::clear(){
 
 //----------
 void TextInputField::keyPressed(ofKeyEventArgs& args) {
+    if (!this->enabled) {
+        return;
+    }
+
 	//ew: add charachter (non unicode sorry!)
 	//jg: made a step closer to this with swappable renderers and ofxFTGL -- but need unicode text input...
 
@@ -537,6 +547,10 @@ void TextInputField::keyPressed(ofKeyEventArgs& args) {
 
 //----------
 void TextInputField::keyReleased(ofKeyEventArgs &a){
+    if (!this->enabled) {
+        return;
+    }
+
 	//if we're not focused, then ignore the keypress
 	if (!this->editing) {
 		return;

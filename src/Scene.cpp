@@ -127,6 +127,8 @@ void Scene::updatePosition(int _x, int _y)
 
 //---------------------------------------------------------
 void Scene::onClicked(ClickArgs& args) {
+    if(!bInteractive) return;
+
     ofLogNotice() << "Scene id: " << id << " clicked";
     selectScene = true;
     config->activeScene =  id;

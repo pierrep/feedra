@@ -28,8 +28,9 @@ class ofApp : public ofBaseApp {
 		void gotMessage(ofMessage msg);		        
         void updateScenePosition();
         void enableScene(int i);
-        void onClicked(SliderData& args);
+        void onSliderClicked(SliderData& args);
         void onObjectClicked(size_t& args);
+        void onNumberChanged(NumberBoxData& args);
         void onSampleClicked(int& args);
         void updateMainSliders();
         void updateEditSliders();
@@ -60,10 +61,9 @@ class ofApp : public ofBaseApp {
         SimpleSlider mainVolume;
 
         //Main sliders
-        //NumberBox minDelay;
-        //SimpleSlider minDelay;
+        NumberBox minDelay;
+        NumberBox maxDelay;
 
-        SimpleSlider maxDelay;
         SimpleSlider pan;
         SimpleSlider reverbSend;
 
@@ -78,8 +78,8 @@ class ofApp : public ofBaseApp {
         bool bClearPad;
         int  doClearPad;
 
-        long int curTime;
-        long int prevTime;
+        long int curAppTime;
+        long int prevAppTime;
         string curDevice;
         string newDevice;
 

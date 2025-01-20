@@ -32,8 +32,8 @@ public:
     static int count; // used to auto-generate a unique id
     static ofEvent<int> clickedSampleEvent;
 
-    int totalDelay;
-    int curDelay;
+    float totalDelay; // in secs
+    float curDelay; // in secs
 
 protected:
     float gain; //0.5f - 2.0f ?
