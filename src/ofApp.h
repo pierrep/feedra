@@ -2,6 +2,7 @@
 
 #include "AppConfig.h"
 #include "Scene.h"
+#include "UI/Interactive.h"
 #include "UI/AddScene.h"
 #include "UI/SimpleSlider.h"
 #include "UI/CheckBox.h"
@@ -29,6 +30,7 @@ class ofApp : public ofBaseApp {
         void updateScenePosition();
         void enableScene(int i);
         void onSliderClicked(SliderData& args);
+        void onCheckboxClicked(Interactive::ClickArgs& args);
         void onObjectClicked(size_t& args);
         void onNumberChanged(NumberBoxData& args);
         void onSampleClicked(int& args);
@@ -60,18 +62,16 @@ class ofApp : public ofBaseApp {
         AppConfig config;
         SimpleSlider mainVolume;
 
-        //Main sliders
+        //Main UI
         NumberBox minDelay;
         NumberBox maxDelay;
-
-        SimpleSlider pan;
         SimpleSlider reverbSend;
+        CheckBox randomPlayback;
 
-        //Edit sliders
+        //Edit UI
+        SimpleSlider panSlider;
         SimpleSlider gainSlider;
-        SimpleSlider pitchSlider;
-
-        CheckBox setStereo;
+        SimpleSlider pitchSlider;      
 
         bool bDoRender;
         bool bLoadScenes;

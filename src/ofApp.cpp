@@ -8,8 +8,13 @@ bool ofApp::bMinimised = false;
 //--------------------------------------------------------------
 ofApp::~ofApp()
 {
-    ofRemoveListener(pan.clickedEvent, this, &ofApp::onSliderClicked);
+    ofRemoveListener(panSlider.clickedEvent, this, &ofApp::onSliderClicked);
     ofRemoveListener(reverbSend.clickedEvent, this, &ofApp::onSliderClicked);
+    ofRemoveListener(pitchSlider.clickedEvent, this, &ofApp::onSliderClicked);
+    ofRemoveListener(gainSlider.clickedEvent, this, &ofApp::onSliderClicked);
+    ofRemoveListener(minDelay.numberChangedEvent, this, &ofApp::onNumberChanged);
+    ofRemoveListener(maxDelay.numberChangedEvent, this, &ofApp::onNumberChanged);
+    ofRemoveListener(randomPlayback.clickedEvent, this, &ofApp::onCheckboxClicked);
 
     saveConfig();
 
@@ -245,25 +250,25 @@ void ofApp::setup(){
     mainVolume.setFont(&config.f2());
     mainVolume.setLabelString("Main Volume");
 
-    minDelay.setup(&config,1,270*config.x_scale,ofGetHeight() - 140*config.y_scale);
+    minDelay.setup(&config,1,285*config.x_scale,ofGetHeight() - 140*config.y_scale);
     minDelay.setFont(&config.f2());
     minDelay.setLabelString("Min delay");
 
-    maxDelay.setup(&config,2,270*config.x_scale,ofGetHeight() - 90*config.y_scale);
+    maxDelay.setup(&config,2,445*config.x_scale,ofGetHeight() - 140*config.y_scale);
     maxDelay.setFont(&config.f2());
     maxDelay.setLabelString("Max delay");
 
-    pan.setup(3,config.xoffset+600*config.x_scale,ofGetHeight() - 120*config.y_scale,200*config.x_scale,20*config.y_scale,-1,1,0,false,false);
-    pan.setScale(config.y_scale, config.x_scale);
-    pan.setFont(&config.f2());
-    pan.setLabelString("Panning");
-
-    reverbSend.setup(4,config.xoffset+600*config.x_scale,ofGetHeight() - 80*config.y_scale,200*config.x_scale,20*config.y_scale,0,1,0,false,false);
+    reverbSend.setup(4,config.xoffset+600*config.x_scale,ofGetHeight() - 135*config.y_scale,200*config.x_scale,20*config.y_scale,0,1,0,false,false);
     reverbSend.setScale(config.y_scale, config.x_scale);
     reverbSend.setFont(&config.f2());
     reverbSend.setLabelString("Reverb send");
 
     //Edit sliders
+    panSlider.setup(3,config.xoffset+800*config.x_scale,ofGetHeight() - 160*config.y_scale,200*config.x_scale,20*config.y_scale,-1,1,0,false,false);
+    panSlider.setScale(config.y_scale, config.x_scale);
+    panSlider.setFont(&config.f2());
+    panSlider.setLabelString("Panning");
+
     pitchSlider.setup(5,config.xoffset+800*config.x_scale, ofGetHeight() - 120*config.y_scale,200*config.x_scale,20*config.y_scale,0,3,0,false,false);
     pitchSlider.setScale(config.y_scale, config.x_scale);
     pitchSlider.setFont(&config.f2());
@@ -277,18 +282,21 @@ void ofApp::setup(){
     gainSlider.disableEvents();
 
     //Checkbox
-    setStereo.setX(config.xoffset);
-    setStereo.setY(ofGetHeight() - 140*config.y_scale);
-    setStereo.setWidth(20 * config.x_scale);
-    setStereo.setHeight(20 * config.y_scale);
-    setStereo.setup(&config);
+    randomPlayback.setX(config.xoffset+600*config.x_scale);
+    randomPlayback.setY(ofGetHeight() - 70*config.y_scale);
+    randomPlayback.setWidth(20 * config.x_scale);
+    randomPlayback.setHeight(20 * config.y_scale);
+    randomPlayback.setup(&config,1);
+    randomPlayback.setFont(&config.f2());
+    randomPlayback.setLabelString("Random Playback");
 
-    ofAddListener(pan.clickedEvent, this, &ofApp::onSliderClicked);
+    ofAddListener(panSlider.clickedEvent, this, &ofApp::onSliderClicked);
     ofAddListener(reverbSend.clickedEvent, this, &ofApp::onSliderClicked);
     ofAddListener(pitchSlider.clickedEvent, this, &ofApp::onSliderClicked);
     ofAddListener(gainSlider.clickedEvent, this, &ofApp::onSliderClicked);
     ofAddListener(minDelay.numberChangedEvent, this, &ofApp::onNumberChanged);
     ofAddListener(maxDelay.numberChangedEvent, this, &ofApp::onNumberChanged);
+    ofAddListener(randomPlayback.clickedEvent, this, &ofApp::onCheckboxClicked);
 
     maxScenes = 0;
 
@@ -324,20 +332,23 @@ void ofApp::updateMainSliders()
     int max_d = scenes[config.activeSceneIdx]->sounds[config.activeSoundIdx]->soundPlayer.getMaxDelay();
     maxDelay.setValue(max_d);
 
-    float p = scenes[config.activeSceneIdx]->sounds[config.activeSoundIdx]->soundPlayer.getPan();
-    float pct = (p+1.0f) / 2.0f;
-    pan.setPercent(pct);
-
     float send = scenes[config.activeSceneIdx]->sounds[config.activeSoundIdx]->soundPlayer.getReverbSend();
     reverbSend.setPercent(send);
+
+    bool playRandom = scenes[config.activeSceneIdx]->sounds[config.activeSoundIdx]->soundPlayer.isPlayingRandom();
+    randomPlayback.isActive = playRandom;
 }
 
 //--------------------------------------------------------------
 void ofApp::updateEditSliders()
 {
+    float p = scenes[config.activeSceneIdx]->sounds[config.activeSoundIdx]->soundPlayer.player.at(config.activeSampleIdx).getPan();
+    float pct = (p+1.0f) / 2.0f;
+    panSlider.setPercent(pct);
+
     float pitch = scenes[config.activeSceneIdx]->sounds[config.activeSoundIdx]->soundPlayer.player.at(config.activeSampleIdx).getPitch();    
     float total = pitchSlider.getHighValue() - pitchSlider.getLowValue();
-    float pct = (pitch - pitchSlider.getLowValue()) / total;
+    pct = (pitch - pitchSlider.getLowValue()) / total;
     cout << "pitch: " << pitch << " total: " << total << " percent: " << pct << endl;
     pitchSlider.setPercent(pct);
 
@@ -362,6 +373,16 @@ void ofApp::onSampleClicked(int& arg)
     cout << "sample clicked: " << arg << endl;
     config.activeSampleIdx = arg;
     updateEditSliders();    
+}
+
+//--------------------------------------------------------------
+void  ofApp::onCheckboxClicked(Interactive::ClickArgs& args)
+{
+    if(randomPlayback.bActivate) {
+        randomPlayback.bActivate = false;
+        randomPlayback.isActive = !randomPlayback.isActive;
+        scenes[config.activeSceneIdx]->sounds[config.activeSoundIdx]->soundPlayer.setRandomPlayback(randomPlayback.isActive);
+    }
 }
 
 //--------------------------------------------------------------
@@ -394,7 +415,8 @@ void ofApp::onSliderClicked(SliderData& args) {
 
     if(args.id == 3) {
         // panning
-        scenes[config.activeSceneIdx]->sounds[config.activeSoundIdx]->soundPlayer.setPan(pan.getValue());
+        //scenes[config.activeSceneIdx]->sounds[config.activeSoundIdx]->soundPlayer.setPan(pan.getValue());
+        scenes[config.activeSceneIdx]->sounds[config.activeSoundIdx]->soundPlayer.player.at(config.activeSampleIdx).setPan(panSlider.getValue());
     }
     if(args.id == 4) {
         // reverb send
@@ -428,9 +450,9 @@ void ofApp::update(){
         bClearPad = false;
     }
 
-    if(setStereo.bActivate) {
-        setStereo.bActivate = false;
-        setStereo.isActive = !setStereo.isActive;
+    if(randomPlayback.bActivate) {
+        randomPlayback.bActivate = false;
+        randomPlayback.isActive = !randomPlayback.isActive;
     }
 
     if(bLoadScenes) {
@@ -634,6 +656,7 @@ void ofApp::enableEditorMode()
 {
     gainSlider.enableEvents();
     pitchSlider.enableEvents();
+    randomPlayback.disableEvents();
     config.activeSampleIdx = 0;
     updateEditSliders();
     scenes[config.activeSceneIdx]->sounds[config.activeSoundIdx]->enableEditorMode();
@@ -645,6 +668,7 @@ void ofApp::disableEditorMode()
 {
     gainSlider.disableEvents();
     pitchSlider.disableEvents();
+    randomPlayback.enableEvents();
     scenes[config.activeSceneIdx]->sounds[config.activeSoundIdx]->disableEditorMode();
 }
 
@@ -800,9 +824,6 @@ void ofApp::draw(){
 //    ofEndShape();
 //ofPopStyle();
 
-
-    setStereo.render();
-
 }
 
 //--------------------------------------------------------------
@@ -824,6 +845,13 @@ void ofApp::renderMainPage()
         drawSoundInfo();
     }
     mainVolume.render();
+    if(scenes[config.activeSceneIdx]->sounds[config.activeSoundIdx]->soundPlayer.player.size() > 1)
+    {
+        randomPlayback.enableEvents();
+        randomPlayback.render();
+    } else {
+        randomPlayback.disableEvents();
+    }
 }
 
 //--------------------------------------------------------------
@@ -837,7 +865,7 @@ void ofApp::renderEditPage() {
         ofVec3f pos(config.xoffset+offset,config.yoffset+(i%15)*42*config.y_scale,0);
         p.player[i].render(pos);
     }
-
+    panSlider.render();
     pitchSlider.render();
     gainSlider.render();
 }
@@ -921,7 +949,7 @@ void ofApp::drawSoundInfo()
 
     std::stringstream stream;
     //stream << std::fixed << std::setprecision() << round(total);
-    stream << std::fixed << std::setprecision(3) << total;
+    stream << std::fixed << std::setprecision(2) << total;
     std::string t = stream.str();
 
     int curSound = scenes[config.activeSceneIdx]->sounds[config.activeSoundIdx]->soundPlayer.getCurSound();
@@ -931,13 +959,13 @@ void ofApp::drawSoundInfo()
     int sr = scenes[config.activeSceneIdx]->sounds[config.activeSoundIdx]->sample_rate;
     string fs = scenes[config.activeSceneIdx]->sounds[config.activeSoundIdx]->soundPlayer.player[0].audioPlayer->getFormatString();
     string fsub = scenes[config.activeSceneIdx]->sounds[config.activeSoundIdx]->soundPlayer.player[0].audioPlayer->getSubFormatString();
+    int numSounds = scenes[config.activeSceneIdx]->sounds[config.activeSoundIdx]->soundPlayer.player.size();
 
     ofSetColor(0);
-    config.f2().drawString("Random delay: "+ofToString(t)+" secs", 268*config.x_scale, ofGetHeight() - 45*config.y_scale);
-    //config.f2().drawString("min delay: "+ofToString(mind), 270*config.x_scale, ofGetHeight() - 50*config.y_scale);
-    //config.f2().drawString("max delay: "+ofToString(maxd), 270*config.x_scale, ofGetHeight() - 30*config.y_scale);
+    config.f2().drawString("Random delay: "+ofToString(t)+" secs", 250*config.x_scale, ofGetHeight() - 85*config.y_scale);
+    config.f2().drawString("Num sounds: "+ofToString(numSounds), config.xoffset+600*config.x_scale, ofGetHeight() - 85*config.y_scale);
+
     ofSetColor(255);
-    //config.f2().drawString("name: "+name, 400*config.x_scale, ofGetHeight() - 50*config.y_scale);
     config.f2().drawString("channels: "+ofToString(chan), config.xoffset, ofGetHeight() - 95*config.y_scale);
     config.f2().drawString("format: "+ofToString(fs), config.xoffset, ofGetHeight() - 75*config.y_scale);
     config.f2().drawString("sub-format: "+ofToString(fsub), config.xoffset, ofGetHeight() - 55*config.y_scale);
@@ -947,7 +975,6 @@ void ofApp::drawSoundInfo()
 
     minDelay.render();
     maxDelay.render();
-    pan.render();
     reverbSend.render();
 }
 

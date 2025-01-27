@@ -591,7 +591,7 @@ void OpenALSoundPlayer::initialize(){
             alcGetIntegerv(alDevice, ALC_MINOR_VERSION, 1, &minor);            
 		}
 		// Create OpenAL context and make it current. If fails, close the OpenAL device that was just opened.
-        int attrlist[] = { ALC_MAX_AUXILIARY_SENDS, 4, ALC_MONO_SOURCES, 300, ALC_STEREO_SOURCES, 256, 0 };
+        int attrlist[] = { ALC_MAX_AUXILIARY_SENDS, 4, ALC_MONO_SOURCES, 1024, ALC_STEREO_SOURCES, 256, 0 };
         alContext = alcCreateContext( alDevice, attrlist );
 		if( !alContext ){
 			ALCenum err = alcGetError( alDevice ); 

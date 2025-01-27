@@ -15,10 +15,11 @@ CheckBox::~CheckBox()
 }
 
 //--------------------------------------------------------------
-void CheckBox::setup(AppConfig* _config)
+void CheckBox::setup(AppConfig* _config, int _id)
 {
     config = _config;
     ofAddListener(this->clickedEvent, this, &CheckBox::onClicked);
+    id = _id;
 
     cross.clear();
     cross.setStrokeColor(ofColor(0));
@@ -74,5 +75,29 @@ void CheckBox::render()
         cross.draw();
     }
 
+    if(bDrawLabel)
+    {
+        float labelStringHeight = labelFont->getLineHeight();
+        float padding = 4*config->x_scale;
+        if(labelFont != nullptr) {
+            ofSetColor(0);
+            labelFont->drawString( labelString, getX()+getWidth()+padding, getY()+getHeight()/2+labelStringHeight/2);
+        } else {
+            ofDrawBitmapString( labelString, getX()+getWidth()+padding, getY()+getHeight()/2+labelStringHeight/2);
+        }
+    }
+
     ofPopStyle();
+}
+
+//----------------------------------------------------
+void CheckBox::setFont(ofTrueTypeFont* _font){
+    labelFont = _font;
+    bDrawLabel = true;
+}
+
+//----------------------------------------------------
+void CheckBox::setLabelString(string str){
+    labelString = str;
+    bDrawLabel = true;
 }

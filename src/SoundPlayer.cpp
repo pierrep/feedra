@@ -14,6 +14,7 @@ SoundPlayer::SoundPlayer()
     bPaused = true;    
     bPlayBackEnded = false;
     bCheckPlayBackEnded = false;
+    bRandomPlayback = false;
     minDelay = 0;
     maxDelay = 0;
 
@@ -59,17 +60,18 @@ SoundPlayer::SoundPlayer(const SoundPlayer& parent) {
 //--------------------------------------------------------------
 void SoundPlayer::update()
 {
-//    if(bCheckPlayBackEnded) {
-//        if (!(player[curSound].audioPlayer->isPlaying())) {
-//            bPlayBackEnded = true;
-//            bCheckPlayBackEnded = false;
-//        }
-//    }
-
     if(bPlayBackEnded) {
         cout << "playback ended! current sound: " << curSound << " ID = " << id << endl;
         if(curSound < player.size()-1) {
-            curSound++;
+            if(bRandomPlayback) {
+                int idx = ofRandom(0,player.size());
+                while(idx == curSound) {
+                    idx = ofRandom(0,player.size());
+                }
+                curSound = idx;
+            } else {
+                curSound++;
+            }
             recalculateDelay(curSound);
             setPaused(false);
             cout << "play new sound: " << curSound << " ID = " << id << endl;

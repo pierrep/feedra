@@ -48,6 +48,8 @@ public:
     float getReverbSend() const;
     void setReverbSend(float send);
     void recalculateDelay(int id);
+    void setRandomPlayback(bool val) {bRandomPlayback = val;}
+    bool isPlayingRandom() { return bRandomPlayback;}
     void playbackEnded(OpenALSoundPlayer* &args);
 
     AppConfig* config;
@@ -64,6 +66,7 @@ public:
     bool bIsLooping;
     bool bPlayBackEnded;
     bool bCheckPlayBackEnded;
+    bool bRandomPlayback;
 
     string filename;
 
