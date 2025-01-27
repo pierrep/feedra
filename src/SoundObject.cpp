@@ -287,6 +287,10 @@ void SoundObject::load(string newpath)
                     {
                         soundPlayer.maxDelay = setting["maxdelay"];
                     }
+                    if(!setting["playrandom"].empty())
+                    {
+                        soundPlayer.bRandomPlayback = setting["playrandom"];
+                    }
                 }
             }
         }
@@ -324,7 +328,7 @@ void SoundObject::save()
     soundobj[base][prefix]["volume"] = volumeslider.getValue();
     soundobj[base][prefix]["samplerate"] = sample_rate;
     soundobj[base][prefix]["channels"] = channels;
-    //soundobj[base][prefix]["pan"] = soundPlayer.getPan();
+    soundobj[base][prefix]["playrandom"] = soundPlayer.bRandomPlayback;
     soundobj[base][prefix]["reverbsend"] = soundPlayer.getReverbSend();
 
     soundobj[base][prefix]["mindelay"] = soundPlayer.minDelay;
