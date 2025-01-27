@@ -4,10 +4,10 @@
 SoundPlayer::SoundPlayer()
 {
     curSound = 0;
-    AudioSample s;
-    s.audioPlayer = new OpenALSoundPlayer();
-    s.id = 0;
-    player.push_back(s);
+//    AudioSample s;
+//    s.audioPlayer = new OpenALSoundPlayer();
+//    s.id = 0;
+//    player.push_back(s);
 
     bPlayingDelay = false;
     prevTime = curTime = ofGetElapsedTimef();
@@ -34,7 +34,11 @@ void SoundPlayer::close()
     ofLogVerbose() << "SoundPlayer destructor called...";
     for(int i = 0;i < player.size();i++)
     {
-        delete player[i].audioPlayer;
+        delete player[i]->audioPlayer;
+    }
+    for(int i = 0;i < player.size();i++)
+    {
+        delete player[i];
     }
     player.clear();    
 }
@@ -44,9 +48,11 @@ void SoundPlayer::setup(AppConfig* _config, int _id)
 {
 
     config = _config;
-    player[0].config = _config;
-    player[0].setWidth(config->sample_gui_width);
-    player[0].setHeight(35*config->y_scale);
+    if(player.size() > 0) {
+        player[0]->config = _config;
+        player[0]->setWidth(config->sample_gui_width);
+        player[0]->setHeight(35*config->y_scale);
+    }
     id = _id;
 }
 
@@ -80,7 +86,7 @@ void SoundPlayer::update()
         }
 
         if( !bPaused && !bPlayingDelay) {
-            if(player[curSound].totalDelay > 0) {
+            if(player[curSound]->totalDelay > 0) {
                 recalculateDelay(curSound);
             }
             if(bIsLooping) {
@@ -99,11 +105,11 @@ void SoundPlayer::update()
     if(bPlayingDelay)
     {
         if(!bPaused) {
-            player[curSound].curDelay -= diffTime;
-            if(player[curSound].curDelay <= 0) {
-                player[curSound].curDelay = 0;
+            player[curSound]->curDelay -= diffTime;
+            if(player[curSound]->curDelay <= 0) {
+                player[curSound]->curDelay = 0;
                 cout << "player["<<curSound<<"].setPaused(false)" << endl;
-                player[curSound].audioPlayer->setPaused(false);
+                player[curSound]->audioPlayer->setPaused(false);
                 bCheckPlayBackEnded = true;
                 bPlayingDelay = false;
             }
@@ -114,18 +120,20 @@ void SoundPlayer::update()
 
 //--------------------------------------------------------------------
 void SoundPlayer::play(){
-   player[curSound].audioPlayer->play();
+   player[curSound]->audioPlayer->play();
    bCheckPlayBackEnded = true;
 }
 
 //--------------------------------------------------------------
 void SoundPlayer::stop()
 {
+    if(player.size() == 0) return;
+
     if(bPlayingDelay) {
         //bPlayingDelay = false;
         //player[curSound].curDelay = 0;
     } else {
-        player[curSound].audioPlayer->stop();
+        player[curSound]->audioPlayer->stop();
     }
     bCheckPlayBackEnded = false;
     curSound = 0;
@@ -142,7 +150,7 @@ bool SoundPlayer::load(const std::filesystem::path& fileName, bool stream)
 //--------------------------------------------------------------------
 bool SoundPlayer::load(const std::filesystem::path& fileName, int idx, bool stream)
 {
-    bool bResult = player[idx].audioPlayer->load(fileName, stream);
+    bool bResult = player[idx]->audioPlayer->load(fileName, stream);
     return bResult;
 
 }
@@ -150,27 +158,33 @@ bool SoundPlayer::load(const std::filesystem::path& fileName, int idx, bool stre
 //--------------------------------------------------------------------
 void SoundPlayer::recalculateDelay(int id)
 {   
-    player[id].totalDelay = ofRandom(minDelay, maxDelay);
-    player[id].curDelay = player[id].totalDelay;
+    if(player.size() == 0) return;
+
+    player[id]->totalDelay = ofRandom(minDelay, maxDelay);
+    player[id]->curDelay = player[id]->totalDelay;
     //cout << "recalculate delay for cursound[" << id << "] = " << player[id].totalDelay << endl;
-    if(player[id].totalDelay > 0) {
-        player[id].audioPlayer->setLoop(false);
+    if(player[id]->totalDelay > 0) {
+        player[id]->audioPlayer->setLoop(false);
     }
 }
 
 //--------------------------------------------------------------------
 void SoundPlayer::unload(){
-    player[curSound].audioPlayer->unload();
+    if(player.size() == 0) return;
+
+    player[curSound]->audioPlayer->unload();
 }
 
 //--------------------------------------------------------------------
 void SoundPlayer::setPaused(bool _bPause){
+    if(player.size() == 0) return;
+
     bPaused = _bPause;
-    if(player[curSound].curDelay > 0) {
+    if(player[curSound]->curDelay > 0) {
         bPlayingDelay = !bPaused;
         //cout << "bPlayingDelay = " << bPlayingDelay << endl;
     } else {
-        player[curSound].audioPlayer->setPaused(bPaused);
+        player[curSound]->audioPlayer->setPaused(bPaused);
         if(bPaused) {
             bCheckPlayBackEnded = false;
         } else {
@@ -183,32 +197,40 @@ void SoundPlayer::setPaused(bool _bPause){
 //--------------------------------------------------------------------
 void SoundPlayer::setVolume(float vol)
 {
-    player[curSound].audioPlayer->setVolume(vol);
+    if(player.size() == 0) return;
+
+    player[curSound]->audioPlayer->setVolume(vol);
 }
 
 //--------------------------------------------------------------
 void SoundPlayer::setPan(float pan)
 {
-    player[curSound].audioPlayer->setPan(glm::clamp(pan,-1.0f,1.0f));
+    if(player.size() == 0) return;
+
+    player[curSound]->audioPlayer->setPan(glm::clamp(pan,-1.0f,1.0f));
 }
 
 //--------------------------------------------------------------------
 void SoundPlayer::setSpeed(float spd){
-    player[curSound].audioPlayer->setSpeed(spd);
+    if(player.size() == 0) return;
+
+    player[curSound]->audioPlayer->setSpeed(spd);
 }
 
 //--------------------------------------------------------------------
  void SoundPlayer::setLoop(bool bLoop){
+    if(player.size() == 0) return;
+
     bIsLooping = bLoop;
 
     if(bIsLooping) {
-        if(player[curSound].totalDelay > 0) {
-            player[curSound].audioPlayer->setLoop(false);
+        if(player[curSound]->totalDelay > 0) {
+            player[curSound]->audioPlayer->setLoop(false);
         } else {
-            player[curSound].audioPlayer->setLoop(false);
+            player[curSound]->audioPlayer->setLoop(false);
         }
     } else {
-        player[curSound].audioPlayer->setLoop(bLoop);
+        player[curSound]->audioPlayer->setLoop(bLoop);
     }
 
 }
@@ -216,23 +238,29 @@ void SoundPlayer::setSpeed(float spd){
  //--------------------------------------------------------------------
  float SoundPlayer::getDuration() const
  {
-     return player[curSound].audioPlayer->getDuration();
+     if(player.size() == 0) return 0;
+
+     return player[curSound]->audioPlayer->getDuration();
  }
 
 //--------------------------------------------------------------------
 void SoundPlayer::setPosition(float pct)
 {
+    if(player.size() == 0) return;
+
     if(bPlayingDelay) {
-        player[curSound].curDelay = player[curSound].totalDelay * (1.0f - pct);
+        player[curSound]->curDelay = player[curSound]->totalDelay * (1.0f - pct);
     } else {
-        player[curSound].audioPlayer->setPosition(pct);
+        player[curSound]->audioPlayer->setPosition(pct);
     }
 }
 
 //--------------------------------------------------------------------
 void SoundPlayer::setPositionMS(int ms)
 {
-    player[curSound].audioPlayer->setPositionMS(ms);
+    if(player.size() == 0) return;
+
+    player[curSound]->audioPlayer->setPositionMS(ms);
 }
 
 //--------------------------------------------------------------------
@@ -250,24 +278,30 @@ void SoundPlayer::setMaxDelay(int delay)
 //--------------------------------------------------------------------
 float SoundPlayer::getPosition() const
 {
+    if(player.size() == 0) return 0;
+
     if(isPlayingDelay()) {
-        float remain =   1.0f - (player[curSound].curDelay/player[curSound].totalDelay);
+        float remain =   1.0f - (player[curSound]->curDelay/player[curSound]->totalDelay);
         //cout << "remain = " << remain << endl;
         if(remain <= 0) remain = 0.0000001f;
         return remain;
     }
-    return player[curSound].audioPlayer->getPosition();
+    return player[curSound]->audioPlayer->getPosition();
 }
 
 //--------------------------------------------------------------------
 int SoundPlayer::getPositionMS() const
 {
-    return player[curSound].audioPlayer->getPositionMS();
+    if(player.size() == 0) return 0;
+
+    return player[curSound]->audioPlayer->getPositionMS();
 }
 
 //--------------------------------------------------------------------
 bool SoundPlayer::isPlaying() const
 {
+    if(player.size() == 0) return false;
+    ;
     if(bPlayingDelay) {
         if(bPaused) {
             return false;
@@ -275,7 +309,7 @@ bool SoundPlayer::isPlaying() const
             return true;
         }
     }
-    return player[curSound].audioPlayer->isPlaying();
+    return player[curSound]->audioPlayer->isPlaying();
 }
 
 //--------------------------------------------------------------------
@@ -291,43 +325,57 @@ bool SoundPlayer::isPlayingDelay() const
 //--------------------------------------------------------------------
 bool SoundPlayer::isLoaded() const
 {
-    return player[curSound].audioPlayer->isLoaded();
+    if(player.size() == 0) return false;
+
+    return player[curSound]->audioPlayer->isLoaded();
 }
 
 //--------------------------------------------------------------------
 bool SoundPlayer::isLooping() const
 {
-    return player[curSound].audioPlayer->isLooping();
+    if(player.size() == 0) return false;
+
+    return player[curSound]->audioPlayer->isLooping();
 }
 
 //--------------------------------------------------------------------
 float SoundPlayer::getSpeed() const
 {
-    return player[curSound].audioPlayer->getSpeed();
+    if(player.size() == 0) return 0;
+
+    return player[curSound]->audioPlayer->getSpeed();
 }
 
 //--------------------------------------------------------------------
 float SoundPlayer::getPan() const
 {
-    return player[curSound].audioPlayer->getPan();
+    if(player.size() == 0) return 0;
+
+    return player[curSound]->audioPlayer->getPan();
 }
 
 //--------------------------------------------------------------------
 float SoundPlayer::getVolume() const
 {
-    return player[curSound].audioPlayer->getVolume();
+    if(player.size() == 0) return 0;
+
+    return player[curSound]->audioPlayer->getVolume();
 }
 
 //--------------------------------------------------------------------
 int SoundPlayer::getSampleRate() const
 {
-    return player[curSound].audioPlayer->getSampleRate();
+    if(player.size() == 0) return 0;
+
+    return player[curSound]->audioPlayer->getSampleRate();
 }
 
 //--------------------------------------------------------------------
 int SoundPlayer::getNumChannels() const
 {
-    return player[curSound].audioPlayer->getNumChannels();
+    if(player.size() == 0) return 0;
+
+    return player[curSound]->audioPlayer->getNumChannels();
 }
 
 //--------------------------------------------------------------------
@@ -339,7 +387,9 @@ int SoundPlayer::getCurSound() const
 //--------------------------------------------------------------------
 bool SoundPlayer::getIsStereo() const
 {
-    return player[curSound].audioPlayer->getIsStereo();
+    if(player.size() == 0) return false;
+
+    return player[curSound]->audioPlayer->getIsStereo();
 }
 
 //--------------------------------------------------------------------
@@ -357,20 +407,26 @@ int SoundPlayer::getMaxDelay() const
 //--------------------------------------------------------------------
 float SoundPlayer::getTotalDelay() const
 {
-    return player[curSound].totalDelay;
+    if(player.size() == 0) return 0;
+
+    return player[curSound]->totalDelay;
 }
 
 //--------------------------------------------------------------------
 float SoundPlayer::getReverbSend() const
 {
-    return player[curSound].audioPlayer->getReverbSend();
+    if(player.size() == 0) return 0;
+
+    return player[curSound]->audioPlayer->getReverbSend();
 }
 
 //--------------------------------------------------------------------
 void SoundPlayer::setReverbSend(float send)
 {
+    if(player.size() == 0) return;
+
     for(int i = 0; i < player.size();i++) {
-        player[i].audioPlayer->setReverbSend(send);
+        player[i]->audioPlayer->setReverbSend(send);
     }
 
 }
@@ -378,9 +434,11 @@ void SoundPlayer::setReverbSend(float send)
 //--------------------------------------------------------------------
 void SoundPlayer::playbackEnded(OpenALSoundPlayer* &args)
 {
+    if(player.size() == 0) return;
+
     for(int i = 0; i < player.size();i++)
     {
-        if(player[i].audioPlayer == args) {
+        if(player[i]->audioPlayer == args) {
             bPlayBackEnded = true;
         }
     }

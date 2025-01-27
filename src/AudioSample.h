@@ -12,7 +12,8 @@ public:
     ~AudioSample();
     AudioSample();
     AudioSample(const AudioSample& parent);
-    void render(ofVec3f pos);
+    void setup();
+    void render(ofVec3f pos);    
     void onClicked(ClickArgs& args);
     void enableEditorMode();
     void disableEditorMode();

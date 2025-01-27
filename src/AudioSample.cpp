@@ -20,7 +20,6 @@ AudioSample::AudioSample()
     config = nullptr;
     bEditorMode = false;
     bSelected = false;
-    ofAddListener(this->clickedEvent, this, &AudioSample::onClicked);
     //cout << "constructor, config = " << config << endl;
 }
 
@@ -41,6 +40,13 @@ AudioSample::AudioSample(const AudioSample& parent)
 
     setWidth(parent.getWidth());
     setHeight(parent.getHeight());
+    setX(parent.x);
+    setY(parent.y);
+    cout << "copy constructor, id = " << id << " sample_path = " << sample_path << endl;
+}
+//--------------------------------------------------------------
+void AudioSample::setup()
+{
     ofAddListener(this->clickedEvent, this, &AudioSample::onClicked);
 }
 
@@ -84,7 +90,7 @@ void AudioSample::render(ofVec3f pos)
 
     ofSetColor(50);
     std::filesystem::path p(sample_path);
-    string name = p.filename().string(); //audioPlayer->getFormatString()
+    string name = p.filename().string() +  " id = "+ofToString(id); //audioPlayer->getFormatString()
     config->f2().drawString(name,pos.x+20*config->x_scale,pos.y+22*config->y_scale);
 
     ofPopStyle();

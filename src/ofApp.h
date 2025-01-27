@@ -51,6 +51,7 @@ class ofApp : public ofBaseApp {
         void enableEvents();
         void enableEditorMode();
         void disableEditorMode();
+        void stopAllSounds();
 
         static void window_minimise_callback(GLFWwindow* window, int minimised);
         static bool bMinimised;

@@ -1,4 +1,5 @@
 #include "SoundObject.h"
+#include "DialogUtils.h"
 
 #define STRING_LIMIT 17
 
@@ -142,7 +143,7 @@ void SoundObject::enableEditorMode()
 {
     for(int i = 0; i< soundPlayer.player.size();i++)
     {
-        soundPlayer.player.at(i).enableEditorMode();
+        soundPlayer.player.at(i)->enableEditorMode();
     }
 }
 
@@ -151,7 +152,7 @@ void SoundObject::disableEditorMode()
 {
     for(int i = 0; i< soundPlayer.player.size();i++)
     {
-        soundPlayer.player.at(i).disableEditorMode();
+        soundPlayer.player.at(i)->disableEditorMode();
     }
 }
 
@@ -232,23 +233,24 @@ void SoundObject::load(string newpath)
                             float gain = samples["sample-"+ofToString(i)]["gain"];
                             float pan = samples["sample-"+ofToString(i)]["pan"];
 
-                            if(i > soundPlayer.player.size()-1) {
-                                AudioSample s;
-                                s.audioPlayer = new OpenALSoundPlayer();
-                                s.config = config;
-                                s.id = soundPlayer.player.size();
-                                s.setWidth(config->sample_gui_width);
-                                s.setHeight(35*config->y_scale);
+                            if(i > (int)soundPlayer.player.size()-1) {
+                                AudioSample* s = new AudioSample();
+                                s->audioPlayer = new OpenALSoundPlayer();
+                                s->config = config;
+                                s->id = soundPlayer.player.size();
+                                s->setWidth(config->sample_gui_width);
+                                s->setHeight(35*config->y_scale);
                                 soundPlayer.player.push_back(s);
                             }
                             bool bLoaded = soundPlayer.load(new_path, i, isStream);
                             if(bLoaded) {
-                                //cout << "loaded " << soundpath[i] << endl;
+                                //cout << "loaded " << soundpath[i] << " id = "<< soundPlayer.player[i]->id << endl;
                                 soundPlayer.recalculateDelay(i);
-                                soundPlayer.player[i].sample_path = new_path;
-                                soundPlayer.player[i].setPitch(pitch);
-                                soundPlayer.player[i].setGain(gain);
-                                soundPlayer.player[i].setPan(pan);
+                                soundPlayer.player[i]->sample_path = new_path;
+                                soundPlayer.player[i]->setPitch(pitch);
+                                soundPlayer.player[i]->setGain(gain);
+                                soundPlayer.player[i]->setPan(pan);
+                                soundPlayer.player[i]->setup();
                                 playButton.isLoaded = true;
                             }
                         }
@@ -320,9 +322,9 @@ void SoundObject::save()
     for(int i = 0; i < soundpath.size();i++)
     {
         soundobj[base][prefix]["samples"]["sample-"+ofToString(i)]["path"] = soundpath[i];
-        soundobj[base][prefix]["samples"]["sample-"+ofToString(i)]["gain"] = soundPlayer.player[i].getGain();
-        soundobj[base][prefix]["samples"]["sample-"+ofToString(i)]["pitch"] = soundPlayer.player[i].getPitch();
-        soundobj[base][prefix]["samples"]["sample-"+ofToString(i)]["pan"] = soundPlayer.player[i].audioPlayer->getPan();
+        soundobj[base][prefix]["samples"]["sample-"+ofToString(i)]["gain"] = soundPlayer.player[i]->getGain();
+        soundobj[base][prefix]["samples"]["sample-"+ofToString(i)]["pitch"] = soundPlayer.player[i]->getPitch();
+        soundobj[base][prefix]["samples"]["sample-"+ofToString(i)]["pan"] = soundPlayer.player[i]->audioPlayer->getPan();
     }
 
     soundobj[base][prefix]["volume"] = volumeslider.getValue();
@@ -378,19 +380,20 @@ bool SoundObject::loadPadSound(int idx, std::string filepath, bool firstLoad)
             bFirstLoad = false;
         }
         if(idx > (int)(soundPlayer.player.size()-1)) {
-            AudioSample s;
-            s.audioPlayer = new OpenALSoundPlayer();
-            s.config = config;
-            s.id = soundPlayer.player.size();
-            s.setWidth(config->sample_gui_width);
-            s.setHeight(35*config->y_scale);
+            AudioSample* s = new AudioSample();
+            s->audioPlayer = new OpenALSoundPlayer();
+            s->config = config;
+            s->id = soundPlayer.player.size();
+            s->setWidth(config->sample_gui_width);
+            s->setHeight(35*config->y_scale);
             soundPlayer.player.push_back(s);
         }
         bool bLoaded = soundPlayer.load(path, idx, isStream);
         if(bLoaded) {
             setupSound(path);
-            soundPlayer.player[idx].sample_path = path;
-            soundPlayer.recalculateDelay(idx);
+            soundPlayer.player[idx]->setup();
+            soundPlayer.player[idx]->sample_path = path;
+            soundPlayer.recalculateDelay(idx);            
         }
     }
     return bIsAudio;
@@ -548,7 +551,7 @@ void SoundObject::update()
 
     if(soundPlayer.isLoaded())
     {
-        soundPlayer.setVolume(volumeslider.getValue()*config->getMasterVolume()*config->masterFade*fadeVolume*soundPlayer.player.at(soundPlayer.getCurSound()).getGain());
+        soundPlayer.setVolume(volumeslider.getValue()*config->getMasterVolume()*config->masterFade*fadeVolume*soundPlayer.player.at(soundPlayer.getCurSound())->getGain());
     }
 
 }

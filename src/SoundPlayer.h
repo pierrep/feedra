@@ -53,7 +53,7 @@ public:
     void playbackEnded(OpenALSoundPlayer* &args);
 
     AppConfig* config;
-    vector<AudioSample> player;
+    vector<AudioSample *> player;
     int minDelay;
     int maxDelay;
     bool bPlayingDelay;
@@ -67,8 +67,6 @@ public:
     bool bPlayBackEnded;
     bool bCheckPlayBackEnded;
     bool bRandomPlayback;
-
-    string filename;
 
     ofEvent<OpenALSoundPlayer*> playbackEndedEvent;
 };

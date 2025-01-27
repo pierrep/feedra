@@ -41,11 +41,12 @@ public:
     int sample_gui_width;
     bool loopByDefault;
     int activeScene;
-    int max_scenes;
+    unsigned int max_scenes;
     size_t activeSceneIdx;
     size_t prevSceneIdx;
     size_t activeSoundIdx;
     size_t activeSampleIdx;
+    //size_t activeSample;
     string last_path;
 
     ofImage loopicon;

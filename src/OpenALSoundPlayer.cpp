@@ -1359,7 +1359,7 @@ void OpenALSoundPlayer::threadedFunction(){
 					alSourceQueueBuffers(sources[i], 1, &albuffer);
 				}
                 if(stream_end && !(state == AL_STOPPED)){
-                    cout << "threadedFunction() - stream end! state: " << state << endl;
+                    //cout << "threadedFunction() - stream end! state: " << state << endl;
                     playerPtr = this;
                     ofNotifyEvent(playbackEnded, playerPtr);
 					break;
@@ -1374,7 +1374,7 @@ void OpenALSoundPlayer::threadedFunction(){
 			#endif                
             if(state != AL_PLAYING && state != AL_PAUSED && stream_running && !stream_end && isThreadRunning()){
                 alSourcePlayv(sources.size(),&sources[0]);
-                cout << "Loop stream!" << endl;
+                //cout << "Loop stream!" << endl;
                 stream_end = false;
 			}
 
