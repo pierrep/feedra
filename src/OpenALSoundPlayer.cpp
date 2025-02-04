@@ -1372,10 +1372,12 @@ void OpenALSoundPlayer::threadedFunction(){
 			#else
 				stream_running = streamf;
 			#endif                
-            if(state != AL_PLAYING && state != AL_PAUSED && stream_running && !stream_end && isThreadRunning()){
-                alSourcePlayv(sources.size(),&sources[0]);
-                //cout << "Loop stream!" << endl;
-                stream_end = false;
+            if(isThreadRunning()){
+                if (state != AL_PLAYING && state != AL_PAUSED && stream_running && !stream_end) {
+                    alSourcePlayv(sources.size(), &sources[0]);
+                    //cout << "Loop stream!" << endl;
+                    stream_end = false;
+                }
 			}
 
         }

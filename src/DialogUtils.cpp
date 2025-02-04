@@ -2,6 +2,7 @@
 
 #include "ofUtils.h"
 #include "ofConstants.h"
+#include "ofLog.h"
 
 
 #ifdef TARGET_OSX
@@ -313,26 +314,32 @@ ofFileDialogResultMulti ofSystemLoadDialogMulti(std::string windowTitle, bool bF
 
         ofn.lpstrFilter = L"All\0";
         ofn.lpstrFile = szFileName;
-        ofn.nMaxFile = MAX_PATH;
+        ofn.nMaxFile = MAX_PATH+5000;
         ofn.Flags = OFN_EXPLORER | OFN_FILEMUSTEXIST | OFN_HIDEREADONLY | OFN_ALLOWMULTISELECT;
         ofn.lpstrDefExt = 0;
         ofn.lpstrTitle = windowTitleW.c_str();
 
         if(GetOpenFileName(&ofn)) {
             wchar_t* str = ofn.lpstrFile;
-            std::string directory = convertWideToNarrow(str);
-            str += (directory.length() + 1);
-            while (*str) {
-                std::string filename = convertWideToNarrow(str);
-                str += (filename.length() + 1);
-               
-                // use the filename, e.g. add it to a vector
-                results.filePaths.push_back(directory+"\\"+filename);
-            }            
+            std::string path = convertWideToNarrow(str);
+            str += (path.length() + 1);
+            if (*str == 0) {
+                // there is only one string, being the full path to the file
+                results.filePaths.push_back(path);
+            }
+            else {
+                while (*str) {
+                    // multiple files selected
+                    std::string filename = convertWideToNarrow(str);
+                    str += (filename.length() + 1);
+                    results.filePaths.push_back(path + "\\" + filename);
+                }
+            }
         }
         else {
             //this should throw an error on failure unless its just the user canceling out
-            //DWORD err = CommDlgExtendedError();
+            DWORD err = CommDlgExtendedError();
+            ofLogError() << "Failed to select files using Windows dialog. Error: " << err;
         }
 
     } else {

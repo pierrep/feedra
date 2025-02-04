@@ -878,16 +878,15 @@ void ofApp::renderEditPage() {
 //--------------------------------------------------------------
 void ofApp::keyPressed  (ofKeyEventArgs & args){
     int key = args.key;
+    //cout << "key = " << key <<  " cntrl is on? " << (int)args.hasModifier(OF_KEY_CONTROL) << endl;
 
-    //cout << "key = " << key <<  "cntrl:" << (int)args.hasModifier(OF_KEY_CONTROL) << endl;
-
-    if((key == '1') && args.hasModifier(OF_KEY_CONTROL)){
+    if((args.keycode == GLFW_KEY_1) && args.hasModifier(OF_KEY_CONTROL)){
         pageState = MAIN;
     } else
-    if((key == '2') && args.hasModifier(OF_KEY_CONTROL)){
+    if((args.keycode == GLFW_KEY_2) && args.hasModifier(OF_KEY_CONTROL)){
         pageState = EDIT;
     }
-    if((key == '3') && args.hasModifier(OF_KEY_CONTROL)){
+    if((args.keycode == GLFW_KEY_3) && args.hasModifier(OF_KEY_CONTROL)){
         pageState = SETTINGS;
     }
     if((key == 'q' || key == 'Q' || key == 17) && args.hasModifier(OF_KEY_CONTROL)){
