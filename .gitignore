@@ -12,7 +12,7 @@ feedra.vcxproj
 feedra.vcxproj.filters
 feedra.vcxproj.user
 includes/
-libs/
+#libs/
 build/
 obj/
 .vs/
