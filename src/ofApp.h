@@ -77,7 +77,6 @@ class ofApp : public ofBaseApp {
         bool bDoRender;
         bool bLoadScenes;
         bool bClearPad;
-        int  doClearPad;
 
         long int curAppTime;
         long int prevAppTime;

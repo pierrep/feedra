@@ -55,36 +55,64 @@ void ofApp::saveConfig(string newpath, bool bCopyFiles)
         sceneInfo["scene"+ofToString(i)]["name"] = scenes[i]->textfield.text;
         sceneInfo["scene"+ofToString(i)]["activesound"] = scenes[i]->activeSoundIdx;
 
+        filesystem::path np(newpath);
+        string rootdir = np.parent_path().string() + "/files/";
+        try
+        {
+            std::filesystem::create_directory(rootdir);
+        }
+        catch (std::exception& e)
+        {
+            ofLogError() << "Failed to create directory, error: " << e.what() << endl;
+            return;
+        }       
+
         //save sounds
         for(int j=0;j < scenes[i]->sounds.size();j++)
         {       
-#ifdef TARGET_LINUX // FIXME - copying files is OS specific
+//#ifdef TARGET_LINUX // FIXME - copying files is OS specific
             if(bCopyFiles) {
                 for(int k = 0; k < scenes[i]->sounds[j]->soundpath.size();k++) {
                     string oldpath = scenes[i]->sounds[j]->soundpath[k];
                     filesystem::path p(oldpath);
-                    string name = p.filename().string();
-    #ifdef TARGET_LINUX
-                    filesystem::path np(newpath);
-                    //string outfile = np.filename();
-                    string rootdir = np.parent_path();
-                    ofSystem("mkdir -p "+rootdir+"/files/");
-                    string outpath = rootdir+"/files/"+name;
+                    string name = p.filename().generic_string();
+                    //string outpath;
                     string command;
-                    if(scenes[i]->sounds[j]->soundpath[k] == outpath) {
+    //#ifdef TARGET_LINUX
+    //                filesystem::path np(newpath);
+    //                string rootdir = np.parent_path();
+    //                ofSystem("mkdir -p "+rootdir+"/files/");
+    //                outpath = rootdir+"/files/"+name;                    
+    //                if(scenes[i]->sounds[j]->soundpath[k] == outpath) {
+    //                    break;
+    //                }
+    //                command = "cp -f \""+scenes[i]->sounds[j]->soundpath[k]+"\" \""+outpath + "\"";
+    //#else
+                    string outdir = rootdir + name;
+                    std::filesystem::path outpath(outdir);
+                    //TODO - Currently we don't replace existing files, but probably this should be an option
+                    if (scenes[i]->sounds[j]->soundpath[k] == outpath) {
                         break;
+                    }                    
+                    try
+                    {
+                        std::filesystem::copy_file(scenes[i]->sounds[j]->soundpath[k],outpath);
+                        ofLogNotice() << "File copied: " << outpath;
                     }
-                    command = "cp -f \""+scenes[i]->sounds[j]->soundpath[k]+"\" \""+outpath + "\"";
-                    //cout<< "command = " << command << endl;
+                    catch (std::exception& e)
+                    {
+                        ofLogError() << "Result : " << e.what() << endl;
+                    }
 
-    #endif
-                    ofSystem(command);
-                    scenes[i]->sounds[j]->soundpath[k] = outpath;
+
+   //#endif
+                    //ofSystem(command);
+                    scenes[i]->sounds[j]->soundpath[k] = outpath.generic_string();
                 }
                 scenes[i]->sounds[j]->save();
             } 
             else 
-#endif
+//#endif
             {
                 scenes[i]->sounds[j]->save();
             }
@@ -181,8 +209,8 @@ void ofApp::calculateSources()
         //save sounds
         for(int j=0;j < scenes[i]->sounds.size();j++)
         {
-            int num = scenes[i]->sounds[j]->soundPlayer.player.size();
-            for(int k=0;k < num;k++) {
+            size_t num = scenes[i]->sounds[j]->soundPlayer.player.size();
+            for(size_t k=0;k < num;k++) {
                 OpenALSoundPlayer* p = scenes[i]->sounds[j]->soundPlayer.player[k]->audioPlayer;
                 ALenum fmt = p->getOpenALFormat();
                 if(fmt == AL_FORMAT_STEREO16 || fmt == AL_FORMAT_STEREO_FLOAT32) {
@@ -366,7 +394,6 @@ void ofApp::onObjectClicked(size_t& arg)
 {
     //cout << "object clicked: " << arg << endl;
     updateMainSliders();
-    doClearPad = arg;
 }
 
 //--------------------------------------------------------------
@@ -889,19 +916,19 @@ void ofApp::keyPressed  (ofKeyEventArgs & args){
     if((args.keycode == GLFW_KEY_3) && args.hasModifier(OF_KEY_CONTROL)){
         pageState = SETTINGS;
     }
-    if((key == 'q' || key == 'Q' || key == 17) && args.hasModifier(OF_KEY_CONTROL)){
+    if((args.keycode == GLFW_KEY_Q) && args.hasModifier(OF_KEY_CONTROL)){
         ofExit();
     }
-    if((key == 'd' || key == 'D' || key == 4) && args.hasModifier(OF_KEY_CONTROL)){
+    if((args.keycode == GLFW_KEY_D) && args.hasModifier(OF_KEY_CONTROL)){
         bClearPad = true;
     }
-    if((key == 's' || key == 'S' || key == 19) && args.hasModifier(OF_KEY_CONTROL)){
+    if((args.keycode == GLFW_KEY_S) && args.hasModifier(OF_KEY_CONTROL)){
         ofFileDialogResult result = ofSystemSaveDialog("settings.json", "Save Feedra scenes");
         if(result.bSuccess) {
             saveConfig(result.filePath,true);
         }
     }
-    if((key == 'o' || key == 'O' || key == 15) && args.hasModifier(OF_KEY_CONTROL)){
+    if((args.keycode == GLFW_KEY_O) && args.hasModifier(OF_KEY_CONTROL)){
         bLoadScenes = true;
     }
     if(key == ' ' && args.hasModifier(OF_KEY_CONTROL)) {
@@ -988,7 +1015,7 @@ void ofApp::drawSoundInfo()
     int sr = scenes[config.activeSceneIdx]->sounds[config.activeSoundIdx]->sample_rate;
     string fs = scenes[config.activeSceneIdx]->sounds[config.activeSoundIdx]->soundPlayer.player[0]->audioPlayer->getFormatString();
     string fsub = scenes[config.activeSceneIdx]->sounds[config.activeSoundIdx]->soundPlayer.player[0]->audioPlayer->getSubFormatString();
-    int numSounds = scenes[config.activeSceneIdx]->sounds[config.activeSoundIdx]->soundPlayer.player.size();
+    size_t numSounds = scenes[config.activeSceneIdx]->sounds[config.activeSoundIdx]->soundPlayer.player.size();
 
     ofSetColor(0);
     config.f2().drawString("Random delay: "+ofToString(t)+" secs", 250*config.x_scale, ofGetHeight() - 85*config.y_scale);
