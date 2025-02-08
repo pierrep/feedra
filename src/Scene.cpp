@@ -31,7 +31,7 @@ void Scene::setup(string newpath)
     // create grid of sound players
     for(size_t i=0;i < config->gridWidth*config->gridHeight;i++) {
         int x = i%config->gridWidth*config->spacing + config->xoffset;
-        int y = (i/config->gridWidth)*config->spacing + config->yoffset;        
+        int y = (i/config->gridWidth)*config->spacing + config->yoffset;
         SoundObject* s = new SoundObject(config,id,i,x,y,config->size,config->size);
         sounds.push_back(s);
     }

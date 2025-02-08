@@ -401,11 +401,9 @@ bool SoundObject::loadPadSound(int idx, std::string filepath, bool firstLoad)
 
 //--------------------------------------------------------------
 void SoundObject::onClicked(ClickArgs& args) {
-    if(!bEventsEnabled) return;
-    ofLogNotice() << "SoundObject id " << id << " clicked";
+    if(!bEventsEnabled) return;   
 
     config->activeSoundIdx =  id;
-    ofLogNotice() << " activeSoundIdx: " << config->activeSoundIdx;
 
     ofNotifyEvent(clickedObjectEvent,  config->activeSoundIdx);
 }

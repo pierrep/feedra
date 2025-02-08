@@ -17,7 +17,7 @@ ofApp::~ofApp()
     ofRemoveListener(maxDelay.numberChangedEvent, this, &ofApp::onNumberChanged);
     ofRemoveListener(randomPlayback.clickedEvent, this, &ofApp::onCheckboxClicked);
 
-    ofRemoveListener(SoundObject::clickedObjectEvent, this, &ofApp::onObjectClicked);
+    ofRemoveListener(SoundObject::clickedObjectEvent, this, &ofApp::onSoundObjectClicked);
     ofRemoveListener(AudioSample::clickedSampleEvent, this, &ofApp::onSampleClicked);
 
     saveConfig();
@@ -234,8 +234,7 @@ void ofApp::window_minimise_callback(GLFWwindow* window, int minimised)
 
 //--------------------------------------------------------------
 void ofApp::setup(){
-    ofSetEscapeQuitsApp(false);
-    ofSetWindowTitle("Feedra");    
+    ofSetEscapeQuitsApp(false);    
     //ofSetVerticalSync(true);
     ofSetFrameRate(30); // the play and stop buttons flicker on sample switch or loop at 60fps
 
@@ -346,6 +345,8 @@ void ofApp::setup(){
 
     bLoading = true;
     bLoadingScenes = true;
+    startLoadTime = ofGetElapsedTimef();
+    ofSetWindowTitle("Loading");
 }
 
 //--------------------------------------------------------------
@@ -387,17 +388,17 @@ void ofApp::updateEditSliders()
 }
 
 //--------------------------------------------------------------
-void ofApp::onObjectClicked(size_t& arg)
+void ofApp::onSoundObjectClicked(size_t& id)
 {
-    ofLogNotice() << "sound object clicked: " << arg;
+    ofLogNotice() << "SoundObject id: " << id << " clicked";
     updateMainSliders();
 }
 
 //--------------------------------------------------------------
-void ofApp::onSampleClicked(int& arg)
+void ofApp::onSampleClicked(int& id)
 {
-    ofLogNotice() << "sample clicked: " << arg;
-    config.activeSampleIdx = arg;
+    ofLogNotice() << "sample clicked: " << id;
+    config.activeSampleIdx = id;
     updateEditSliders();    
 }
 
@@ -521,7 +522,7 @@ void ofApp::update(){
 
     for(size_t i=0; i < scenes.size();i++) {
          if(scenes[i]->selectScene) {
-            cout << "found selected scene" << endl;
+            //cout << "found selected scene" << endl;
             scenes[i]->selectScene = false;
             enableScene(i);
          }
@@ -637,8 +638,8 @@ void ofApp::deleteScene()
 }
 
 //--------------------------------------------------------------
-void ofApp::enableScene(int idx) {
-cout << "start enable scene" << endl;
+void ofApp::enableScene(int idx)
+{
     for(unsigned int i =0; i < scenes.size();i++) {
         scenes[i]->endFade();
     }
@@ -651,13 +652,6 @@ cout << "start enable scene" << endl;
     }
     config.activeSoundIdx = scenes[idx]->activeSoundIdx;
 
-//    for(size_t i=0; i < scenes.size();i++) {
-//        for(size_t j = 0; j < scenes[i]->sounds.size();j++)
-//        {
-//            scenes[i]->sounds[j]->disableAllEvents();
-//        }
-//        scenes[i]->disable();
-//    }
     for(size_t j = 0; j < scenes[config.prevSceneIdx]->sounds.size();j++)
     {
         scenes[config.prevSceneIdx]->sounds[j]->disableAllEvents();
@@ -669,7 +663,7 @@ cout << "start enable scene" << endl;
         scenes[idx]->sounds[j]->enableAllEvents();
     }
     scenes[idx]->enable();
-    cout << "Enable scene: " << idx << endl;
+    //cout << "Enable scene: " << idx << endl;
 }
 
 //--------------------------------------------------------------
@@ -683,7 +677,7 @@ void ofApp::disableEvents()
         scenes[i]->disable();
         scenes[i]->disableInteractivity();
     }
-    cout << "Disable Events" << endl;
+    //cout << "Disable Events" << endl;
 }
 
 //--------------------------------------------------------------
@@ -739,17 +733,25 @@ void ofApp::updateScenePosition()
 //--------------------------------------------------------------
 void ofApp::draw(){
 
-    if(bLoading) {
-        ofSetWindowTitle("Loading");
+    if(bLoading) {        
         static unsigned int progress = 0;
 
         if(bLoadingScenes) {
-            //Load everything else!
+            //Load everything else! (two scenes at a time
             scenes[progress]->setup();
             progress++;
+
+            if(progress < scenes.size())
+            {
+                scenes[progress]->setup();
+                progress++;
+            }
+
             if(progress >= scenes.size())
             {
                 bLoadingScenes = false;
+                endLoadTime = ofGetElapsedTimef();
+                ofLogNotice() << "LOAD time took " << std::setw(2) << endLoadTime - startLoadTime << " secs";
             } else {
                 ofPushStyle();
                 ofSetColor(255);
@@ -767,14 +769,15 @@ void ofApp::draw(){
         config.prevSceneIdx = 0;
         enableScene(config.activeSceneIdx);
         updateMainSliders();
-        ofAddListener(SoundObject::clickedObjectEvent, this, &ofApp::onObjectClicked);
+        ofAddListener(SoundObject::clickedObjectEvent, this, &ofApp::onSoundObjectClicked);
         ofAddListener(AudioSample::clickedSampleEvent, this, &ofApp::onSampleClicked);
         calculateSources();
+        ofSetWindowTitle("Feedra");
         bLoading = false;
         return;
     }
-    int fps = ofGetFrameRate();
-    ofSetWindowTitle("Fps: "+ofToString(fps));
+    //int fps = ofGetFrameRate();
+    //ofSetWindowTitle("Fps: "+ofToString(fps));
 
     static bool bEnableEvents = false;
 

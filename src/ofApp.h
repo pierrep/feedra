@@ -31,7 +31,7 @@ class ofApp : public ofBaseApp {
         void enableScene(int i);
         void onSliderClicked(SliderData& args);
         void onCheckboxClicked(Interactive::ClickArgs& args);
-        void onObjectClicked(size_t& args);
+        void onSoundObjectClicked(size_t& args);
         void onNumberChanged(NumberBoxData& args);
         void onSampleClicked(int& args);
         void updateMainSliders();
@@ -88,5 +88,7 @@ class ofApp : public ofBaseApp {
 
         bool bLoading;
         bool bLoadingScenes;
+        float startLoadTime;
+        float endLoadTime;
 };
 
