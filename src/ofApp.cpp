@@ -917,6 +917,7 @@ void ofApp::keyPressed  (ofKeyEventArgs & args){
         pageState = SETTINGS;
     }
     if((args.keycode == GLFW_KEY_Q) && args.hasModifier(OF_KEY_CONTROL)){
+        disableEvents();
         ofExit();
     }
     if((args.keycode == GLFW_KEY_D) && args.hasModifier(OF_KEY_CONTROL)){

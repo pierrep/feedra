@@ -58,7 +58,7 @@ TextInputField::TextInputField() {
 
     doubleClickTime = 500; // milliseconds
     currentClick = prevClick = ofGetElapsedTimeMillis();
-    bUseDoubleClick = false;
+    bUseDoubleClick = true;
 
     string_limit = text.max_size();
     bUseNumeric = false;
@@ -187,13 +187,14 @@ void TextInputField::draw() {
 		float startX = fontRef->stringWidth(lines[beginCursorY].substr(0,beginCursorX));
 		float endX = fontRef->stringWidth(lines[endCursorY].substr(0, endCursorX));
 
-		ofSetHexColor(0x6988db);
+        //ofSetHexColor(0x6988db); //blueish
+        ofSetHexColor(0x9a8e84);
 		ofFill();
 		
 		if(beginCursorY==endCursorY) {
 			// single line selection
             ofDrawRectangle(horizontalPadding + startX, verticalPadding + fontRef->getLineHeight()*beginCursorY,
-                   endX - startX, fontRef->getLineHeight());
+                   endX - startX - 1, fontRef->getLineHeight()+1);
 		} else {
 			
 			// multiline selection.
@@ -315,6 +316,11 @@ void TextInputField::keyPressed(ofKeyEventArgs& args) {
 	
     if(key == OF_KEY_SHIFT) {
 		this->shiftHeld = true;
+    }
+
+    if(key == OF_KEY_ESC) {
+        selecting = false;
+        endEditing();
     }
     
     if(key == 4352) {
@@ -470,23 +476,49 @@ void TextInputField::keyPressed(ofKeyEventArgs& args) {
 	}
 	
 	if (key==OF_KEY_LEFT){
-		if(selecting) {
+        if(shiftHeld ) {
+            if(!selecting) {
+                selectionBegin = cursorPosition;
+                selectionEnd = cursorPosition;
+                selecting = true;
+            }
+            if(selectionEnd > cursorPosition) {
+                --selectionEnd;
+            }
+            else if(selectionBegin > 0) {
+                --selectionBegin;
+            }
+        }
+        else if(selecting) {
 			cursorPosition = selectionBegin;
 			selecting = false;
 			
 		} else {
-			if (cursorPosition>0){
+            if (cursorPosition > 0){
 				--cursorPosition;
 			}
 		}
 	}
 	
 	if (key==OF_KEY_RIGHT){
-		if(selecting) {
+        if(shiftHeld ) {
+            if(!selecting) {
+                selectionEnd = cursorPosition;
+                selectionBegin = cursorPosition;
+                selecting = true;
+            }
+            if(selectionBegin < cursorPosition) {
+                ++selectionBegin;
+            }
+            else if (selectionEnd < text.size()){
+                ++selectionEnd;
+            }
+        }
+        else if(selecting) {
 			cursorPosition = selectionEnd;
 			selecting = false;
 		} else {
-			if (cursorPosition<text.size()){
+            if (cursorPosition < text.size()){
 				++cursorPosition;
 			}
 		}
@@ -537,11 +569,35 @@ void TextInputField::keyPressed(ofKeyEventArgs& args) {
 	}
 
     if (key==OF_KEY_END){
-        cursorPosition = text.size();
+        if(shiftHeld ) {
+            if(!selecting) {
+                selecting = true;
+                selectionBegin = cursorPosition;
+                selectionEnd = text.size();
+            } else {
+                selectionBegin = cursorPosition;
+                selectionEnd = text.size();
+            }
+        } else {
+            selecting = false;
+            cursorPosition = text.size();
+        }
     }
 
     if (key==OF_KEY_HOME){
-        cursorPosition = 0;
+        if(shiftHeld ) {
+            if(!selecting) {
+                selecting = true;
+                selectionBegin = 0;
+                selectionEnd = cursorPosition;
+            } else {
+                selectionEnd = cursorPosition;
+                selectionBegin = 0;
+            }
+        } else {
+            selecting = false;
+            cursorPosition = 0;
+        }
     }
 }
 
@@ -587,7 +643,7 @@ void TextInputField::mouseDragged(ofMouseEventArgs& args) {
 
 	if (bounds.inside(args.x, args.y)) {
 		int pos = getCursorPositionFromMouse(args.x, args.y);
-		if (pos != cursorPosition) {
+        if ((pos != cursorPosition) && (this->editing)) {
             selecting = true;
             selectionBegin = MIN(pos, cursorPosition);
             selectionEnd = MAX(pos, cursorPosition);
