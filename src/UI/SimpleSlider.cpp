@@ -45,13 +45,11 @@ void SimpleSlider::setup(int _id,float _x, float _y, float _w, float _h, float l
     labelString = "";
     bDrawLabel = false;
 	
-    if(!bEventsEnabled){
-        enableEvents();
-        ofAddListener(ofEvents().mouseMoved, this, &SimpleSlider::mouseMoved);
-        ofAddListener(ofEvents().mousePressed, this, &SimpleSlider::mousePressed);
-        ofAddListener(ofEvents().mouseReleased, this, &SimpleSlider::mouseReleased);
-        ofAddListener(ofEvents().mouseDragged, this, &SimpleSlider::mouseDragged);
-	}
+    enableEvents();
+    ofAddListener(ofEvents().mouseMoved, this, &SimpleSlider::mouseMoved);
+    ofAddListener(ofEvents().mousePressed, this, &SimpleSlider::mousePressed);
+    ofAddListener(ofEvents().mouseReleased, this, &SimpleSlider::mouseReleased);
+    ofAddListener(ofEvents().mouseDragged, this, &SimpleSlider::mouseDragged);
 }
 
 void SimpleSlider::enableEvents()
@@ -71,13 +69,11 @@ void SimpleSlider::disableEvents()
 
 //----------------------------------------------------
 void SimpleSlider::clear(){
-    if(bEventsEnabled){
-        disableEvents();
-        ofRemoveListener(ofEvents().mouseMoved, this, &SimpleSlider::mouseMoved);
-        ofRemoveListener(ofEvents().mousePressed, this, &SimpleSlider::mousePressed);
-        ofRemoveListener(ofEvents().mouseReleased, this, &SimpleSlider::mouseReleased);
-        ofRemoveListener(ofEvents().mouseDragged, this, &SimpleSlider::mouseDragged);
-	}
+    disableEvents();
+    ofRemoveListener(ofEvents().mouseMoved, this, &SimpleSlider::mouseMoved);
+    ofRemoveListener(ofEvents().mousePressed, this, &SimpleSlider::mousePressed);
+    ofRemoveListener(ofEvents().mouseReleased, this, &SimpleSlider::mouseReleased);
+    ofRemoveListener(ofEvents().mouseDragged, this, &SimpleSlider::mouseDragged);
 }
 
 //----------------------------------------------------

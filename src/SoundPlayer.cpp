@@ -31,7 +31,7 @@ SoundPlayer::~SoundPlayer()
 //--------------------------------------------------------------
 void SoundPlayer::close()
 {
-    ofLogVerbose() << "SoundPlayer destructor called...";
+    //ofLogNotice() << "SoundPlayer destructor called...id: " << id;
     for(int i = 0;i < player.size();i++)
     {
         delete player[i]->audioPlayer;
@@ -40,7 +40,7 @@ void SoundPlayer::close()
     {
         delete player[i];
     }
-    player.clear();    
+    player.clear();
 }
 
 //--------------------------------------------------------------

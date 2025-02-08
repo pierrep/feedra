@@ -8,13 +8,17 @@ bool ofApp::bMinimised = false;
 //--------------------------------------------------------------
 ofApp::~ofApp()
 {
-    ofRemoveListener(panSlider.clickedEvent, this, &ofApp::onSliderClicked);
-    ofRemoveListener(reverbSend.clickedEvent, this, &ofApp::onSliderClicked);
+    ofRemoveListener(panSlider.clickedEvent, this, &ofApp::onSliderClicked);   
     ofRemoveListener(pitchSlider.clickedEvent, this, &ofApp::onSliderClicked);
     ofRemoveListener(gainSlider.clickedEvent, this, &ofApp::onSliderClicked);
+
+    ofRemoveListener(reverbSend.clickedEvent, this, &ofApp::onSliderClicked);
     ofRemoveListener(minDelay.numberChangedEvent, this, &ofApp::onNumberChanged);
     ofRemoveListener(maxDelay.numberChangedEvent, this, &ofApp::onNumberChanged);
     ofRemoveListener(randomPlayback.clickedEvent, this, &ofApp::onCheckboxClicked);
+
+    ofRemoveListener(SoundObject::clickedObjectEvent, this, &ofApp::onObjectClicked);
+    ofRemoveListener(AudioSample::clickedSampleEvent, this, &ofApp::onSampleClicked);
 
     saveConfig();
 
@@ -29,7 +33,8 @@ ofApp::~ofApp()
 //--------------------------------------------------------------
 void ofApp::saveConfig()
 {
-    saveConfig("settings/settings.json", false);
+    string path = ofToDataPath("settings/settings.json",true);
+    saveConfig(path, false);
 }
 
 //--------------------------------------------------------------
@@ -55,64 +60,51 @@ void ofApp::saveConfig(string newpath, bool bCopyFiles)
         sceneInfo["scene"+ofToString(i)]["name"] = scenes[i]->textfield.text;
         sceneInfo["scene"+ofToString(i)]["activesound"] = scenes[i]->activeSoundIdx;
 
-        filesystem::path np(newpath);
-        string rootdir = np.parent_path().string() + "/files/";
-        try
-        {
-            std::filesystem::create_directory(rootdir);
+        string rootdir;
+        if(bCopyFiles) {
+            filesystem::path np(newpath);
+            rootdir = np.parent_path().string() + "/files/";
+            try
+            {
+                std::filesystem::create_directory(rootdir);
+            }
+            catch (std::exception& e)
+            {
+                ofLogError() << "Failed to create directory, error: " << e.what() << endl;
+                return;
+            }
         }
-        catch (std::exception& e)
-        {
-            ofLogError() << "Failed to create directory, error: " << e.what() << endl;
-            return;
-        }       
 
         //save sounds
         for(int j=0;j < scenes[i]->sounds.size();j++)
         {       
-//#ifdef TARGET_LINUX // FIXME - copying files is OS specific
             if(bCopyFiles) {
                 for(int k = 0; k < scenes[i]->sounds[j]->soundpath.size();k++) {
-                    string oldpath = scenes[i]->sounds[j]->soundpath[k];
-                    filesystem::path p(oldpath);
-                    string name = p.filename().generic_string();
-                    //string outpath;
-                    string command;
-    //#ifdef TARGET_LINUX
-    //                filesystem::path np(newpath);
-    //                string rootdir = np.parent_path();
-    //                ofSystem("mkdir -p "+rootdir+"/files/");
-    //                outpath = rootdir+"/files/"+name;                    
-    //                if(scenes[i]->sounds[j]->soundpath[k] == outpath) {
-    //                    break;
-    //                }
-    //                command = "cp -f \""+scenes[i]->sounds[j]->soundpath[k]+"\" \""+outpath + "\"";
-    //#else
-                    string outdir = rootdir + name;
-                    std::filesystem::path outpath(outdir);
-                    //TODO - Currently we don't replace existing files, but probably this should be an option
-                    if (scenes[i]->sounds[j]->soundpath[k] == outpath) {
+                    string p = scenes[i]->sounds[j]->soundpath[k];
+                    filesystem::path curpath(p);
+                    string name = curpath.filename().generic_string();
+                    string d = rootdir + name;
+                    std::filesystem::path destpath(d);
+
+                    if (curpath == destpath) {
+                        // We currently don't overwrite files in the same directory...probably we should but it's faster to only add new files and new config
+                        ofLogVerbose() << "Same file path, skipping";
                         break;
                     }                    
                     try
                     {
-                        std::filesystem::copy_file(scenes[i]->sounds[j]->soundpath[k],outpath);
-                        ofLogNotice() << "File copied: " << outpath;
+                        std::filesystem::copy_file(curpath,destpath,std::filesystem::copy_options::update_existing);
+                        ofLogVerbose() << "File copied: " << destpath.string();
                     }
                     catch (std::exception& e)
                     {
-                        ofLogError() << "Result : " << e.what() << endl;
+                        ofLogError() << "Result : " << e.what();
                     }
-
-
-   //#endif
-                    //ofSystem(command);
-                    scenes[i]->sounds[j]->soundpath[k] = outpath.generic_string();
+                    scenes[i]->sounds[j]->soundpath[k] = destpath.generic_string();
                 }
                 scenes[i]->sounds[j]->save();
             } 
             else 
-//#endif
             {
                 scenes[i]->sounds[j]->save();
             }
@@ -320,10 +312,13 @@ void ofApp::setup(){
     randomPlayback.setFont(&config.f2());
     randomPlayback.setLabelString("Random Playback");
 
-    ofAddListener(panSlider.clickedEvent, this, &ofApp::onSliderClicked);
-    ofAddListener(reverbSend.clickedEvent, this, &ofApp::onSliderClicked);
+    //Editor
+    ofAddListener(panSlider.clickedEvent, this, &ofApp::onSliderClicked);    
     ofAddListener(pitchSlider.clickedEvent, this, &ofApp::onSliderClicked);
     ofAddListener(gainSlider.clickedEvent, this, &ofApp::onSliderClicked);
+
+    //Main
+    ofAddListener(reverbSend.clickedEvent, this, &ofApp::onSliderClicked);
     ofAddListener(minDelay.numberChangedEvent, this, &ofApp::onNumberChanged);
     ofAddListener(maxDelay.numberChangedEvent, this, &ofApp::onNumberChanged);
     ofAddListener(randomPlayback.clickedEvent, this, &ofApp::onCheckboxClicked);
@@ -372,34 +367,36 @@ void ofApp::updateMainSliders()
 //--------------------------------------------------------------
 void ofApp::updateEditSliders()
 {
-    float p = scenes[config.activeSceneIdx]->sounds[config.activeSoundIdx]->soundPlayer.player.at(config.activeSampleIdx)->getPan();
-    float pct = (p+1.0f) / 2.0f;
-    panSlider.setPercent(pct);
+    if(scenes[config.activeSceneIdx]->sounds[config.activeSoundIdx]->soundPlayer.player.at(config.activeSampleIdx)) {
+        float p = scenes[config.activeSceneIdx]->sounds[config.activeSoundIdx]->soundPlayer.player.at(config.activeSampleIdx)->getPan();
+        float pct = (p+1.0f) / 2.0f;
+        panSlider.setPercent(pct);
 
-    float pitch = scenes[config.activeSceneIdx]->sounds[config.activeSoundIdx]->soundPlayer.player.at(config.activeSampleIdx)->getPitch();
-    float total = pitchSlider.getHighValue() - pitchSlider.getLowValue();
-    pct = (pitch - pitchSlider.getLowValue()) / total;
-    //cout << "pitch: " << pitch << " total: " << total << " percent: " << pct << endl;
-    pitchSlider.setPercent(pct);
+        float pitch = scenes[config.activeSceneIdx]->sounds[config.activeSoundIdx]->soundPlayer.player.at(config.activeSampleIdx)->getPitch();
+        float total = pitchSlider.getHighValue() - pitchSlider.getLowValue();
+        pct = (pitch - pitchSlider.getLowValue()) / total;
+        //cout << "pitch: " << pitch << " total: " << total << " percent: " << pct << endl;
+        pitchSlider.setPercent(pct);
 
-    float gain = scenes[config.activeSceneIdx]->sounds[config.activeSoundIdx]->soundPlayer.player.at(config.activeSampleIdx)->getGain();
-    total = gainSlider.getHighValue() - gainSlider.getLowValue();
-    pct = (gain - gainSlider.getLowValue()) / total;
-    //cout << "gain: " << gain << " total: " << total << " percent: " << pct << endl;
-    gainSlider.setPercent(pct);
+        float gain = scenes[config.activeSceneIdx]->sounds[config.activeSoundIdx]->soundPlayer.player.at(config.activeSampleIdx)->getGain();
+        total = gainSlider.getHighValue() - gainSlider.getLowValue();
+        pct = (gain - gainSlider.getLowValue()) / total;
+        //cout << "gain: " << gain << " total: " << total << " percent: " << pct << endl;
+        gainSlider.setPercent(pct);
+    }
 }
 
 //--------------------------------------------------------------
 void ofApp::onObjectClicked(size_t& arg)
 {
-    //cout << "object clicked: " << arg << endl;
+    ofLogNotice() << "sound object clicked: " << arg;
     updateMainSliders();
 }
 
 //--------------------------------------------------------------
 void ofApp::onSampleClicked(int& arg)
 {
-    cout << "sample clicked: " << arg << endl;
+    ofLogNotice() << "sample clicked: " << arg;
     config.activeSampleIdx = arg;
     updateEditSliders();    
 }
@@ -441,25 +438,31 @@ void ofApp::onNumberChanged(NumberBoxData& args)
 //--------------------------------------------------------------
 void ofApp::onSliderClicked(SliderData& args) {
     //ofLogNotice() << " clicked id: " << args.id << "  value: " << args.value;
+    if( pageState == MAIN) {
+        if(args.id == 4) {
+            // reverb send
+            scenes[config.activeSceneIdx]->sounds[config.activeSoundIdx]->soundPlayer.setReverbSend(reverbSend.getValue());
+        }
+    }
 
-    if(args.id == 3) {
-        // panning
-        //scenes[config.activeSceneIdx]->sounds[config.activeSoundIdx]->soundPlayer.setPan(pan.getValue());
-        scenes[config.activeSceneIdx]->sounds[config.activeSoundIdx]->soundPlayer.player.at(config.activeSampleIdx)->setPan(panSlider.getValue());
-    }
-    if(args.id == 4) {
-        // reverb send
-        scenes[config.activeSceneIdx]->sounds[config.activeSoundIdx]->soundPlayer.setReverbSend(reverbSend.getValue());
-    }
-    if(args.id == 5) {
-        // pitch
-        scenes[config.activeSceneIdx]->sounds[config.activeSoundIdx]->soundPlayer.player.at(config.activeSampleIdx)->setPitch(pitchSlider.getValue());
-        //cout << " pitch = " << pitchSlider.getValue() << endl;
-    }
-    if(args.id == 6) {
-        // gain
-        scenes[config.activeSceneIdx]->sounds[config.activeSoundIdx]->soundPlayer.player.at(config.activeSampleIdx)->setGain(gainSlider.getValue());
-        //cout << " gain = " << gainSlider.getValue() << endl;
+    if(pageState == EDIT) {
+        if(scenes[config.activeSceneIdx]->sounds[config.activeSoundIdx]->soundPlayer.player.at(config.activeSampleIdx)) {
+            if(args.id == 3) {
+                // panning
+                //scenes[config.activeSceneIdx]->sounds[config.activeSoundIdx]->soundPlayer.setPan(pan.getValue());
+                scenes[config.activeSceneIdx]->sounds[config.activeSoundIdx]->soundPlayer.player.at(config.activeSampleIdx)->setPan(panSlider.getValue());
+            }
+            if(args.id == 5) {
+                // pitch
+                scenes[config.activeSceneIdx]->sounds[config.activeSoundIdx]->soundPlayer.player.at(config.activeSampleIdx)->setPitch(pitchSlider.getValue());
+                //cout << " pitch = " << pitchSlider.getValue() << endl;
+            }
+            if(args.id == 6) {
+                // gain
+                scenes[config.activeSceneIdx]->sounds[config.activeSoundIdx]->soundPlayer.player.at(config.activeSampleIdx)->setGain(gainSlider.getValue());
+                //cout << " gain = " << gainSlider.getValue() << endl;
+            }
+        }
     }
 }
 
@@ -764,14 +767,6 @@ void ofApp::draw(){
         config.prevSceneIdx = 0;
         enableScene(config.activeSceneIdx);
         updateMainSliders();
-//        for(size_t i=0;i < scenes.size();i++) {
-//            if(config.activeScene != scenes[i]->id) {
-//                for(size_t j = 0; j < scenes[i]->sounds.size();j++)
-//                {
-//                    scenes[i]->sounds[j]->disableAllEvents();
-//                }
-//            }
-//        }
         ofAddListener(SoundObject::clickedObjectEvent, this, &ofApp::onObjectClicked);
         ofAddListener(AudioSample::clickedSampleEvent, this, &ofApp::onSampleClicked);
         calculateSources();
@@ -787,7 +782,20 @@ void ofApp::draw(){
 
     ofBackgroundHex(0x9a8e84);
 
-    if(pageState == MAIN)
+   if(pageState == EDIT) {
+            if(scenes[config.activeSceneIdx]->sounds[config.activeSoundIdx]->soundPlayer.player.size() > 0) {
+                if(!bEnableEvents) {
+                    enableEditorMode();
+                    disableEvents();
+                }
+                renderEditPage();
+                bEnableEvents = true;
+            } else {
+                // No samples on this pad, return to main
+                pageState = MAIN;
+            }
+    }
+   if(pageState == MAIN)
     {
         if(bEnableEvents) {
             enableEvents();
@@ -795,14 +803,6 @@ void ofApp::draw(){
             bEnableEvents = false;
         }
         renderMainPage();
-
-    } else if(pageState == EDIT) {
-        if(!bEnableEvents) {
-            enableEditorMode();
-            disableEvents();
-        }
-        renderEditPage();
-        bEnableEvents = true;
     }
 
 // Test drawing of potential clickable Tab:

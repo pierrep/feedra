@@ -11,7 +11,7 @@ CheckBox::CheckBox()
 CheckBox::~CheckBox()
 {
     ofRemoveListener(Interactive::clickedEvent, this, &CheckBox::onClicked);
-    ofLogVerbose() << "Stop destructor called...";
+    ofLogVerbose() << "Checkbox destructor called...";
 }
 
 //--------------------------------------------------------------

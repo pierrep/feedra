@@ -13,10 +13,7 @@ Scene::~Scene()
     }
     sounds.clear();
 
-    if(bInteractive) {
-        disableInteractivity();
-        ofRemoveListener(Interactive::clickedEvent, this, &Scene::onClicked);
-    }
+    ofRemoveListener(Interactive::clickedEvent, this, &Scene::onClicked);
     //ofLogNotice() << "Scene destructor for id: " << id << " called...";
 }
 
