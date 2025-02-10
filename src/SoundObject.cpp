@@ -226,7 +226,8 @@ void SoundObject::load(string newpath)
                             soundPlayer.maxDelay = setting["maxdelay"];
                         }
                         if(!samples["sample-"+ofToString(i)].empty()) {
-                            string new_path = samples["sample-"+ofToString(i)]["path"];
+                            std::filesystem::path np = samples["sample-" + ofToString(i)]["path"];
+                            string new_path = np.make_preferred().string();
                             soundpath.push_back(new_path);
 
                             float pitch = samples["sample-"+ofToString(i)]["pitch"];                            
@@ -325,6 +326,7 @@ void SoundObject::save()
         soundobj[base][prefix]["samples"]["sample-"+ofToString(i)]["gain"] = soundPlayer.player[i]->getGain();
         soundobj[base][prefix]["samples"]["sample-"+ofToString(i)]["pitch"] = soundPlayer.player[i]->getPitch();
         soundobj[base][prefix]["samples"]["sample-"+ofToString(i)]["pan"] = soundPlayer.player[i]->audioPlayer->getPan();
+        soundobj[base][prefix]["samples"]["sample-" + ofToString(i)]["duration"] = soundPlayer.player[i]->audioPlayer->getDuration();
     }
 
     soundobj[base][prefix]["volume"] = volumeslider.getValue();

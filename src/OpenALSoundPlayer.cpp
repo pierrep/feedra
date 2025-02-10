@@ -993,20 +993,22 @@ size_t OpenALSoundPlayer::readFile(const std::filesystem::path& fileName){
 }
 
 //------------------------------------------------------------
-bool OpenALSoundPlayer::load(const std::filesystem::path& _fileName, bool is_stream){
+bool OpenALSoundPlayer::load(const std::filesystem::path& _fileName, bool is_stream) {
 
     std::filesystem::path fileName = ofToDataPath(_fileName);
-	bMultiPlay = false;
-	isStreaming = is_stream;
-	int err = AL_NO_ERROR;
+    bMultiPlay = false;
+    isStreaming = is_stream;
+    int err = AL_NO_ERROR;
 
-	// [1] init sound systems, if necessary
-	initialize();
+    // [1] init sound systems, if necessary
+    initialize();
 
-	// [2] try to unload any previously loaded sounds
-	// & prevent user-created memory leaks
-	// if they call "loadSound" repeatedly, for example
-	unload();
+    // [2] try to unload any previously loaded sounds
+    // & prevent user-created memory leaks
+    // if they call "loadSound" repeatedly, for example
+    if (bLoadedOk) {
+        unload();
+    }
     bLoadedOk = false;
 
     // Get Format
@@ -1099,24 +1101,6 @@ bool OpenALSoundPlayer::load(const std::filesystem::path& _fileName, bool is_str
         ofLogError("OpenALSoundPlayer") << "loadSound(): couldn't generate sources for " << fileName << ": "
         << (int) err << " " << getALErrorString(err);
         return false;
-    }
-
-    if(bUseEffects) {
-        reverbSend = 0.0f;
-        alGenFilters(1, &filter);
-        alFilteri(filter, AL_FILTER_TYPE, AL_FILTER_LOWPASS);
-
-        alFilterf(filter, AL_LOWPASS_GAIN, reverbSend);
-        alSource3i(sources[0], AL_AUXILIARY_SEND_FILTER, (ALint)slots[1], 0, filter);
-
-        err = alGetError();
-        if (err != AL_NO_ERROR){
-            ofLogError("OpenALSoundPlayer:") << "attaching FX sends failed..."
-            << (int) err << " " << getALErrorString(err);
-            return false;
-        }
-        ofAddListener(ofEvents().update,this,&OpenALSoundPlayer::update);
-        bUseFilter = true;
     }
 
 	if(isStreaming){
@@ -1271,6 +1255,24 @@ bool OpenALSoundPlayer::load(const std::filesystem::path& _fileName, bool is_str
             alSourcei (sources[i], AL_SOURCE_RELATIVE, AL_TRUE);
         }
     } // end multiple sources
+
+    if (bUseEffects) {
+        reverbSend = 0.0f;
+        alGenFilters(1, &filter);
+        alFilteri(filter, AL_FILTER_TYPE, AL_FILTER_LOWPASS);
+
+        alFilterf(filter, AL_LOWPASS_GAIN, reverbSend);
+        alSource3i(sources[0], AL_AUXILIARY_SEND_FILTER, (ALint)slots[1], 0, filter);
+
+        err = alGetError();
+        if (err != AL_NO_ERROR) {
+            ofLogError("OpenALSoundPlayer:") << "attaching FX sends failed..."
+                << (int)err << " " << getALErrorString(err);
+            return false;
+        }
+        ofAddListener(ofEvents().update, this, &OpenALSoundPlayer::update);
+        bUseFilter = true;
+    }
 
 	bLoadedOk = true;
 	return bLoadedOk;
