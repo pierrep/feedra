@@ -48,9 +48,13 @@ public:
     float getReverbSend() const;
     void setReverbSend(float send);
     void recalculateDelay(int id);
+    void playbackEnded(OpenALSoundPlayer*& args);
+
     void setRandomPlayback(bool val) {bRandomPlayback = val;}
-    bool isPlayingRandom() { return bRandomPlayback;}
-    void playbackEnded(OpenALSoundPlayer* &args);
+    bool isPlayingRandom() { return bRandomPlayback; }
+    
+    void setRandomPan(bool val) { bRandomPan = val; }
+    bool isRandomPan() { return bRandomPan; }
 
     AppConfig* config;
     vector<AudioSample *> player;
@@ -67,6 +71,7 @@ public:
     bool bPlayBackEnded;
     bool bCheckPlayBackEnded;
     bool bRandomPlayback;
+    bool bRandomPan;
 
     ofEvent<OpenALSoundPlayer*> playbackEndedEvent;
 };

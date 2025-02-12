@@ -11,6 +11,7 @@ ofApp::~ofApp()
     ofRemoveListener(panSlider.clickedEvent, this, &ofApp::onSliderClicked);   
     ofRemoveListener(pitchSlider.clickedEvent, this, &ofApp::onSliderClicked);
     ofRemoveListener(gainSlider.clickedEvent, this, &ofApp::onSliderClicked);
+    ofRemoveListener(randomPan.clickedEvent, this, &ofApp::onCheckboxClicked);
 
     ofRemoveListener(reverbSend.clickedEvent, this, &ofApp::onSliderClicked);
     ofRemoveListener(minDelay.numberChangedEvent, this, &ofApp::onNumberChanged);
@@ -302,7 +303,7 @@ void ofApp::setup(){
     gainSlider.setLabelString("Gain");
     gainSlider.disableEvents();
 
-    //Checkbox
+    //Checkbox - Random Playback
     randomPlayback.setX(config.xoffset+600*config.x_scale);
     randomPlayback.setY(ofGetHeight() - 70*config.y_scale);
     randomPlayback.setWidth(20 * config.x_scale);
@@ -311,10 +312,20 @@ void ofApp::setup(){
     randomPlayback.setFont(&config.f2());
     randomPlayback.setLabelString("Random Playback");
 
+    //Checkbox - Random Pan
+    randomPan.setX(config.xoffset + 800 * config.x_scale);
+    randomPan.setY(ofGetHeight() - 50 * config.y_scale);
+    randomPan.setWidth(20 * config.x_scale);
+    randomPan.setHeight(20 * config.y_scale);
+    randomPan.setup(&config, 2);
+    randomPan.setFont(&config.f2());
+    randomPan.setLabelString("Random Pan");
+
     //Editor
     ofAddListener(panSlider.clickedEvent, this, &ofApp::onSliderClicked);    
     ofAddListener(pitchSlider.clickedEvent, this, &ofApp::onSliderClicked);
     ofAddListener(gainSlider.clickedEvent, this, &ofApp::onSliderClicked);
+    ofAddListener(randomPan.clickedEvent, this, &ofApp::onCheckboxClicked);
 
     //Main
     ofAddListener(reverbSend.clickedEvent, this, &ofApp::onSliderClicked);
@@ -363,6 +374,9 @@ void ofApp::updateMainSliders()
 
     bool playRandom = scenes[config.activeSceneIdx]->sounds[config.activeSoundIdx]->soundPlayer.isPlayingRandom();
     randomPlayback.isActive = playRandom;
+
+    bool panRandom = scenes[config.activeSceneIdx]->sounds[config.activeSoundIdx]->soundPlayer.isRandomPan();
+    randomPan.isActive = panRandom;
 }
 
 //--------------------------------------------------------------
@@ -409,6 +423,11 @@ void  ofApp::onCheckboxClicked(Interactive::ClickArgs& args)
         randomPlayback.bActivate = false;
         randomPlayback.isActive = !randomPlayback.isActive;
         scenes[config.activeSceneIdx]->sounds[config.activeSoundIdx]->soundPlayer.setRandomPlayback(randomPlayback.isActive);
+    }
+    if (randomPan.bActivate) {
+        randomPan.bActivate = false;
+        randomPan.isActive = !randomPan.isActive;
+        scenes[config.activeSceneIdx]->sounds[config.activeSoundIdx]->soundPlayer.setRandomPan(randomPan.isActive);
     }
 }
 
@@ -487,6 +506,13 @@ void ofApp::update(){
         if(randomPlayback.bActivate) {
             randomPlayback.bActivate = false;
             randomPlayback.isActive = !randomPlayback.isActive;
+        }
+    }
+    if (pageState == EDIT)
+    {
+        if (randomPan.bActivate) {
+            randomPan.bActivate = false;
+            randomPan.isActive = !randomPan.isActive;
         }
     }
 
@@ -685,6 +711,7 @@ void ofApp::enableEditorMode()
 {
     gainSlider.enableEvents();
     pitchSlider.enableEvents();
+    randomPan.enableEvents();
     randomPlayback.disableEvents();
     config.activeSampleIdx = 0;
     updateEditSliders();
@@ -697,6 +724,7 @@ void ofApp::disableEditorMode()
 {
     gainSlider.disableEvents();
     pitchSlider.disableEvents();
+    randomPan.disableEvents();
     randomPlayback.enableEvents();
     scenes[config.activeSceneIdx]->sounds[config.activeSoundIdx]->disableEditorMode();
 }
@@ -903,6 +931,7 @@ void ofApp::renderEditPage() {
     panSlider.render();
     pitchSlider.render();
     gainSlider.render();
+    randomPan.render();
 }
 
 //--------------------------------------------------------------

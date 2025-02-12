@@ -7,9 +7,9 @@ bin/libfmod.so
 bin/feedra_debug.pdb
 bin/*.dll
 bin/openal-info.exe
-feedra.sln
-feedra.vcxproj
-feedra.vcxproj.filters
+#feedra.sln
+#feedra.vcxproj
+#feedra.vcxproj.filters
 feedra.vcxproj.user
 includes/
 #libs/
@@ -18,3 +18,11 @@ obj/
 .vs/
 icon.rc
 feedra.qbs.user
+#Windows
+.idea/
+bin/feedra.exe.orig
+bin/feedra.instr.pdb
+bin/feedra.pdb
+bin/feedra_debug.exe.orig
+bin/feedra_debug.instr.pdb
+

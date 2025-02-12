@@ -1,0 +1,207 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <ClCompile Include="src\ofApp.cpp">
+      <Filter>src</Filter>
+    </ClCompile>
+    <ClCompile Include="src\main.cpp">
+      <Filter>src</Filter>
+    </ClCompile>
+    <ClCompile Include="src\AppConfig.cpp">
+      <Filter>src</Filter>
+    </ClCompile>
+    <ClCompile Include="src\AudioSample.cpp">
+      <Filter>src</Filter>
+    </ClCompile>
+    <ClCompile Include="src\DialogUtils.cpp">
+      <Filter>src</Filter>
+    </ClCompile>
+    <ClCompile Include="src\OpenALSoundPlayer.cpp">
+      <Filter>src</Filter>
+    </ClCompile>
+    <ClCompile Include="src\Scene.cpp">
+      <Filter>src</Filter>
+    </ClCompile>
+    <ClCompile Include="src\SoundObject.cpp">
+      <Filter>src</Filter>
+    </ClCompile>
+    <ClCompile Include="src\SoundPlayer.cpp">
+      <Filter>src</Filter>
+    </ClCompile>
+    <ClCompile Include="src\UI\AddScene.cpp">
+      <Filter>src\UI</Filter>
+    </ClCompile>
+    <ClCompile Include="src\UI\CheckBox.cpp">
+      <Filter>src\UI</Filter>
+    </ClCompile>
+    <ClCompile Include="src\UI\DeleteScene.cpp">
+      <Filter>src\UI</Filter>
+    </ClCompile>
+    <ClCompile Include="src\UI\Interactive.cpp">
+      <Filter>src\UI</Filter>
+    </ClCompile>
+    <ClCompile Include="src\UI\LoadButton.cpp">
+      <Filter>src\UI</Filter>
+    </ClCompile>
+    <ClCompile Include="src\UI\Looper.cpp">
+      <Filter>src\UI</Filter>
+    </ClCompile>
+    <ClCompile Include="src\UI\PlayBar.cpp">
+      <Filter>src\UI</Filter>
+    </ClCompile>
+    <ClCompile Include="src\UI\PlayButton.cpp">
+      <Filter>src\UI</Filter>
+    </ClCompile>
+    <ClCompile Include="src\UI\PlayScene.cpp">
+      <Filter>src\UI</Filter>
+    </ClCompile>
+    <ClCompile Include="src\UI\SimpleSlider.cpp">
+      <Filter>src\UI</Filter>
+    </ClCompile>
+    <ClCompile Include="src\UI\StopButton.cpp">
+      <Filter>src\UI</Filter>
+    </ClCompile>
+    <ClCompile Include="src\UI\TextInputField.cpp">
+      <Filter>src\UI</Filter>
+    </ClCompile>
+    <ClCompile Include="src\main.cpp">
+      <Filter>src</Filter>
+    </ClCompile>
+    <ClCompile Include="src\ofApp.cpp">
+      <Filter>src</Filter>
+    </ClCompile>
+    <ClCompile Include="src\kissFFT\kfc.c">
+      <Filter>src\KissFFT</Filter>
+    </ClCompile>
+    <ClCompile Include="src\kissFFT\kiss_fft.c">
+      <Filter>src\KissFFT</Filter>
+    </ClCompile>
+    <ClCompile Include="src\kissFFT\kiss_fftnd.c">
+      <Filter>src\KissFFT</Filter>
+    </ClCompile>
+    <ClCompile Include="src\kissFFT\kiss_fftndr.c">
+      <Filter>src\KissFFT</Filter>
+    </ClCompile>
+    <ClCompile Include="src\kissFFT\kiss_fftr.c">
+      <Filter>src\KissFFT</Filter>
+    </ClCompile>
+    <ClCompile Include="src\UI\NumberBox.cpp">
+      <Filter>src\UI</Filter>
+    </ClCompile>
+    <ClCompile Include="src\UI\Button.cpp">
+      <Filter>src\UI</Filter>
+    </ClCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <Filter Include="src">
+      <UniqueIdentifier>{d8376475-7454-4a24-b08a-aac121d3ad6f}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="src\UI">
+      <UniqueIdentifier>{B039A360--FD2-F-47-18-9-692-C440BA2A139A}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="src\KissFFT">
+      <UniqueIdentifier>{240c4c3b-123c-4bfc-bf4c-e2c70f0d66fe}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="src\ofApp.h">
+      <Filter>src</Filter>
+    </ClInclude>
+    <ClInclude Include="src\AppConfig.h">
+      <Filter>src</Filter>
+    </ClInclude>
+    <ClInclude Include="src\AudioSample.h">
+      <Filter>src</Filter>
+    </ClInclude>
+    <ClInclude Include="src\DialogUtils.h">
+      <Filter>src</Filter>
+    </ClInclude>
+    <ClInclude Include="src\OpenALSoundPlayer.h">
+      <Filter>src</Filter>
+    </ClInclude>
+    <ClInclude Include="src\Scene.h">
+      <Filter>src</Filter>
+    </ClInclude>
+    <ClInclude Include="src\SoundObject.h">
+      <Filter>src</Filter>
+    </ClInclude>
+    <ClInclude Include="src\SoundPlayer.h">
+      <Filter>src</Filter>
+    </ClInclude>
+    <ClInclude Include="src\UI\AddScene.h">
+      <Filter>src\UI</Filter>
+    </ClInclude>
+    <ClInclude Include="src\UI\CheckBox.h">
+      <Filter>src\UI</Filter>
+    </ClInclude>
+    <ClInclude Include="src\UI\DeleteScene.h">
+      <Filter>src\UI</Filter>
+    </ClInclude>
+    <ClInclude Include="src\UI\Interactive.h">
+      <Filter>src\UI</Filter>
+    </ClInclude>
+    <ClInclude Include="src\UI\LoadButton.h">
+      <Filter>src\UI</Filter>
+    </ClInclude>
+    <ClInclude Include="src\UI\Looper.h">
+      <Filter>src\UI</Filter>
+    </ClInclude>
+    <ClInclude Include="src\UI\PlayBar.h">
+      <Filter>src\UI</Filter>
+    </ClInclude>
+    <ClInclude Include="src\UI\PlayButton.h">
+      <Filter>src\UI</Filter>
+    </ClInclude>
+    <ClInclude Include="src\UI\PlayScene.h">
+      <Filter>src\UI</Filter>
+    </ClInclude>
+    <ClInclude Include="src\UI\SimpleSlider.h">
+      <Filter>src\UI</Filter>
+    </ClInclude>
+    <ClInclude Include="src\UI\StopButton.h">
+      <Filter>src\UI</Filter>
+    </ClInclude>
+    <ClInclude Include="src\UI\TextInputField.h">
+      <Filter>src\UI</Filter>
+    </ClInclude>
+    <ClInclude Include="src\UI\TextInputFieldFontRenderer.h">
+      <Filter>src\UI</Filter>
+    </ClInclude>
+    <ClInclude Include="src\ofApp.h">
+      <Filter>src</Filter>
+    </ClInclude>
+    <ClInclude Include="src\kissFFT\kfc.h">
+      <Filter>src\KissFFT</Filter>
+    </ClInclude>
+    <ClInclude Include="src\kissFFT\kiss_fft.h">
+      <Filter>src\KissFFT</Filter>
+    </ClInclude>
+    <ClInclude Include="src\kissFFT\kiss_fft_log.h">
+      <Filter>src\KissFFT</Filter>
+    </ClInclude>
+    <ClInclude Include="src\kissFFT\kiss_fftnd.h">
+      <Filter>src\KissFFT</Filter>
+    </ClInclude>
+    <ClInclude Include="src\kissFFT\kiss_fftndr.h">
+      <Filter>src\KissFFT</Filter>
+    </ClInclude>
+    <ClInclude Include="src\kissFFT\kiss_fftr.h">
+      <Filter>src\KissFFT</Filter>
+    </ClInclude>
+    <ClInclude Include="src\kissFFT\kissfft.hh">
+      <Filter>src\KissFFT</Filter>
+    </ClInclude>
+    <ClInclude Include="src\kissFFT\_kiss_fft_guts.h">
+      <Filter>src\KissFFT</Filter>
+    </ClInclude>
+    <ClInclude Include="src\UI\NumberBox.h">
+      <Filter>src\UI</Filter>
+    </ClInclude>
+    <ClInclude Include="src\UI\Button.h">
+      <Filter>src\UI</Filter>
+    </ClInclude>
+  </ItemGroup>
+  <ItemGroup>
+    <ResourceCompile Include="icon.rc" />
+  </ItemGroup>
+</Project>

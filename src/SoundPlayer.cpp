@@ -78,6 +78,9 @@ void SoundPlayer::update()
             } else {
                 curSound++;
             }
+            if (bRandomPan) {
+                player[curSound]->setPan(ofRandomf());
+            }
             recalculateDelay(curSound);
             setPaused(false);
             cout << "play new sound: " << curSound << " ID = " << id << endl;

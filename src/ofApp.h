@@ -73,6 +73,7 @@ class ofApp : public ofBaseApp {
         SimpleSlider panSlider;
         SimpleSlider gainSlider;
         SimpleSlider pitchSlider;      
+        CheckBox randomPan;
 
         bool bDoRender;
         bool bLoadScenes;

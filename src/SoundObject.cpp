@@ -233,6 +233,9 @@ void SoundObject::load(string newpath)
                             float pitch = samples["sample-"+ofToString(i)]["pitch"];                            
                             float gain = samples["sample-"+ofToString(i)]["gain"];
                             float pan = samples["sample-"+ofToString(i)]["pan"];
+                            if (!samples["sample-" + ofToString(i)]["panrandom"].empty()) {
+                                bool panrandom = samples["sample-" + ofToString(i)]["panrandom"];
+                            }
 
                             if(i > (int)soundPlayer.player.size()-1) {
                                 AudioSample* s = new AudioSample();
