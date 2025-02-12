@@ -6,6 +6,7 @@ AppConfig::AppConfig()
     activeSceneIdx = 0;
     prevSceneIdx = 0;
     activeSoundIdx = 0;
+
     baseSceneOffset = 0;
     gridHeight = 0;
     gridWidth = 0;
@@ -55,5 +56,6 @@ void AppConfig::setup()
     masterVolume = 1.0f;
     masterFade = 1.0f;
 
+    activeSample = 0;
     activeSampleIdx = 0;
 }

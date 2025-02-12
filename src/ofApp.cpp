@@ -404,6 +404,7 @@ void ofApp::updateEditSliders()
 //--------------------------------------------------------------
 void ofApp::onSoundObjectClicked(size_t& id)
 {
+
     ofLogNotice() << "SoundObject id: " << id << " clicked";
     updateMainSliders();
 }
@@ -411,8 +412,16 @@ void ofApp::onSoundObjectClicked(size_t& id)
 //--------------------------------------------------------------
 void ofApp::onSampleClicked(int& id)
 {
-    ofLogNotice() << "sample clicked: " << id;
-    config.activeSampleIdx = id;
+    //ofLogNotice() << "sample clicked: " << id;
+    config.activeSample = id;
+
+    for(unsigned int i =0; i < scenes[config.activeSceneIdx]->sounds.size();i++) {
+        if(config.activeSample == scenes[config.activeSceneIdx]->sounds[i]->id) {
+            config.activeSampleIdx = i;
+            break;
+        }
+    }
+
     updateEditSliders();    
 }
 
@@ -548,7 +557,6 @@ void ofApp::update(){
 
     for(size_t i=0; i < scenes.size();i++) {
          if(scenes[i]->selectScene) {
-            //cout << "found selected scene" << endl;
             scenes[i]->selectScene = false;
             enableScene(i);
          }

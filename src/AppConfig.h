@@ -39,15 +39,17 @@ public:
     int baseSceneOffset;
     int scene_yoffset;
     int sample_gui_width;
+
+    string last_path;
     bool loopByDefault;
-    int activeScene;
+
     unsigned int max_scenes;
+    int activeScene;
     size_t activeSceneIdx;
     size_t prevSceneIdx;
     size_t activeSoundIdx;
     size_t activeSampleIdx;
-    //size_t activeSample;
-    string last_path;
+    size_t activeSample;
 
     ofImage loopicon;
     ofJson settings;

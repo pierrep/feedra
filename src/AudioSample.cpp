@@ -81,7 +81,7 @@ void AudioSample::render(ofVec3f pos)
         ofSetColor(255);
     }
     ofDrawRectRounded(pos, config->sample_gui_width*audioPlayer->getPosition(),35*config->y_scale,config->x_scale*5);
-    if(config->activeSampleIdx == id) {
+    if(config->activeSample == id) {
         ofNoFill();
         ofSetColor(255,0,0);
         ofSetLineWidth(2*config->x_scale);
@@ -118,7 +118,8 @@ void AudioSample::disableEditorMode()
 void AudioSample::onClicked(ClickArgs& args) {
     if(!bEditorMode) return;
 
-    ofLogNotice() << "Clicked " << id << " AudioSample: " << sample_path;
+   //ofLogNotice() << "Clicked " << id << " AudioSample: " << sample_path;
+    config->activeSample = id;
 
     ofNotifyEvent(clickedSampleEvent,  id);
 }
