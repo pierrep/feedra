@@ -3,7 +3,6 @@
 #include "AppConfig.h"
 #include "Scene.h"
 #include "UI/Interactive.h"
-#include "UI/AddScene.h"
 #include "UI/SimpleSlider.h"
 #include "UI/CheckBox.h"
 #include "UI/NumberBox.h"
@@ -58,7 +57,7 @@ class ofApp : public ofBaseApp {
 
         int pages[3];
         vector<Scene*> scenes;
-        AddScene* addScene;
+        Button* addScene;
         int maxScenes;
         AppConfig config;
         SimpleSlider mainVolume;

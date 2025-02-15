@@ -39,43 +39,23 @@ void NumberBox::setup(AppConfig* _config, int _id, int _x, int _y)
 
     ofAddListener(textBox.onTextChange, this, &NumberBox::onTextChanged);
 
-    std::function<void()> renderFunc = [this]() -> void
-    {
-        ofSetHexColor(0x81bbe1);
-        ofFill();
-        ofDrawRectRounded(decButton.getX(),decButton.getY(),decButton.getWidth(), decButton.getHeight(),5*config->x_scale);
-        ofSetColor(64);
-        float x = decButton.getX() + decButton.width/2.0f - config->f1().stringWidth("-")/2.0f;
-        float y = decButton.getY() + decButton.getHeight()/2.0f + config->f1().stringHeight("+")/2.0f;
-        config->f1().drawString("-",x,y);
-    };
-
     ofAddListener(decButton.clickedEvent, this, &NumberBox::onClicked);
     decButton.id = 1;
+    decButton.setConfig(config);
+    decButton.buttonType = ButtonType::MINUS;
     decButton.width = 30*config->x_scale;
     decButton.height = 30*config->y_scale;
     decButton.x = _x* config->x_scale - decButton.width - 5*config->x_scale;
     decButton.y = _y* config->y_scale;
-    decButton.setup(renderFunc);
-
-    std::function<void()> renderFunc2 = [this]() -> void
-    {
-        ofSetHexColor(0x81bbe1);
-        ofFill();
-        ofDrawRectRounded(incButton.getX(),incButton.getY(),incButton.getWidth(), incButton.getHeight(),5*config->x_scale);
-        ofSetColor(64);
-        float x = incButton.getX()+incButton.width/2.0f - config->f1().stringWidth("+")/2.0f;
-        float y = incButton.getY() + incButton.getHeight()/2.0f + config->f1().stringHeight("+")/2.0f;
-        config->f1().drawString("+",x,y);
-    };
 
     ofAddListener(incButton.clickedEvent, this, &NumberBox::onClicked);
     incButton.id = 2;
+    incButton.setConfig(config);
+    incButton.buttonType = ButtonType::PLUS;
     incButton.width = 30*config->x_scale;
     incButton.height = 30*config->y_scale;
     incButton.x = _x* config->x_scale + textBox.bounds.getWidth() + 5*config->x_scale;
     incButton.y = _y* config->y_scale;
-    incButton.setup(renderFunc2);
 }
 
 //--------------------------------------------------------------
@@ -228,7 +208,7 @@ void NumberBox::render()
         }
     }
 
-    decButton.render();
+    decButton.draw();
 
     ofPushStyle();
 
@@ -265,5 +245,5 @@ void NumberBox::render()
     textBox.draw();
     ofPopStyle();
 
-    incButton.render();
+    incButton.draw();
 }

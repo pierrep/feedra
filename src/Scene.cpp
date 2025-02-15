@@ -42,9 +42,9 @@ void Scene::setup(string newpath)
         sounds[i]->load(newpath);
     }
 
-    play_button.setup(config);
-    delete_scene.setup(config);
-    stop_button.setup();
+    //play_button.setConfig(config);
+    //delete_scene.setup(config);
+    //stop_button.setup();
     textfield.setUseListeners(true);
 }
 
@@ -60,19 +60,9 @@ Scene::Scene(AppConfig* _config, string name, int _id, int _activeSoundIdx, int 
     setWidth(_w);
     setHeight(_h);
 
-    updatePosition(_x,_y);
-
-    play_button.id = id;
-    play_button.setWidth(20 * config->x_scale);
-    play_button.setHeight(20 * config->y_scale);
-
-    delete_scene.id = id;
-    delete_scene.setWidth(20 * config->x_scale);
-    delete_scene.setHeight(20 * config->y_scale);
-
-    stop_button.id = id;
-    stop_button.setWidth(20 * config->x_scale);
-    stop_button.setHeight(20 * config->y_scale);
+    play_button.setup(config,id,0,0,20 * config->x_scale, 20 * config->y_scale,ButtonType::PLAY_SCENE);
+    delete_scene.setup(config,id,0,0,20 * config->x_scale, 20 * config->y_scale,ButtonType::DELETE_SCENE);
+    stop_button.setup(config, id, 0, 0, 20 * config->x_scale, 20 * config->y_scale,ButtonType::STOP_SCENE);
 
     scene_name = "Scene "+ofToString(id+1);
     if(strcmp(name.c_str(),"")== 0) {
@@ -83,6 +73,8 @@ Scene::Scene(AppConfig* _config, string name, int _id, int _activeSoundIdx, int 
 
     textfield.setFont(config->f2());
     textfield.disable();
+
+    updatePosition(_x,_y);
 
     selectScene = false;
     isPlaying = false;
@@ -126,7 +118,7 @@ void Scene::updatePosition(int _x, int _y)
 void Scene::onClicked(ClickArgs& args) {
     if(!bInteractive) return;
 
-    ofLogNotice() << "Scene id: " << id << " clicked";    
+    //ofLogNotice() << "Scene id: " << id << " clicked";
     if(config->activeScene != id) {
         config->activeScene = id;
         selectScene = true;
@@ -166,12 +158,12 @@ void Scene::render()
          }
     }
     if(config->activeScene == id || filePlaying) {
-        play_button.render();
+        play_button.draw();
     }    
 
     if(config->activeScene == id) {
-        delete_scene.render();
-        stop_button.render(true,1.0f);
+        delete_scene.draw();
+        stop_button.draw();
     }
 
     if(config->activeScene == id) {
@@ -241,7 +233,7 @@ void Scene::update()
 {
     activeSoundIdx = config->activeSoundIdx;
 
-    if(play_button.doPlay) {
+    if(play_button.bActivate) {
         if(isPlaying) {
             isPlaying = false;
             pause();
@@ -249,15 +241,15 @@ void Scene::update()
             isPlaying = true;
             play();
         }
-        play_button.doPlay = false;       
+        play_button.bActivate = false;
     }
 
-    if(stop_button.doStop)
+    if(stop_button.bActivate)
     {
-        stop_button.doStop = false;
+        stop_button.bActivate = false;
         isPlaying = false;
         stop();
-        play_button.isPlaying = false;
+        play_button.bIsActive = false;
     }
 
     if(isFading) {

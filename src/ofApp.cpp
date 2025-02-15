@@ -351,8 +351,8 @@ void ofApp::setup(){
     }
 
     // setup Add Scene button
-    addScene = new AddScene(&config,config.baseSceneOffset, scenes[maxScenes-1]->y + config.scene_spacing,config.scene_height,config.scene_height);
-    addScene->setup();
+    addScene = new Button(&config,3,config.baseSceneOffset, scenes[maxScenes-1]->y + config.scene_spacing,config.scene_height,config.scene_height,ButtonType::ADD_SCENE);
+    //addScene = new AddScene(&config,config.baseSceneOffset, scenes[maxScenes-1]->y + config.scene_spacing,config.scene_height,config.scene_height);
 
     bLoading = true;
     bLoadingScenes = true;
@@ -569,12 +569,12 @@ void ofApp::update(){
     }
 
     //Add scene
-    if(addScene->doAddScene) {
+    if(addScene->bActivate) {
         addNewScene();
     }
 
     //Delete scene
-    if(scenes[config.activeSceneIdx]->delete_scene.doDeleteScene)
+    if(scenes[config.activeSceneIdx]->delete_scene.bActivate)
     {
         deleteScene();
     }
@@ -584,7 +584,7 @@ void ofApp::update(){
 //--------------------------------------------------------------
 void ofApp::addNewScene()
 {
-    addScene->doAddScene = false;
+    addScene->bActivate = false;
 
     int x = config.baseSceneOffset;
     int y = scenes.size() * config.scene_spacing + config.scene_yoffset;
@@ -645,7 +645,7 @@ void ofApp::addNewScene()
 //--------------------------------------------------------------
 void ofApp::deleteScene()
 {
-    scenes[config.activeSceneIdx]->delete_scene.doDeleteScene = false;
+    scenes[config.activeSceneIdx]->delete_scene.bActivate = false;
 
     string scene_name = scenes[config.activeSceneIdx]->scene_name;
     string response = ofSystemTextBoxDialog("Are you sure you want to delete "+scene_name+"? Type 'yes' to delete", "no");
@@ -905,10 +905,7 @@ void ofApp::renderMainPage()
     }
 
     if(scenes.size() < config.max_scenes) {
-        addScene->render(0x7b2800);
-    } else {
-        //change addScene button if max scenes reached
-        //addScene->render(0x404040);
+        addScene->draw();
     }
 
     // Current selected sound info

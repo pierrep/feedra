@@ -3,7 +3,7 @@
 #include "AppConfig.h"
 #include "SoundObject.h"
 #include "UI/Interactive.h"
-#include "UI/PlayScene.h"
+#include "UI/Button.h"
 #include "UI/DeleteScene.h"
 #include "UI/StopButton.h"
 
@@ -29,16 +29,15 @@ public:
     void disableInteractivity();
     void endFade();
 
-    //int id;
     bool selectScene;
     bool isPlaying;
     int activeSoundIdx;
     AppConfig* config;
 
     string scene_name;
-    PlayScene play_button;    
-    DeleteScene delete_scene;
-    StopButton stop_button;
+    Button play_button;
+    Button delete_scene;
+    Button stop_button;
     vector<SoundObject*> sounds;
     TextInputField textfield;
 
