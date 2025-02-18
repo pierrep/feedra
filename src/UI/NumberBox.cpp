@@ -107,6 +107,8 @@ void NumberBox::onTextChanged(string& args) {
 
 //--------------------------------------------------------------
 void NumberBox::onClicked(ClickArgs& args) {
+    if(!bEventsEnabled) return;
+
     //ofLogNotice() << "NumberBox id: " << args.id << " clicked";
     clickTime = ofGetElapsedTimeMillis();
 

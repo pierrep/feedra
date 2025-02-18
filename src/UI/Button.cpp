@@ -71,6 +71,8 @@ void Button::setup(AppConfig* _config, int _id, int _x, int _y, int _w, int _h, 
 
 //--------------------------------------------------------------
 void Button::onClicked(ClickArgs& args) {
+    if(!bEventsEnabled) return;
+
     //ofLogNotice() << "Button id: " << id << " clicked";
     bActivate = true;
     bIsActive = !bIsActive;

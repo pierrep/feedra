@@ -761,10 +761,16 @@ void ofApp::disableEvents()
 //--------------------------------------------------------------
 void ofApp::enableEditorMode()
 {
+    // Main page
+    mainVolume.disableEvents();
+    reverbSend.disableEvents();
+    randomPlayback.disableEvents();
+
+    //Edit Page
     gainSlider.enableEvents();
     pitchSlider.enableEvents();
     randomPan.enableEvents();
-    randomPlayback.disableEvents();
+
     config.activeSampleIdx = 0;
     config.activeSample = scenes[config.activeSceneIdx]->sounds[config.activeSoundIdx]->soundPlayer.player[0]->id;
     updateEditSliders();
@@ -775,10 +781,16 @@ void ofApp::enableEditorMode()
 //--------------------------------------------------------------
 void ofApp::disableEditorMode()
 {
+    //Main page
+    mainVolume.enableEvents();
+    reverbSend.enableEvents();
+    randomPlayback.enableEvents();
+
+    //Edit Page
     gainSlider.disableEvents();
     pitchSlider.disableEvents();
     randomPan.disableEvents();
-    randomPlayback.enableEvents();
+
     scenes[config.activeSceneIdx]->sounds[config.activeSoundIdx]->disableEditorMode();
 }
 

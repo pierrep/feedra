@@ -55,15 +55,12 @@ void SimpleSlider::setup(int _id,float _x, float _y, float _w, float _h, float l
 void SimpleSlider::enableEvents()
 {
     //ofLogNotice() << " Enable slider events, id = " << id;
-    //ofAddListener(ofEvents().draw, this, &SimpleSlider::draw);
-
     bEventsEnabled = true;
 }
 
 void SimpleSlider::disableEvents()
 {
     //ofLogNotice() << " Disable slider events, id = " << id;
-    //ofRemoveListener(ofEvents().draw, this, &SimpleSlider::draw);
     bEventsEnabled = false;
 }
 
@@ -205,9 +202,11 @@ void SimpleSlider::setNumberDisplayPrecision(int prec){
 		
 //----------------------------------------------------
 void SimpleSlider::mouseMoved(ofMouseEventArgs& event){
+    if(!bEventsEnabled) return;
 	bHasFocus = false;
 }
 void SimpleSlider::mouseDragged(ofMouseEventArgs& event){
+    if(!bEventsEnabled) return;
 	if (bHasFocus){
 		updatePercentFromMouse (event.x, event.y); 
         SliderData d;
@@ -217,6 +216,7 @@ void SimpleSlider::mouseDragged(ofMouseEventArgs& event){
 	}
 }
 void SimpleSlider::mousePressed(ofMouseEventArgs& event){
+    if(!bEventsEnabled) return;
 	bHasFocus = false;
 	if (box.inside(event.x, event.y)){
 		bHasFocus = true;
@@ -228,6 +228,7 @@ void SimpleSlider::mousePressed(ofMouseEventArgs& event){
 	}
 }
 void SimpleSlider::mouseReleased(ofMouseEventArgs& event){
+    if(!bEventsEnabled) return;
 	if (bHasFocus){
 		if (box.inside(event.x, event.y)){
 			updatePercentFromMouse (event.x, event.y); 

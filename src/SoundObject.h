@@ -39,8 +39,6 @@ public:
     void enableEditorMode();
     void disableEditorMode();
 
-    //int id;
-
     //Globals    
     AppConfig* config;
     SoundPlayer soundPlayer;
@@ -65,9 +63,8 @@ public:
 
     int sample_rate;
     int channels;
-    //float pan;
-    float reverbSend;
 
+    float reverbSend;
     float fadeVolume;
 
     static ofEvent<size_t> clickedObjectEvent;

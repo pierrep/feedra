@@ -1,10 +1,13 @@
 #include "ofMain.h"
 #include "ofApp.h"
+#include "ofAppGLFWWindow.h"
+#include "GLFW/glfw3.h"
 
 //========================================================================
 int main( ){
     //ofSetLogLevel(OF_LOG_VERBOSE);
-
+    glfwWindowHintString(GLFW_X11_CLASS_NAME, "FEEDRA");
+    glfwWindowHintString(GLFW_X11_INSTANCE_NAME, "Feedra");
 #ifdef OF_TARGET_OPENGLES
     ofGLESWindowSettings settings;
     settings.glesVersion=2;
@@ -16,7 +19,7 @@ int main( ){
 #endif
     ofCreateWindow(settings);
     //(GLFWwindow*)ofGetWindowPtr()->setWindowIcon();
-#ifdef TARGET_LINUX
+#ifdef TARGET_LINUX    
     ofAppGLFWWindow* win;
     win = dynamic_cast<ofAppGLFWWindow *> (ofGetWindowPtr());
     win->setWindowIcon("feedra.png");
