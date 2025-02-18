@@ -7,7 +7,7 @@ enum ButtonType {
     NONE = 0,
     MINUS,
     PLUS,
-    ADD_SCENE,
+    ADD,
     PLAY_SCENE,
     STOP_SCENE,
     DELETE_SCENE,
@@ -23,6 +23,9 @@ public:
     Button(AppConfig* config, int _id, int _x, int _y, int _w, int _h, ButtonType _type);
     void setup(AppConfig* config, int _id, int _x, int _y, int _w, int _h, ButtonType _type);
     void setConfig(AppConfig* _config) {config = _config;}
+    void setBorder(bool value) {bBorder = value;}
+    void setPrimaryColour(int hexColour) {colour1 = hexColour;}
+    void setSecondaryColour(int hexColour) {colour2 = hexColour;}
     void draw();
     void onClicked(ClickArgs& args);
 
@@ -30,7 +33,10 @@ public:
     bool bIsActive;
     ButtonType buttonType;
 
- private:
+ protected:
     AppConfig* config;
+    bool bBorder;
+    int colour1;
+    int colour2;
 
 };

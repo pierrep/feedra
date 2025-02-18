@@ -73,10 +73,12 @@ class ofApp : public ofBaseApp {
         SimpleSlider gainSlider;
         SimpleSlider pitchSlider;      
         CheckBox randomPan;
+        Button* addSample;
 
         bool bDoRender;
         bool bLoadScenes;
         bool bClearPad;
+        bool bClearSample;
 
         long int curAppTime;
         long int prevAppTime;

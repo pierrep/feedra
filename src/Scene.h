@@ -4,8 +4,6 @@
 #include "SoundObject.h"
 #include "UI/Interactive.h"
 #include "UI/Button.h"
-#include "UI/DeleteScene.h"
-#include "UI/StopButton.h"
 
 class Scene: public Interactive
 {

@@ -34,7 +34,8 @@ public:
     void enableAllEvents();
     void onDragEvent(ofDragInfo &args);
     void setupSound(string path);
-    bool loadPadSound(int idx, std::string filepath, bool firstLoad);
+    bool loadSingleSound(std::string filepath, bool bClearSounds);
+    void loadMultipleSounds(vector<string>& filePaths,bool bClearSounds);
     void enableEditorMode();
     void disableEditorMode();
 

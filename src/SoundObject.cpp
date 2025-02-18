@@ -350,55 +350,71 @@ void SoundObject::save()
 void SoundObject::onDragEvent(ofDragInfo &args)
 {
     if(inside(args.position) && (config->activeScene == scene_id)) {
-        bool bLoaded = false;
-        bool bFirstLoad = true;
-        int idx = 0;
-        for(int i = 0; i < args.files.size();i++) {
-            bLoaded = loadPadSound(idx,args.files[i],bFirstLoad);
-            if(bLoaded) {
-                bFirstLoad = false;
-                idx++;
-            }
-        }
-        if(bLoaded) {
-            //set name to first file
-            filesystem::path s(args.files[0]);
-            soundname.text = s.stem().string();
-            config->activeSoundIdx = id;
-        }
+        loadMultipleSounds(args.files,true);
     }
 }
 
-bool SoundObject::loadPadSound(int idx, std::string filepath, bool firstLoad)
+//--------------------------------------------------------------
+void SoundObject::loadMultipleSounds(vector<string>& filePaths, bool bClearSounds)
+{
+    bool bLoaded = false;
+    for(int i = 0; i < filePaths.size();i++) {
+        bLoaded = loadSingleSound(filePaths.at(i),bClearSounds);
+        if(bLoaded) {
+            bClearSounds = false;
+        }
+    }
+    if(bLoaded) {
+        if(soundname.text.empty()) {
+            //set name to first file
+            filesystem::path s(filePaths.at(0));
+            soundname.text = s.stem().string();
+            soundname.enable();
+        }
+        config->activeSoundIdx = id;
+    }
+}
+
+//--------------------------------------------------------------
+bool SoundObject::loadSingleSound(std::string filepath, bool bClearSounds)
 {
     ofLogNotice() << "Loaded file onto pad: "<< id << " " << filepath;
     string path = filepath;
     OpenALSoundPlayer p;
     bool bIsAudio = p.load(path, isStream);
-    bool bFirstLoad = firstLoad;
     if(bIsAudio) {
         p.unload();
-        if(bFirstLoad) {
+        if(bClearSounds) {
             soundPlayer.stop();
             soundPlayer.close();
             soundpath.clear();
-            bFirstLoad = false;
+            bClearSounds = false;
         }
-        if(idx > (int)(soundPlayer.player.size()-1)) {
-            AudioSample* s = new AudioSample();
-            s->audioPlayer = new OpenALSoundPlayer();
-            s->config = config;
-            s->id = soundPlayer.player.size();
-            s->setWidth(config->sample_gui_width);
-            s->setHeight(35*config->y_scale);
+
+        AudioSample* s = new AudioSample();
+        s->audioPlayer = new OpenALSoundPlayer();
+        s->config = config;
+
+        int maxid = 0;
+        for(int i=0; i < soundPlayer.player.size();i++) {
+            if(soundPlayer.player.at(i)->id > maxid) {
+                maxid = soundPlayer.player.at(i)->id;
+            }
+        }
+        s->id = maxid + 1;
+
+        s->setWidth(config->sample_gui_width);
+        s->setHeight(35*config->y_scale);
+        bool bLoaded = s->audioPlayer->load(path,isStream);
+        if(bLoaded) {            
+            s->setup();
+            s->sample_path = path;
             soundPlayer.player.push_back(s);
-        }
-        bool bLoaded = soundPlayer.load(path, idx, isStream);
-        if(bLoaded) {
             setupSound(path);
-            soundPlayer.player[idx]->setup();
-            soundPlayer.player[idx]->sample_path = path;
-            soundPlayer.recalculateDelay(idx);            
+            size_t idx = soundPlayer.player.size()-1;
+            soundPlayer.recalculateDelay(idx);
+        } else {
+            delete s;
         }
     }
     return bIsAudio;
@@ -461,30 +477,13 @@ void SoundObject::update()
     if(loader.doLoad) {
         ofFileDialogResultMulti result;    
         string path = config->getLibraryLocation();
-
-        if(config->last_path.compare("") != 0)
-        {
+        if(config->last_path.compare("") != 0){
             path = config->last_path;
         }
 
         result = ofSystemLoadDialogMulti("load files",false,true,path);
         if(result.bSuccess) {           
-            bool bLoaded = false;
-            bool bFirstLoad = true;
-            int idx = 0;
-            for(int i = 0; i < result.filePaths.size();i++) {
-                bLoaded = loadPadSound(idx,result.filePaths.at(i),bFirstLoad);
-                if(bLoaded) {
-                    bFirstLoad = false;
-                    idx++;
-                }
-            }
-            if(bLoaded) {
-                //set name to first file
-                filesystem::path s(result.filePaths.at(0));
-                soundname.text = s.stem().string();
-                config->activeSoundIdx = id;
-            }
+            loadMultipleSounds(result.filePaths,true);
         }
         loader.doLoad = false;
     }
@@ -567,9 +566,6 @@ void SoundObject::setupSound(string path)
     config->last_path = s.parent_path().string();
 
     soundPlayer.setLoop(looper.isLooping);
-
-    soundname.enable();
-    soundname.text = s.stem().string();
 
     sample_rate = soundPlayer.getSampleRate();
     channels = soundPlayer.getNumChannels();

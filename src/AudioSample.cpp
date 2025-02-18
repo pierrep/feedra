@@ -8,6 +8,7 @@ ofEvent<int> AudioSample::clickedSampleEvent;
 AudioSample::~AudioSample()
 {
     ofRemoveListener(this->clickedEvent, this, &AudioSample::onClicked);
+    //ofLogNotice() << "Deleted audiosample id: " << id;
 }
 AudioSample::AudioSample()
 {

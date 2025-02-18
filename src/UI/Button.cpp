@@ -5,6 +5,7 @@ Button::Button()
     id = 0;
     bActivate = false;
     bIsActive = false;
+    bBorder = false;
 }
 
 //--------------------------------------------------------------
@@ -105,18 +106,20 @@ void Button::draw()
             ofPopStyle();
             break;
         }
-    case ButtonType::ADD_SCENE:
+    case ButtonType::ADD:
     {
         ofPushStyle();
         ofFill();
-        ofSetHexColor(0x7b2800);
+        ofSetHexColor(colour1);
 
         ofDrawRectangle(getX()+getWidth()/4 - getWidth()/16,getY(),getWidth()/8, getHeight()/2);
         ofDrawRectangle(getX(),getY()+getHeight()/4 - getHeight()/16, getWidth()/2, getHeight()/8);
 
-        ofNoFill();
-        ofSetLineWidth(1);
-        ofDrawRectangle(getX(),getY(),getWidth()/2,getHeight()/2);
+        if(bBorder) {
+            ofNoFill();
+            ofSetLineWidth(1);
+            ofDrawRectangle(getX(),getY(),getWidth()/2,getHeight()/2);
+        }
 
         ofPopStyle();
         break;

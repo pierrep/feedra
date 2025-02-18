@@ -1,6 +1,6 @@
 #include "ofApp.h"
+#include "DialogUtils.h"
 #include "GLFW/glfw3.h"
-
 #include "AL/alext.h"
 
 bool ofApp::bMinimised = false;
@@ -263,6 +263,7 @@ void ofApp::setup(){
     bDoRender = true;
     bLoadScenes = false;
     bClearPad = false;
+    bClearSample = false;
     pageState = PageState::MAIN;
 
     config.setup();
@@ -285,7 +286,7 @@ void ofApp::setup(){
     reverbSend.setFont(&config.f2());
     reverbSend.setLabelString("Reverb send");
 
-    //Edit sliders
+    //Edit UI
     panSlider.setup(3,config.xoffset+800*config.x_scale,ofGetHeight() - 160*config.y_scale,200*config.x_scale,20*config.y_scale,-1,1,0,false,false);
     panSlider.setScale(config.y_scale, config.x_scale);
     panSlider.setFont(&config.f2());
@@ -302,6 +303,11 @@ void ofApp::setup(){
     gainSlider.setFont(&config.f2());
     gainSlider.setLabelString("Gain");
     gainSlider.disableEvents();
+
+    // setup Add sanole button
+    addSample = new Button(&config,3,config.xoffset, 40*config.y_scale,50*config.x_scale, 50*config.y_scale,ButtonType::ADD);
+    addSample->setPrimaryColour(0x7b2800);
+    addSample->setBorder(true);
 
     //Checkbox - Random Playback
     randomPlayback.setX(config.xoffset+600*config.x_scale);
@@ -351,8 +357,9 @@ void ofApp::setup(){
     }
 
     // setup Add Scene button
-    addScene = new Button(&config,3,config.baseSceneOffset, scenes[maxScenes-1]->y + config.scene_spacing,config.scene_height,config.scene_height,ButtonType::ADD_SCENE);
-    //addScene = new AddScene(&config,config.baseSceneOffset, scenes[maxScenes-1]->y + config.scene_spacing,config.scene_height,config.scene_height);
+    addScene = new Button(&config,3,config.baseSceneOffset, scenes[maxScenes-1]->y + config.scene_spacing,config.scene_height,config.scene_height,ButtonType::ADD);
+    addScene->setPrimaryColour(0x7b2800);
+    addScene->setBorder(true);
 
     bLoading = true;
     bLoadingScenes = true;
@@ -415,8 +422,8 @@ void ofApp::onSampleClicked(int& id)
     //ofLogNotice() << "sample clicked: " << id;
     config.activeSample = id;
 
-    for(unsigned int i =0; i < scenes[config.activeSceneIdx]->sounds.size();i++) {
-        if(config.activeSample == scenes[config.activeSceneIdx]->sounds[i]->id) {
+    for(unsigned int i =0; i < scenes[config.activeSceneIdx]->sounds[config.activeSoundIdx]->soundPlayer.player.size();i++) {
+        if(config.activeSample == scenes[config.activeSceneIdx]->sounds[config.activeSoundIdx]->soundPlayer.player[i]->id) {
             config.activeSampleIdx = i;
             break;
         }
@@ -519,9 +526,46 @@ void ofApp::update(){
     }
     if (pageState == EDIT)
     {
+        if(bClearSample)
+        {
+            scenes[config.activeSceneIdx]->sounds[config.activeSoundIdx]->soundPlayer.stop();
+            delete scenes[config.activeSceneIdx]->sounds[config.activeSoundIdx]->soundPlayer.player[config.activeSampleIdx];
+            vector<AudioSample *>::iterator itr;
+            itr = scenes[config.activeSceneIdx]->sounds[config.activeSoundIdx]->soundPlayer.player.begin();
+            scenes[config.activeSceneIdx]->sounds[config.activeSoundIdx]->soundPlayer.player.erase(itr + config.activeSampleIdx);
+            vector<string>::iterator itr2;
+            itr2 = scenes[config.activeSceneIdx]->sounds[config.activeSoundIdx]->soundpath.begin();
+            scenes[config.activeSceneIdx]->sounds[config.activeSoundIdx]->soundpath.erase(itr2+config.activeSampleIdx);
+
+            if(config.activeSampleIdx > 0) {
+                config.activeSampleIdx = config.activeSampleIdx-1;
+                int newid = scenes[config.activeSceneIdx]->sounds[config.activeSoundIdx]->soundPlayer.player[config.activeSampleIdx]->id;
+                config.activeSample = newid;
+            }
+            bClearSample = false;
+            if(scenes[config.activeSceneIdx]->sounds[config.activeSoundIdx]->soundPlayer.player.size() == 0)
+            {
+                //No samples left, lets clear this pad
+                bClearPad = true;
+            }
+        }
         if (randomPan.bActivate) {
             randomPan.bActivate = false;
             randomPan.isActive = !randomPan.isActive;
+        }
+        if(addSample->bActivate) {
+            ofFileDialogResultMulti result;
+            string path = config.getLibraryLocation();
+            if(config.last_path.compare("") != 0){
+                path = config.last_path;
+            }
+
+            result = ofSystemLoadDialogMulti("load files",false,true,path);
+            if(result.bSuccess) {
+                scenes[config.activeSceneIdx]->sounds[config.activeSoundIdx]->loadMultipleSounds(result.filePaths,false);
+            }
+            scenes[config.activeSceneIdx]->sounds[config.activeSoundIdx]->enableEditorMode();
+            addSample->bActivate = false;
         }
     }
 
@@ -722,6 +766,7 @@ void ofApp::enableEditorMode()
     randomPan.enableEvents();
     randomPlayback.disableEvents();
     config.activeSampleIdx = 0;
+    config.activeSample = scenes[config.activeSceneIdx]->sounds[config.activeSoundIdx]->soundPlayer.player[0]->id;
     updateEditSliders();
     scenes[config.activeSceneIdx]->sounds[config.activeSoundIdx]->enableEditorMode();
 
@@ -937,6 +982,7 @@ void ofApp::renderEditPage() {
     pitchSlider.render();
     gainSlider.render();
     randomPan.render();
+    addSample->draw();
 }
 
 //--------------------------------------------------------------
@@ -957,9 +1003,6 @@ void ofApp::keyPressed  (ofKeyEventArgs & args){
         disableEvents();
         ofExit();
     }
-    if((args.keycode == GLFW_KEY_D) && args.hasModifier(OF_KEY_CONTROL)){
-        bClearPad = true;
-    }
     if((args.keycode == GLFW_KEY_S) && args.hasModifier(OF_KEY_CONTROL)){
         ofFileDialogResult result = ofSystemSaveDialog("settings.json", "Save Feedra scenes");
         if(result.bSuccess) {
@@ -974,6 +1017,9 @@ void ofApp::keyPressed  (ofKeyEventArgs & args){
     }
 
     if(pageState == MAIN) {
+        if((args.keycode == GLFW_KEY_D) && args.hasModifier(OF_KEY_CONTROL)){
+            bClearPad = true;
+        }
         if(key == OF_KEY_UP)
         {
             if(config.activeSceneIdx > 0) {
@@ -993,6 +1039,9 @@ void ofApp::keyPressed  (ofKeyEventArgs & args){
     }
 
     if(pageState == EDIT) {
+        if((args.keycode == GLFW_KEY_D) && args.hasModifier(OF_KEY_CONTROL)){
+            bClearSample = true;
+        }
         if(key == OF_KEY_UP)
         {
             if(config.activeSampleIdx > 0) {
@@ -1086,6 +1135,7 @@ void ofApp::keyReleased(ofKeyEventArgs & args){
 
     if((key == 'd' || key == 'D') && args.hasModifier(OF_KEY_CONTROL)){
         bClearPad = false;
+        bClearSample = false;
     }
 }
 
