@@ -31,6 +31,8 @@ class ofApp : public ofBaseApp {
         void onSliderClicked(SliderData& args);
         void onCheckboxClicked(Interactive::ClickArgs& args);
         void onSoundObjectClicked(size_t& args);
+        void onSoundObjectDragged(size_t& args);
+        void onSoundObjectReleased(size_t& args);
         void onNumberChanged(NumberBoxData& args);
         void onSampleClicked(int& args);
         void updateMainSliders();
@@ -79,6 +81,8 @@ class ofApp : public ofBaseApp {
         bool bLoadScenes;
         bool bClearPad;
         bool bClearSample;
+        bool bDrawDragging;
+        int draggingStarted;
 
         long int curAppTime;
         long int prevAppTime;

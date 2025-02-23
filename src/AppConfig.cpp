@@ -6,11 +6,13 @@ AppConfig::AppConfig()
     activeSceneIdx = 0;
     prevSceneIdx = 0;
     activeSoundIdx = 0;
+    prevSoundIdx = 0;
 
     baseSceneOffset = 0;
     gridHeight = 0;
     gridWidth = 0;
     loopByDefault = false;
+    bDragging = false;
 }
 
 //--------------------------------------------------------------
@@ -40,6 +42,7 @@ void AppConfig::setup()
 
     activeScene = 0;
     activeSoundIdx = 0;
+    prevSoundIdx = 0;
 
     loopByDefault = false;
 

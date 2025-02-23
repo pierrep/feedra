@@ -4,6 +4,8 @@
 #define STRING_LIMIT 17
 
 ofEvent<size_t> SoundObject::clickedObjectEvent;
+ofEvent<size_t> SoundObject::releasedObjectEvent;
+ofEvent<size_t> SoundObject::draggedObjectEvent;
 
 //--------------------------------------------------------------
 SoundObject::SoundObject()
@@ -108,6 +110,8 @@ SoundObject::~SoundObject()
 {
     ofRemoveListener(ofEvents().fileDragEvent, this, &SoundObject::onDragEvent);
     ofRemoveListener(this->clickedEvent, this, &SoundObject::onClicked);
+    ofRemoveListener(this->releasedEvent, this, &SoundObject::onReleased);
+    ofRemoveListener(this->draggedEvent, this, &SoundObject::onDragged);
     disableAllEvents();
     //ofLogNotice() << "SoundObject destructor called...ID = " << id;
 }
@@ -117,6 +121,8 @@ void SoundObject::setup()
 {
     ofAddListener(ofEvents().fileDragEvent, this, &SoundObject::onDragEvent);
     ofAddListener(this->clickedEvent, this, &SoundObject::onClicked);
+    ofAddListener(this->releasedEvent, this, &SoundObject::onReleased);
+    ofAddListener(this->draggedEvent, this, &SoundObject::onDragged);
 
     loader.setup();
     stopper.setup();
@@ -427,6 +433,24 @@ void SoundObject::onClicked(ClickArgs& args) {
     config->activeSoundIdx =  id;
 
     ofNotifyEvent(clickedObjectEvent,  config->activeSoundIdx);
+}
+
+//--------------------------------------------------------------
+void SoundObject::onDragged(ClickArgs& args) {
+    if(!bEventsEnabled) return;
+
+    config->prevSoundIdx = config->activeSoundIdx;
+
+    ofNotifyEvent(draggedObjectEvent,  config->activeSoundIdx);
+}
+
+//--------------------------------------------------------------
+void SoundObject::onReleased(ClickArgs& args) {
+    if(!bEventsEnabled) return;
+
+    config->activeSoundIdx =  id;
+
+    ofNotifyEvent(releasedObjectEvent,  config->activeSoundIdx);
 }
 
 //--------------------------------------------------------------

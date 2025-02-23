@@ -63,8 +63,8 @@ void Interactive::mousePressed(ofMouseEventArgs &args) {
     if(!bEventsEnabled) return;
     if(inside(args.x, args.y)) {
         bClicked = true;
-        offsetx = x - args.x;
-        offsety = y - args.y;
+//        offsetx = x - args.x;
+//        offsety = y - args.y;
         ClickArgs ca;
         ca.id = id;
         ca.mouseButton = args;
@@ -74,18 +74,21 @@ void Interactive::mousePressed(ofMouseEventArgs &args) {
 
 void Interactive::mouseDragged(ofMouseEventArgs &args) {
     if(!bEventsEnabled) return;
-    if(bClicked) {
-        //setX(args.x+offsetx);
-        //setY(args.y+offsety);
+    if(inside(args.x, args.y)) {
+        ClickArgs ca;
+        ca.id = id;
+        ca.mouseButton = args;
+        ofNotifyEvent(draggedEvent, ca);
     }
 }
 
 void Interactive::mouseReleased(ofMouseEventArgs &args) {
     if(!bEventsEnabled) return;
+    if(inside(args.x, args.y)) {
+        ClickArgs ca;
+        ca.id = id;
+        ca.mouseButton = args;
+        ofNotifyEvent(releasedEvent, ca);
+    }
     bClicked = false;
-
-//    ClickArgs ca;
-//    ca.id = id;
-//    ca.mouseButton = args;
-//    ofNotifyEvent(clickedEvent, ca);
 }

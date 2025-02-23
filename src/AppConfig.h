@@ -48,9 +48,11 @@ public:
     size_t activeSceneIdx;
     size_t prevSceneIdx;
     size_t activeSoundIdx;
+    size_t prevSoundIdx;
     size_t activeSampleIdx;
     size_t activeSample;
 
     ofImage loopicon;
     ofJson settings;
+    bool bDragging;
 };

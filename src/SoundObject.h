@@ -25,6 +25,8 @@ public:
     void render();
     void update();
     void onClicked(ClickArgs& args);
+    void onDragged(ClickArgs& args);
+    void onReleased(ClickArgs& args);
     void save();
     void load();
     void load(string newpath);
@@ -68,4 +70,6 @@ public:
     float fadeVolume;
 
     static ofEvent<size_t> clickedObjectEvent;
+    static ofEvent<size_t> releasedObjectEvent;
+    static ofEvent<size_t> draggedObjectEvent;
 };

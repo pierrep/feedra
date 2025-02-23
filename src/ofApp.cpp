@@ -19,6 +19,8 @@ ofApp::~ofApp()
     ofRemoveListener(randomPlayback.clickedEvent, this, &ofApp::onCheckboxClicked);
 
     ofRemoveListener(SoundObject::clickedObjectEvent, this, &ofApp::onSoundObjectClicked);
+    ofRemoveListener(SoundObject::draggedObjectEvent, this, &ofApp::onSoundObjectDragged);
+    ofRemoveListener(SoundObject::releasedObjectEvent, this, &ofApp::onSoundObjectReleased);
     ofRemoveListener(AudioSample::clickedSampleEvent, this, &ofApp::onSampleClicked);
 
     saveConfig();
@@ -264,6 +266,8 @@ void ofApp::setup(){
     bLoadScenes = false;
     bClearPad = false;
     bClearSample = false;
+    bDrawDragging = false;
+    draggingStarted = 0;
     pageState = PageState::MAIN;
 
     config.setup();
@@ -414,6 +418,32 @@ void ofApp::onSoundObjectClicked(size_t& id)
 
     ofLogNotice() << "SoundObject id: " << id << " clicked";
     updateMainSliders();
+}
+
+//--------------------------------------------------------------
+void ofApp::onSoundObjectDragged(size_t& id)
+{
+
+    //ofLogNotice() << "SoundObject id: " << id << " dragged";
+    if(draggingStarted <= 1)
+    { // If dragging outside of an object hasn't begun
+        config.bDragging = true;
+        bDrawDragging = true;
+    }
+}
+
+//--------------------------------------------------------------
+void ofApp::onSoundObjectReleased(size_t& id)
+{
+
+    ofLogNotice() << "SoundObject id: " << id << " released";
+    if( config.bDragging && config.activeSoundIdx != config.prevSoundIdx)
+    {
+        // Drag and Drop Sound pad
+        ofLogNotice() << "Drag and Drop Sound pad from id:" << config.prevSoundIdx << " to id: " << config.activeSoundIdx;
+    }
+    updateMainSliders();
+    config.bDragging = false;
 }
 
 //--------------------------------------------------------------
@@ -863,6 +893,8 @@ void ofApp::draw(){
         enableScene(config.activeSceneIdx);
         updateMainSliders();
         ofAddListener(SoundObject::clickedObjectEvent, this, &ofApp::onSoundObjectClicked);
+        ofAddListener(SoundObject::draggedObjectEvent, this, &ofApp::onSoundObjectDragged);
+        ofAddListener(SoundObject::releasedObjectEvent, this, &ofApp::onSoundObjectReleased);
         ofAddListener(AudioSample::clickedSampleEvent, this, &ofApp::onSampleClicked);
         calculateSources();
         ofSetWindowTitle("Feedra");
@@ -976,6 +1008,14 @@ void ofApp::renderMainPage()
         randomPlayback.render();
     } else {
         randomPlayback.disableEvents();
+    }
+
+    if(bDrawDragging)
+    {
+        ofPushStyle();
+        ofSetColor(64,180);
+        ofDrawRectRounded(ofGetMouseX()-10*config.x_scale,ofGetMouseY()-10*config.y_scale,25*config.x_scale,25*config.y_scale,4*config.x_scale);
+        ofPopStyle();
     }
 }
 
@@ -1158,8 +1198,7 @@ void ofApp::mouseMoved(int x, int y ){
 
 //--------------------------------------------------------------
 void ofApp::mouseDragged(int x, int y, int button){
-
-
+    draggingStarted++;
 }
 
 //--------------------------------------------------------------
@@ -1169,7 +1208,8 @@ void ofApp::mousePressed(int x, int y, int button){
 
 //--------------------------------------------------------------
 void ofApp::mouseReleased(int x, int y, int button){
-
+    draggingStarted = 0;
+    bDrawDragging = false;
 }
 
 //--------------------------------------------------------------

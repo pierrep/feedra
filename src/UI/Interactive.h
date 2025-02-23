@@ -17,7 +17,7 @@ public:
 
     int id;
     bool bClicked;
-    int offsetx, offsety;
+    //int offsetx, offsety;
     bool bEventsEnabled;
 
     struct ClickArgs
@@ -27,4 +27,6 @@ public:
     };
 
     ofEvent<ClickArgs> clickedEvent;
+    ofEvent<ClickArgs> releasedEvent;
+    ofEvent<ClickArgs> draggedEvent;
 };
