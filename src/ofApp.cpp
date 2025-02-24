@@ -267,6 +267,7 @@ void ofApp::setup(){
     bClearPad = false;
     bClearSample = false;
     bDrawDragging = false;
+    bDoDragDrop = false;
     draggingStarted = 0;
     pageState = PageState::MAIN;
 
@@ -441,6 +442,7 @@ void ofApp::onSoundObjectReleased(size_t& id)
     {
         // Drag and Drop Sound pad
         ofLogNotice() << "Drag and Drop Sound pad from id:" << config.prevSoundIdx << " to id: " << config.activeSoundIdx;
+        bDoDragDrop = true;
     }
     updateMainSliders();
     config.bDragging = false;
@@ -539,14 +541,14 @@ void ofApp::update(){
     if(pageState == MAIN) {
         // clear pad
         if(bClearPad) {
-            int x = scenes[config.activeSceneIdx]->sounds[config.activeSoundIdx]->x;
-            int y = scenes[config.activeSceneIdx]->sounds[config.activeSoundIdx]->y;
-            int id = scenes[config.activeSceneIdx]->sounds[config.activeSoundIdx]->id;
-            delete scenes[config.activeSceneIdx]->sounds[config.activeSoundIdx];
-            scenes[config.activeSceneIdx]->sounds[config.activeSoundIdx] = new SoundObject(&config,config.activeScene,id,x,y,config.size,config.size);
-            scenes[config.activeSceneIdx]->sounds[config.activeSoundIdx]->setup();
-            scenes[config.activeSceneIdx]->sounds[config.activeSoundIdx]->enableAllEvents();
+            clearPad();
             bClearPad = false;
+        }
+
+        if(bDoDragDrop) {
+            clearPad();
+            copyPad(config.prevSoundIdx,config.activeSoundIdx);
+            bDoDragDrop = false;
         }
 
         if(randomPlayback.bActivate) {
@@ -714,6 +716,66 @@ void ofApp::addNewScene()
     }
 
     enableScene(new_idx);
+}
+
+//--------------------------------------------------------------
+void ofApp::clearPad()
+{
+    SoundObject* s = scenes[config.activeSceneIdx]->sounds[config.activeSoundIdx];
+    int x = s->x;
+    int y = s->y;
+    int id = s->id;
+    delete s;
+    s = new SoundObject(&config,config.activeScene,id,x,y,config.size,config.size);
+    s->setup();
+    s->enableAllEvents();
+    scenes[config.activeSceneIdx]->sounds[config.activeSoundIdx] = s;
+}
+
+//--------------------------------------------------------------
+void ofApp::copyPad(int idx_from, int idx_to)
+{
+    SoundObject* s1 = scenes[config.activeSceneIdx]->sounds[idx_from];
+    SoundObject* s2 = scenes[config.activeSceneIdx]->sounds[idx_to];
+
+    s2->isStream                    = s1->isStream;
+    s2->sample_rate                 = s1->sample_rate;
+    s2->channels                    = s1->channels;
+    s2->looper.isLooping            = s1->looper.isLooping;
+    s2->soundPlayer.minDelay        = s1->soundPlayer.minDelay;
+    s2->soundPlayer.maxDelay        = s1->soundPlayer.maxDelay;
+    s2->reverbSend                  = s1->reverbSend;
+    s2->soundname.text              = s1->soundname.text;
+    s2->volumeslider.setPercent(s1->volumeslider.getPercent());
+    s2->soundPlayer.bRandomPlayback = s1->soundPlayer.bRandomPlayback;
+
+    for(int i = 0; i < (int)s1->soundpath.size();i++)
+    {
+        string new_path = s1->soundpath[i];
+        s2->soundpath.push_back(new_path);
+
+        if(i > (int)s2->soundPlayer.player.size()-1) {
+            AudioSample* s = new AudioSample();
+            s->audioPlayer = new OpenALSoundPlayer();
+            s->config = &config;
+            s->id = s2->soundPlayer.player.size();
+            s->setWidth(config.sample_gui_width);
+            s->setHeight(35*config.y_scale);
+            s2->soundPlayer.player.push_back(s);
+        }
+        bool bLoaded = s2->soundPlayer.load(new_path, i, s2->isStream);
+        if(bLoaded) {
+            cout << "loaded " << s2->soundpath[i] << " id = "<< s2->soundPlayer.player[i]->id << endl;
+            s2->soundPlayer.recalculateDelay(i);
+            s2->soundPlayer.player[i]->sample_path = new_path;
+            s2->soundPlayer.player[i]->setPitch(s1->soundPlayer.player[i]->getPitch());
+            s2->soundPlayer.player[i]->setGain(s1->soundPlayer.player[i]->getGain());
+            s2->soundPlayer.player[i]->setPan(s1->soundPlayer.player[i]->getPan());
+            s2->soundPlayer.setRandomPan(s1->soundPlayer.isRandomPan());
+            s2->soundPlayer.player[i]->setup();
+            s2->playButton.isLoaded = true;
+        }
+    }
 }
 
 //--------------------------------------------------------------

@@ -43,6 +43,8 @@ class ofApp : public ofBaseApp {
         void loadConfig(string newpath);
         void addNewScene();
         void deleteScene();
+        void clearPad();
+        void copyPad(int id_from, int id_to);
         void checkAudioDeviceChange();
         void drawSoundInfo();
         void calculateSources();
@@ -81,6 +83,7 @@ class ofApp : public ofBaseApp {
         bool bLoadScenes;
         bool bClearPad;
         bool bClearSample;
+        bool bDoDragDrop;
         bool bDrawDragging;
         int draggingStarted;
 

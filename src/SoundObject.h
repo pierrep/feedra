@@ -19,7 +19,6 @@ public:
 
     SoundObject();
     ~SoundObject();
-    SoundObject(const SoundObject& d);
     SoundObject(AppConfig* config, size_t _scene_id, int _id, int _x, int _y, int _w, int _h);
     void setup();
     void render();

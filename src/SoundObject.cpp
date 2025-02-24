@@ -72,40 +72,6 @@ SoundObject::SoundObject(AppConfig* _config, size_t _scene_id, int _id, int _x, 
 }
 
 //--------------------------------------------------------------
-SoundObject::SoundObject(const SoundObject& parent) {
-    //ofLogNotice() << "SoundObject copy constructor called, ID = "<< parent.id;
-    isStream = parent.isStream;
-    isSetup = parent.isSetup;
-    config = parent.config;
-    id = parent.id;
-    setX(parent.x);
-    setY(parent.y);
-    setWidth(parent.width);
-    setHeight(parent.height);
-    isLooping = parent.isLooping;
-
-    loader.id = parent.loader.id;
-    loader.setX(parent.loader.x);
-    loader.setY(parent.loader.y);
-    loader.setWidth(parent.loader.width);
-    loader.setHeight(parent.loader.height);
-
-    playButton.id = parent.playButton.id;
-    playButton.setX(parent.playButton.x);
-    playButton.setY(parent.playButton.y);
-    playButton.setWidth(parent.playButton.width);
-    playButton.setHeight(parent.playButton.height);
-
-    playbar.id = parent.playbar.id;
-    playbar.setX(parent.playbar.x);
-    playbar.setY(parent.playbar.y);
-    playbar.setWidth(parent.playbar.width);
-    playbar.setHeight(parent.playbar.height);
-
-    soundname = parent.soundname;
-    soundname.setFont(config->f2());
-}
-//--------------------------------------------------------------
 SoundObject::~SoundObject()
 {
     ofRemoveListener(ofEvents().fileDragEvent, this, &SoundObject::onDragEvent);
@@ -239,8 +205,9 @@ void SoundObject::load(string newpath)
                             float pitch = samples["sample-"+ofToString(i)]["pitch"];                            
                             float gain = samples["sample-"+ofToString(i)]["gain"];
                             float pan = samples["sample-"+ofToString(i)]["pan"];
+                            bool panrandom;
                             if (!samples["sample-" + ofToString(i)]["panrandom"].empty()) {
-                                bool panrandom = samples["sample-" + ofToString(i)]["panrandom"];
+                                panrandom = samples["sample-" + ofToString(i)]["panrandom"];
                             }
 
                             if(i > (int)soundPlayer.player.size()-1) {
@@ -260,6 +227,7 @@ void SoundObject::load(string newpath)
                                 soundPlayer.player[i]->setPitch(pitch);
                                 soundPlayer.player[i]->setGain(gain);
                                 soundPlayer.player[i]->setPan(pan);
+                                soundPlayer.setRandomPan(panrandom);
                                 soundPlayer.player[i]->setup();
                                 playButton.isLoaded = true;
                             }
