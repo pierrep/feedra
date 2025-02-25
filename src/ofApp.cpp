@@ -269,6 +269,7 @@ void ofApp::setup(){
     bDrawDragging = false;
     bDoDragDrop = false;
     draggingStarted = 0;
+    bDoPlaySample = false;
     pageState = PageState::MAIN;
 
     config.setup();
@@ -462,6 +463,7 @@ void ofApp::onSampleClicked(int& id)
     }
 
     updateEditSliders();    
+    bDoPlaySample = true;
 }
 
 //--------------------------------------------------------------
@@ -598,6 +600,13 @@ void ofApp::update(){
             }
             scenes[config.activeSceneIdx]->sounds[config.activeSoundIdx]->enableEditorMode();
             addSample->bActivate = false;
+        }
+        if(bDoPlaySample)
+        {
+            scenes[config.activeSceneIdx]->sounds[config.activeSoundIdx]->soundPlayer.setPaused(true);
+            scenes[config.activeSceneIdx]->sounds[config.activeSoundIdx]->soundPlayer.curSound = config.activeSampleIdx;
+            scenes[config.activeSceneIdx]->sounds[config.activeSoundIdx]->soundPlayer.setPaused(false);
+            bDoPlaySample = false;
         }
     }
 

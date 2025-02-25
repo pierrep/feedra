@@ -86,6 +86,7 @@ class ofApp : public ofBaseApp {
         bool bDoDragDrop;
         bool bDrawDragging;
         int draggingStarted;
+        bool bDoPlaySample;
 
         long int curAppTime;
         long int prevAppTime;

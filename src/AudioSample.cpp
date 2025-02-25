@@ -25,27 +25,6 @@ AudioSample::AudioSample()
 }
 
 //--------------------------------------------------------------
-AudioSample::AudioSample(const AudioSample& parent)
-{
-    id = parent.id;
-    totalDelay = parent.totalDelay;
-    curDelay = parent.curDelay;
-    gain = parent.gain;
-    pitch = parent.pitch;
-    config = parent.config;
-    bEditorMode = parent.bEditorMode;
-    bSelected = parent.bSelected;
-
-    sample_path = parent.sample_path;
-    audioPlayer = parent.audioPlayer;
-
-    setWidth(parent.getWidth());
-    setHeight(parent.getHeight());
-    setX(parent.x);
-    setY(parent.y);
-    cout << "copy constructor, id = " << id << " sample_path = " << sample_path << endl;
-}
-//--------------------------------------------------------------
 void AudioSample::setup()
 {
     ofAddListener(this->clickedEvent, this, &AudioSample::onClicked);

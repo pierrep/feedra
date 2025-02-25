@@ -11,7 +11,6 @@ class AudioSample: public Interactive
 public:
     ~AudioSample();
     AudioSample();
-    AudioSample(const AudioSample& parent);
     void setup();
     void render(ofVec3f pos);    
     void onClicked(ClickArgs& args);
