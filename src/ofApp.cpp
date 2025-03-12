@@ -241,6 +241,8 @@ void ofApp::setup(){
     //ofSetVerticalSync(true);
     ofSetFrameRate(30); // the play and stop buttons flicker on sample switch or loop at 60fps
 
+    OpenALSoundPlayer::initialize(); // setup openal
+
     ofFile file("settings/settings.json");
     if(file.exists()){
         file.copyTo("settings/settings_backup.json",true,true);
@@ -260,7 +262,7 @@ void ofApp::setup(){
     }
 
     // Set the current default audio device
-    curDevice = newDevice = OpenALSoundPlayer::getDefaultDevice();
+    curDevice = newDevice = OpenALSoundPlayer::getDefaultDeviceString();
 
     bDoRender = true;
     bLoadScenes = false;
@@ -377,6 +379,8 @@ void ofApp::setup(){
 //--------------------------------------------------------------
 void ofApp::updateMainSliders()
 {
+    if(bLoading) return;
+
     int min_d = scenes[config.activeSceneIdx]->sounds[config.activeSoundIdx]->soundPlayer.getMinDelay();
     minDelay.setValue(min_d);
 
@@ -844,7 +848,7 @@ void ofApp::enableScene(int idx)
         scenes[idx]->sounds[j]->enableAllEvents();
     }
     scenes[idx]->enable();
-    //cout << "Enable scene: " << idx << endl;
+    cout << "Enable scene: " << idx << endl;
 }
 
 //--------------------------------------------------------------
@@ -961,6 +965,18 @@ void ofApp::draw(){
             }
         }
 
+        bool threadsDone = false;
+        while(!threadsDone)
+        {
+            threadsDone = true;
+            for(int i = 0; i < scenes.size();i++)
+            {
+                if(scenes[i]->bLoading)
+                {
+                    threadsDone = false;
+                }
+            }
+        }
         ofLogNotice() << "Finished loading scenes, setting up Feedra";
         config.prevSceneIdx = 0;
         enableScene(config.activeSceneIdx);
@@ -1071,16 +1087,20 @@ void ofApp::renderMainPage()
     }
 
     // Current selected sound info
-    if(scenes[config.activeSceneIdx]->sounds[config.activeSoundIdx]->soundPlayer.isLoaded()) {
-        drawSoundInfo();
+    if(!scenes[config.activeSceneIdx]->bLoading) {
+        if(scenes[config.activeSceneIdx]->sounds[config.activeSoundIdx]->soundPlayer.isLoaded()) {
+            drawSoundInfo();
+        }
     }
     mainVolume.render();
-    if(scenes[config.activeSceneIdx]->sounds[config.activeSoundIdx]->soundPlayer.player.size() > 1)
-    {
-        randomPlayback.enableEvents();
-        randomPlayback.render();
-    } else {
-        randomPlayback.disableEvents();
+    if(!scenes[config.activeSceneIdx]->bLoading) {
+        if(scenes[config.activeSceneIdx]->sounds[config.activeSoundIdx]->soundPlayer.player.size() > 1)
+        {
+            randomPlayback.enableEvents();
+            randomPlayback.render();
+        } else {
+            randomPlayback.disableEvents();
+        }
     }
 
     if(bDrawDragging)
@@ -1198,7 +1218,7 @@ void ofApp::checkAudioDeviceChange()
     {
         //Need to list devices first
         int num_devices = OpenALSoundPlayer::listDevices(false);
-        newDevice = OpenALSoundPlayer::getDefaultDevice();
+        newDevice = OpenALSoundPlayer::getDefaultDeviceString();
         prevAppTime = curAppTime;
 
         if(newDevice.compare(curDevice) != 0) {

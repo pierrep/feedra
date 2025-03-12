@@ -392,6 +392,11 @@ int getDevices(const char *type, const char *list, bool printOutput)
   return num_devices;
 }
 
+ALCdevice* OpenALSoundPlayer::getCurrentDevice()
+{
+    return alDevice;
+}
+
 int OpenALSoundPlayer::reopenDevice(const char* deviceName)
 {
     auto ctx = alcGetCurrentContext();
@@ -417,7 +422,7 @@ int OpenALSoundPlayer::reopenDevice(const char* deviceName)
     return -1;
 }
 
-string OpenALSoundPlayer::getDefaultDevice()
+string OpenALSoundPlayer::getDefaultDeviceString()
 {
     return alcGetString(NULL, ALC_DEFAULT_ALL_DEVICES_SPECIFIER);
 }

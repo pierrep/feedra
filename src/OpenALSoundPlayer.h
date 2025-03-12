@@ -54,7 +54,8 @@ class OpenALSoundPlayer : public ofBaseSoundPlayer, public ofThread {
 		OpenALSoundPlayer();
 		virtual ~OpenALSoundPlayer();
 
-        static std::string getDefaultDevice();
+        static std::string getDefaultDeviceString();
+        static ALCdevice* getCurrentDevice();
         static int reopenDevice(const char* devicename);
         static int listDevices(bool printOutput = true);
         static void printExtensions (const char *header, char separator, const char *extensions);

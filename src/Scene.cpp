@@ -1,8 +1,10 @@
 #include "Scene.h"
+#include "AL/alc.h"
 
 Scene::Scene()
 {   
     bInteractive = false;
+    bLoading = false;
 }
 
 //--------------------------------------------------------------
@@ -23,29 +25,66 @@ void Scene::setup() {
 }
 
 //--------------------------------------------------------------
-void Scene::setup(string newpath)
+void Scene::setup(string _newpath)
 {    
     ofAddListener(this->clickedEvent, this, &Scene::onClicked);
     enableInteractivity();
 
-    // create grid of sound players
-    for(size_t i=0;i < config->gridWidth*config->gridHeight;i++) {
-        int x = i%config->gridWidth*config->spacing + config->xoffset;
-        int y = (i/config->gridWidth)*config->spacing + config->yoffset;
-        SoundObject* s = new SoundObject(config,id,i,x,y,config->size,config->size);
-        sounds.push_back(s);
-    }
-
-    // setup sound objects
-    for(size_t i=0;i < sounds.size();i++) {
-        sounds[i]->setup();
-        sounds[i]->load(newpath);
-    }
-
-    //play_button.setConfig(config);
-    //delete_scene.setup(config);
-    //stop_button.setup();
     textfield.setUseListeners(true);
+    newpath = _newpath;
+    bLoading = true;
+
+    bool bDoThreading = alcIsExtensionPresent(OpenALSoundPlayer::getCurrentDevice(), "ALC_EXT_thread_local_context");
+    bDoThreading = false;
+
+    if(bDoThreading)
+    {
+        main_context = alcGetCurrentContext();
+        startThread();
+    } else {
+        for(size_t i=0;i < config->gridWidth*config->gridHeight;i++) {
+            int x = i%config->gridWidth*config->spacing + config->xoffset;
+            int y = (i/config->gridWidth)*config->spacing + config->yoffset;
+            SoundObject* s = new SoundObject(config,id,i,x,y,config->size,config->size);
+            sounds.push_back(s);
+        }
+
+        // setup sound objects
+        for(size_t i=0;i < sounds.size();i++) {
+            sounds[i]->setup();
+            sounds[i]->load(newpath);
+        }
+        bLoading = false;
+    }
+
+}
+
+//--------------------------------------------------------------
+void Scene::threadedFunction()
+{
+    if(alcIsExtensionPresent(OpenALSoundPlayer::getCurrentDevice(), "ALC_EXT_thread_local_context"))
+    {
+        ALCboolean (ALC_APIENTRY*alcSetThreadContext)(ALCcontext* context);
+        alcSetThreadContext = reinterpret_cast<ALCboolean (ALC_APIENTRY*)(ALCcontext *context)>(alcGetProcAddress(OpenALSoundPlayer::getCurrentDevice(), "alcSetThreadContext"));
+
+        alcSetThreadContext(main_context);
+
+        for(size_t i=0;i < config->gridWidth*config->gridHeight;i++) {
+            int x = i%config->gridWidth*config->spacing + config->xoffset;
+            int y = (i/config->gridWidth)*config->spacing + config->yoffset;
+            SoundObject* s = new SoundObject(config,id,i,x,y,config->size,config->size);
+            sounds.push_back(s);
+        }
+
+        // setup sound objects
+        for(size_t i=0;i < sounds.size();i++) {
+            sounds[i]->setup();
+            sounds[i]->load(newpath);
+        }
+
+        alcSetThreadContext(NULL);
+    }
+    bLoading = false;
 }
 
 //--------------------------------------------------------------
@@ -118,7 +157,7 @@ void Scene::updatePosition(int _x, int _y)
 void Scene::onClicked(ClickArgs& args) {
     if(!bInteractive) return;
 
-    //ofLogNotice() << "Scene id: " << id << " clicked";
+    ofLogNotice() << "Scene id: " << id << " clicked";
     if(config->activeScene != id) {
         config->activeScene = id;
         selectScene = true;
@@ -127,12 +166,14 @@ void Scene::onClicked(ClickArgs& args) {
 
 //--------------------------------------------------------------
 void Scene::render()
-{    
+{
+ if(!bLoading) {
     if(config->activeScene == id) {
         for(size_t i=0; i < sounds.size();i++) {
              sounds[i]->render();
         }
     }
+ }
 
     ofPushStyle();
     if(config->activeScene == id) {
