@@ -28,13 +28,7 @@
     <ClCompile Include="src\SoundPlayer.cpp">
       <Filter>src</Filter>
     </ClCompile>
-    <ClCompile Include="src\UI\AddScene.cpp">
-      <Filter>src\UI</Filter>
-    </ClCompile>
     <ClCompile Include="src\UI\CheckBox.cpp">
-      <Filter>src\UI</Filter>
-    </ClCompile>
-    <ClCompile Include="src\UI\DeleteScene.cpp">
       <Filter>src\UI</Filter>
     </ClCompile>
     <ClCompile Include="src\UI\Interactive.cpp">
@@ -50,9 +44,6 @@
       <Filter>src\UI</Filter>
     </ClCompile>
     <ClCompile Include="src\UI\PlayButton.cpp">
-      <Filter>src\UI</Filter>
-    </ClCompile>
-    <ClCompile Include="src\UI\PlayScene.cpp">
       <Filter>src\UI</Filter>
     </ClCompile>
     <ClCompile Include="src\UI\SimpleSlider.cpp">
@@ -128,13 +119,7 @@
     <ClInclude Include="src\SoundPlayer.h">
       <Filter>src</Filter>
     </ClInclude>
-    <ClInclude Include="src\UI\AddScene.h">
-      <Filter>src\UI</Filter>
-    </ClInclude>
     <ClInclude Include="src\UI\CheckBox.h">
-      <Filter>src\UI</Filter>
-    </ClInclude>
-    <ClInclude Include="src\UI\DeleteScene.h">
       <Filter>src\UI</Filter>
     </ClInclude>
     <ClInclude Include="src\UI\Interactive.h">
@@ -150,9 +135,6 @@
       <Filter>src\UI</Filter>
     </ClInclude>
     <ClInclude Include="src\UI\PlayButton.h">
-      <Filter>src\UI</Filter>
-    </ClInclude>
-    <ClInclude Include="src\UI\PlayScene.h">
       <Filter>src\UI</Filter>
     </ClInclude>
     <ClInclude Include="src\UI\SimpleSlider.h">

@@ -148,6 +148,7 @@ class OpenALSoundPlayer : public ofBaseSoundPlayer, public ofThread {
 		int channels;
 		float duration; //in secs
 		int samplerate;
+		std::string file_extension;
 		std::vector<ALuint> buffers;
 		std::vector<ALuint> sources;
 
@@ -176,8 +177,7 @@ class OpenALSoundPlayer : public ofBaseSoundPlayer, public ofThread {
         int fileformat;
         std::string format_string;
         std::string subformat_string;
-        ALenum openALformat;
-        //int stream_subformat;
+        ALenum openALformat;        
         enum FormatType sample_format = Int16;
 		double stream_scale;
         std::vector<short> buffer_short;

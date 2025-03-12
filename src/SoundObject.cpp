@@ -169,96 +169,22 @@ void SoundObject::load()
 //--------------------------------------------------------------
 void SoundObject::load(string newpath)
 {
-    ofJson json;
-    ofFile file(newpath);
     string base = "scene"+ofToString(scene_id);
     string prefix = ofToString(scene_id)+"-"+ofToString(id);
     soundpath.clear();
 
-    if(file.exists()){
-         file >> json;
-        for(auto & json_obj: json){
-            if(!json_obj.empty())
-            {
-                ofJson setting = json_obj[prefix];
-                if(!setting.empty()) {
-                    if(!setting["isstream"].empty())
-                    {
-                        isStream = setting["isstream"];
-                    }
-                    ofJson samples = setting["samples"];
-                    for(int i = 0; i < samples.size();i++)
-                    {
-                        if(!setting["mindelay"].empty())
-                        {
-                            soundPlayer.minDelay = setting["mindelay"];
-                        }
-                        if(!setting["maxdelay"].empty())
-                        {
-                            soundPlayer.maxDelay = setting["maxdelay"];
-                        }
-                        if(!samples["sample-"+ofToString(i)].empty()) {
-                            std::filesystem::path np = samples["sample-" + ofToString(i)]["path"];
-                            string new_path = np.make_preferred().string();
-                            soundpath.push_back(new_path);
-
-                            float pitch = samples["sample-"+ofToString(i)]["pitch"];                            
-                            float gain = samples["sample-"+ofToString(i)]["gain"];
-                            float pan = samples["sample-"+ofToString(i)]["pan"];
-                            bool panrandom;
-                            if (!samples["sample-" + ofToString(i)]["panrandom"].empty()) {
-                                panrandom = samples["sample-" + ofToString(i)]["panrandom"];
-                            }
-
-                            if(i > (int)soundPlayer.player.size()-1) {
-                                AudioSample* s = new AudioSample();
-                                s->audioPlayer = new OpenALSoundPlayer();
-                                s->config = config;
-                                s->id = soundPlayer.player.size();
-                                s->setWidth(config->sample_gui_width);
-                                s->setHeight(35*config->y_scale);
-                                soundPlayer.player.push_back(s);
-                            }
-                            bool bLoaded = soundPlayer.load(new_path, i, isStream);
-                            if(bLoaded) {
-                                //cout << "loaded " << soundpath[i] << " id = "<< soundPlayer.player[i]->id << endl;
-                                soundPlayer.recalculateDelay(i);
-                                soundPlayer.player[i]->sample_path = new_path;
-                                soundPlayer.player[i]->setPitch(pitch);
-                                soundPlayer.player[i]->setGain(gain);
-                                soundPlayer.player[i]->setPan(pan);
-                                soundPlayer.setRandomPan(panrandom);
-                                soundPlayer.player[i]->setup();
-                                playButton.isLoaded = true;
-                            }
-                        }
-
-                    }
-                    if(!setting["soundname"].empty())
-                    {
-                        soundname.text = setting["soundname"];
-                        soundname.disable();
-                    }
-                    if(!setting["volume"].empty())
-                    {
-                        volumeslider.setPercent(setting["volume"]);
-                    }
-                    if(!setting["loop"].empty())
-                    {
-                        looper.isLooping = setting["loop"];
-                    }
-                    if(!setting["samplerate"].empty())
-                    {
-                        sample_rate = setting["samplerate"];
-                    }
-                    if(!setting["channels"].empty())
-                    {
-                        channels = setting["channels"];
-                    }
-                    if(!setting["reverbsend"].empty())
-                    {
-                        reverbSend = setting["reverbsend"];
-                    }
+    for(auto & json_obj: config->json){
+        if(!json_obj.empty())
+        {
+            ofJson setting = json_obj[prefix];
+            if(!setting.empty()) {
+                if(!setting["isstream"].empty())
+                {
+                    isStream = setting["isstream"];
+                }
+                ofJson samples = setting["samples"];
+                for(int i = 0; i < samples.size();i++)
+                {
                     if(!setting["mindelay"].empty())
                     {
                         soundPlayer.minDelay = setting["mindelay"];
@@ -267,10 +193,79 @@ void SoundObject::load(string newpath)
                     {
                         soundPlayer.maxDelay = setting["maxdelay"];
                     }
-                    if(!setting["playrandom"].empty())
-                    {
-                        soundPlayer.bRandomPlayback = setting["playrandom"];
+                    if(!samples["sample-"+ofToString(i)].empty()) {
+                        std::filesystem::path np = samples["sample-" + ofToString(i)]["path"];
+                        string new_path = np.make_preferred().string();
+                        soundpath.push_back(new_path);
+
+                        float pitch = samples["sample-"+ofToString(i)]["pitch"];                            
+                        float gain = samples["sample-"+ofToString(i)]["gain"];
+                        float pan = samples["sample-"+ofToString(i)]["pan"];
+                        bool panrandom;
+                        if (!samples["sample-" + ofToString(i)]["panrandom"].empty()) {
+                            panrandom = samples["sample-" + ofToString(i)]["panrandom"];
+                        }
+
+                        if(i > (int)soundPlayer.player.size()-1) {
+                            AudioSample* s = new AudioSample();
+                            s->audioPlayer = new OpenALSoundPlayer();
+                            s->config = config;
+                            s->id = soundPlayer.player.size();
+                            s->setWidth(config->sample_gui_width);
+                            s->setHeight(35*config->y_scale);
+                            soundPlayer.player.push_back(s);
+                        }
+                        bool bLoaded = soundPlayer.load(new_path, i, isStream);
+                        if(bLoaded) {
+                            //cout << "loaded " << soundpath[i] << " id = "<< soundPlayer.player[i]->id << endl;
+                            soundPlayer.recalculateDelay(i);
+                            soundPlayer.player[i]->sample_path = new_path;
+                            soundPlayer.player[i]->setPitch(pitch);
+                            soundPlayer.player[i]->setGain(gain);
+                            soundPlayer.player[i]->setPan(pan);
+                            soundPlayer.setRandomPan(panrandom);
+                            soundPlayer.player[i]->setup();
+                            playButton.isLoaded = true;
+                        }
                     }
+
+                }
+                if(!setting["soundname"].empty())
+                {
+                    soundname.text = setting["soundname"];
+                    soundname.disable();
+                }
+                if(!setting["volume"].empty())
+                {
+                    volumeslider.setPercent(setting["volume"]);
+                }
+                if(!setting["loop"].empty())
+                {
+                    looper.isLooping = setting["loop"];
+                }
+                if(!setting["samplerate"].empty())
+                {
+                    sample_rate = setting["samplerate"];
+                }
+                if(!setting["channels"].empty())
+                {
+                    channels = setting["channels"];
+                }
+                if(!setting["reverbsend"].empty())
+                {
+                    reverbSend = setting["reverbsend"];
+                }
+                if(!setting["mindelay"].empty())
+                {
+                    soundPlayer.minDelay = setting["mindelay"];
+                }
+                if(!setting["maxdelay"].empty())
+                {
+                    soundPlayer.maxDelay = setting["maxdelay"];
+                }
+                if(!setting["playrandom"].empty())
+                {
+                    soundPlayer.bRandomPlayback = setting["playrandom"];
                 }
             }
         }

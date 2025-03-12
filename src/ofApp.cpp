@@ -370,6 +370,7 @@ void ofApp::setup(){
     bLoading = true;
     bLoadingScenes = true;
     startLoadTime = ofGetElapsedTimef();
+    config.loadJSON();
     ofSetWindowTitle("Loading");
 }
 
@@ -614,6 +615,7 @@ void ofApp::update(){
         ofFileDialogResult result = ofSystemLoadDialog("Load Feedra scenes", false);
         if(result.bSuccess) {
             loadConfig(result.filePath);
+            config.loadJSON(result.filePath);
             // setup scenes
             for(size_t i=0;i < scenes.size();i++) {
                 scenes[i]->setup(result.filePath);

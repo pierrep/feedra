@@ -62,3 +62,19 @@ void AppConfig::setup()
     activeSample = 0;
     activeSampleIdx = 0;
 }
+
+//--------------------------------------------------------------
+void AppConfig::loadJSON()
+{
+    loadJSON("settings/settings.json");
+}
+
+//--------------------------------------------------------------
+void AppConfig::loadJSON(string newpath)
+{
+    ofFile file(newpath);
+    if(file.exists())
+    {
+         file >> json;
+    }
+}

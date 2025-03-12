@@ -21,6 +21,10 @@ public:
     const string getLibraryLocation() { return defaultLibraryLocation; }
     const float getMasterVolume() { return masterVolume;}
 
+    void loadJSON();
+    void loadJSON(string newpath);
+
+
     string defaultLibraryLocation;
 
     float masterVolume;
@@ -55,4 +59,6 @@ public:
     ofImage loopicon;
     ofJson settings;
     bool bDragging;
+
+    ofJson json;    
 };
