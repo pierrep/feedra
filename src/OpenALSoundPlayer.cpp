@@ -340,6 +340,8 @@ OpenALSoundPlayer::OpenALSoundPlayer(){
 	bPaused 		= false;
     isStreaming		= true;
 	channels		= 0;
+    samplerate      = 0;
+    file_extension  = "";
 	duration		= 0;
 	fftCfg			= 0;
 	streamf			= 0;
@@ -952,7 +954,7 @@ bool OpenALSoundPlayer::mpg123Stream(const std::filesystem::path& path){
 //------------------------------------------------------------
 size_t OpenALSoundPlayer::stream(const std::filesystem::path& fileName){
 #ifdef OF_USING_MPG123
-	if(file_extension == "mp3" || file_extension == "MP3" || mp3streamf){
+    if(file_extension == ".mp3" || mp3streamf){
         if(!mpg123Stream(fileName)) return 0;
 	}else
 #endif
@@ -972,7 +974,7 @@ size_t OpenALSoundPlayer::stream(const std::filesystem::path& fileName){
 
 size_t OpenALSoundPlayer::readFile(const std::filesystem::path& fileName){
 #ifdef OF_USING_MPG123
-	if(file_extension !="mp3" && file_extension !="MP3"){
+    if(file_extension !=".mp3"){
         if(!sfReadFile(fileName)) return 0;
 	}else{
         if(!mpg123ReadFile(fileName)) return 0;
@@ -1015,9 +1017,13 @@ bool OpenALSoundPlayer::load(const std::filesystem::path& _fileName, bool is_str
     SF_INFO sfInfo;
 
     file_extension = fileName.extension().string();
-    
 
-    if(file_extension=="mp3" || file_extension =="MP3"){
+    for(auto& c : file_extension)
+    {
+       c = tolower(c);
+    }
+
+    if(file_extension==".mp3"){
         fileformat = 0x230000;
     } else {
         SNDFILE* f = sf_open(_fileName.string().c_str(),SFM_READ,&sfInfo);
