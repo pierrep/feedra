@@ -98,6 +98,7 @@ class ofApp : public ofBaseApp {
 
         bool bLoading;
         bool bLoadingScenes;
+        bool bThreadsDone;
         float startLoadTime;
         float endLoadTime;
 };

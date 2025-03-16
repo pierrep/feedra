@@ -27,15 +27,15 @@ void Scene::setup() {
 //--------------------------------------------------------------
 void Scene::setup(string _newpath)
 {    
+    bLoading = true;
     ofAddListener(this->clickedEvent, this, &Scene::onClicked);
     enableInteractivity();
 
     textfield.setUseListeners(true);
     newpath = _newpath;
-    bLoading = true;
 
     bool bDoThreading = alcIsExtensionPresent(OpenALSoundPlayer::getCurrentDevice(), "ALC_EXT_thread_local_context");
-    bDoThreading = false;
+    //bDoThreading = false;
 
     if(bDoThreading)
     {
@@ -85,6 +85,7 @@ void Scene::threadedFunction()
         alcSetThreadContext(NULL);
     }
     bLoading = false;
+
 }
 
 //--------------------------------------------------------------

@@ -26,6 +26,7 @@ public:
     void enableInteractivity();
     void disable();
     void disableInteractivity();
+    bool isInteractive() {return bInteractive;}
     void endFade();
 
     bool selectScene;

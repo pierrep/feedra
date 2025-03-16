@@ -53,14 +53,19 @@ Interactive::Interactive(const Interactive &parent)
 }
 
 void Interactive::mouseMoved(ofMouseEventArgs &args) {
-    if(!bEventsEnabled) return;
+    if(!bEventsEnabled) {
+        return;
+    }
 //    int x = args.x;
 //    int y = args.y;
 //    int button = args.button;
 }
 
 void Interactive::mousePressed(ofMouseEventArgs &args) {
-    if(!bEventsEnabled) return;
+    if(!bEventsEnabled) {
+        return;
+    }
+
     if(inside(args.x, args.y)) {
         bClicked = true;
 //        offsetx = x - args.x;
@@ -73,7 +78,9 @@ void Interactive::mousePressed(ofMouseEventArgs &args) {
 }
 
 void Interactive::mouseDragged(ofMouseEventArgs &args) {
-    if(!bEventsEnabled) return;
+    if(!bEventsEnabled) {
+        return;
+    }
     if(inside(args.x, args.y)) {
         ClickArgs ca;
         ca.id = id;

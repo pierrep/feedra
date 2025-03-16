@@ -391,7 +391,10 @@ bool SoundObject::loadSingleSound(std::string filepath, bool bClearSounds)
 
 //--------------------------------------------------------------
 void SoundObject::onClicked(ClickArgs& args) {
-    if(!bEventsEnabled) return;   
+    if(!bEventsEnabled) {
+        ofLogNotice() << "clicked sound obj " << id << " , but bEventsEnabled is false ";
+        return;
+    }
 
     config->activeSoundIdx =  id;
 

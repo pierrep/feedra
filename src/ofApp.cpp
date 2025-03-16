@@ -371,6 +371,7 @@ void ofApp::setup(){
 
     bLoading = true;
     bLoadingScenes = true;
+    bThreadsDone = false;
     startLoadTime = ofGetElapsedTimef();
     config.loadJSON();
     ofSetWindowTitle("Loading");
@@ -423,7 +424,7 @@ void ofApp::updateEditSliders()
 void ofApp::onSoundObjectClicked(size_t& id)
 {
 
-    ofLogNotice() << "SoundObject id: " << id << " clicked";
+    //ofLogNotice() << "SoundObject id: " << id << " clicked";
     updateMainSliders();
 }
 
@@ -443,11 +444,11 @@ void ofApp::onSoundObjectDragged(size_t& id)
 void ofApp::onSoundObjectReleased(size_t& id)
 {
 
-    ofLogNotice() << "SoundObject id: " << id << " released";
+    //ofLogNotice() << "SoundObject id: " << id << " released";
     if( config.bDragging && config.activeSoundIdx != config.prevSoundIdx)
     {
         // Drag and Drop Sound pad
-        ofLogNotice() << "Drag and Drop Sound pad from id:" << config.prevSoundIdx << " to id: " << config.activeSoundIdx;
+        //ofLogNotice() << "Drag and Drop Sound pad from id:" << config.prevSoundIdx << " to id: " << config.activeSoundIdx;
         bDoDragDrop = true;
     }
     updateMainSliders();
@@ -848,7 +849,6 @@ void ofApp::enableScene(int idx)
         scenes[idx]->sounds[j]->enableAllEvents();
     }
     scenes[idx]->enable();
-    cout << "Enable scene: " << idx << endl;
 }
 
 //--------------------------------------------------------------
@@ -933,7 +933,7 @@ void ofApp::updateScenePosition()
 //--------------------------------------------------------------
 void ofApp::draw(){
 
-    if(bLoading) {        
+    if(bLoading) {
         static unsigned int progress = 0;
 
         if(bLoadingScenes) {
@@ -941,43 +941,43 @@ void ofApp::draw(){
             scenes[progress]->setup();
             progress++;
 
-            if(progress < scenes.size())
+            while(progress < scenes.size())
             {
                 scenes[progress]->setup();
                 progress++;
             }
 
-            if(progress >= scenes.size())
+            bLoadingScenes = false;
+        }
+
+        bThreadsDone = true;
+        progress = 0;
+        for(int i = 0; i < scenes.size();i++)
+        {
+            if(scenes[i]->bLoading)
             {
-                bLoadingScenes = false;
-                endLoadTime = ofGetElapsedTimef();
-                ofLogNotice() << "LOAD time took " << std::setw(2) << endLoadTime - startLoadTime << " secs";
-            } else {
-                ofPushStyle();
-                ofSetColor(255);
-                float barw = 200.0f;
-                float barh = 40.0f;
-                ofDrawRectangle(ofGetWidth()/2 - barw/2.0f, ofGetHeight()/2 - barh/2.0f, barw*config.x_scale,barh*config.y_scale);
-                ofSetColor(0,0,255);
-                ofDrawRectangle(ofGetWidth()/2 - barw/2.0f, ofGetHeight()/2 - barh/2.0f,(barw/scenes.size()*progress)*config.x_scale,barh*config.y_scale);
-                ofPopStyle();
-                return;
+                bThreadsDone = false;
+            } else
+            {
+                progress++;
             }
         }
 
-        bool threadsDone = false;
-        while(!threadsDone)
-        {
-            threadsDone = true;
-            for(int i = 0; i < scenes.size();i++)
-            {
-                if(scenes[i]->bLoading)
-                {
-                    threadsDone = false;
-                }
-            }
+        if(!bThreadsDone) {
+            ofPushStyle();
+            ofSetColor(255);
+            float barw = 200.0f;
+            float barh = 40.0f;
+            ofDrawRectangle(ofGetWidth()/2 - barw/2.0f, ofGetHeight()/2 - barh/2.0f, barw*config.x_scale,barh*config.y_scale);
+            ofSetColor(0,0,255);
+            ofDrawRectangle(ofGetWidth()/2 - barw/2.0f, ofGetHeight()/2 - barh/2.0f,(barw/scenes.size()*progress)*config.x_scale,barh*config.y_scale);
+            ofPopStyle();
+            return;
         }
-        ofLogNotice() << "Finished loading scenes, setting up Feedra";
+
+        endLoadTime = ofGetElapsedTimef();
+        ofLogNotice() << "LOAD time took " << std::setw(2) << endLoadTime - startLoadTime << " secs";
+        ofLogNotice() << "Finished loading scenes, setting up Feedra, config.activeSceneIdx = " << config.activeSceneIdx;
         config.prevSceneIdx = 0;
         enableScene(config.activeSceneIdx);
         updateMainSliders();
@@ -992,6 +992,7 @@ void ofApp::draw(){
     }
     //int fps = ofGetFrameRate();
     //ofSetWindowTitle("Fps: "+ofToString(fps));
+    //cout << "activeSceneIdx: " << config.activeSceneIdx << " activeScene: " << config.activeScene << " isInteractive? " << scenes[config.activeSceneIdx]->isInteractive() << endl;
 
     static bool bEnableEvents = false;
 
