@@ -22,6 +22,7 @@ SoundObject::SoundObject(AppConfig* _config, size_t _scene_id, int _id, int _x, 
     scene_id = _scene_id;
     isStream = true;
     isSetup = false;
+    bLoading = false;
     config = _config;
     channels = 0;
     reverbSend = 0.0f;
@@ -73,7 +74,14 @@ SoundObject::SoundObject(AppConfig* _config, size_t _scene_id, int _id, int _x, 
 
 //--------------------------------------------------------------
 SoundObject::~SoundObject()
-{
+{    
+    try {
+        if(getNativeThread().joinable()) {
+            getNativeThread().join();
+        }
+    } catch (const std::exception &exc) {
+        cout << "exception called:" << exc.what() <<  endl;
+    }
     ofRemoveListener(ofEvents().fileDragEvent, this, &SoundObject::onDragEvent);
     ofRemoveListener(this->clickedEvent, this, &SoundObject::onClicked);
     ofRemoveListener(this->releasedEvent, this, &SoundObject::onReleased);
@@ -161,18 +169,53 @@ void SoundObject::enableAllEvents()
 }
 
 //--------------------------------------------------------------
-void SoundObject::load()
+void SoundObject::threadedFunction()
 {
-    load("settings/settings.json");
+    if(alcIsExtensionPresent(OpenALSoundPlayer::getCurrentDevice(), "ALC_EXT_thread_local_context"))
+    {
+        ALCboolean (ALC_APIENTRY*alcSetThreadContext)(ALCcontext* context);
+        alcSetThreadContext = reinterpret_cast<ALCboolean (ALC_APIENTRY*)(ALCcontext *context)>(alcGetProcAddress(OpenALSoundPlayer::getCurrentDevice(), "alcSetThreadContext"));
+        alcSetThreadContext(main_context);
+
+        setup();
+        load();
+
+        alcSetThreadContext(NULL);
+    }
+    bLoading = false;
+
 }
 
 //--------------------------------------------------------------
-void SoundObject::load(string newpath)
+//void SoundObject::loadThreaded()
+//{
+//    loadThreaded("settings/settings.json");
+//}
+
+//--------------------------------------------------------------
+void SoundObject::loadThreaded()
+{
+    bool bDoThreading = alcIsExtensionPresent(OpenALSoundPlayer::getCurrentDevice(), "ALC_EXT_thread_local_context");
+    if(bDoThreading) {
+        main_context = alcGetCurrentContext();
+        bLoading = true;
+        //newpath = _newpath;
+        startThread();
+    }
+}
+
+////--------------------------------------------------------------
+//void SoundObject::load()
+//{
+//    load("settings/settings.json");
+//}
+
+//--------------------------------------------------------------
+void SoundObject::load()
 {
     string base = "scene"+ofToString(scene_id);
     string prefix = ofToString(scene_id)+"-"+ofToString(id);
     soundpath.clear();
-
     for(auto & json_obj: config->json){
         if(!json_obj.empty())
         {
@@ -422,6 +465,8 @@ void SoundObject::onReleased(ClickArgs& args) {
 //--------------------------------------------------------------
 void SoundObject::render()
 {    
+    if(bLoading) return;
+
     ofPushStyle();
 
     ofSetHexColor(0xfbe9d8);

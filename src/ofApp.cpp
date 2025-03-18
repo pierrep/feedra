@@ -938,30 +938,35 @@ void ofApp::draw(){
 
         if(bLoadingScenes) {
             //Load everything else! (two scenes at a time
-            scenes[progress]->setup();
-            progress++;
+//            scenes[progress]->setup();
+//            progress++;
+//            for(int i = 0; i < scenes.size();i++)
+//            {
+//                scenes[i]->setup();
+//            }
 
-            while(progress < scenes.size())
+            if(progress < scenes.size())
             {
                 scenes[progress]->setup();
                 progress++;
-            }
-
-            bLoadingScenes = false;
-        }
-
-        bThreadsDone = true;
-        progress = 0;
-        for(int i = 0; i < scenes.size();i++)
-        {
-            if(scenes[i]->bLoading)
-            {
-                bThreadsDone = false;
-            } else
-            {
-                progress++;
+            } else {
+                bLoadingScenes = false;
+                bThreadsDone = true;
             }
         }
+
+
+//        progress = 0;
+//        for(int i = 0; i < scenes.size();i++)
+//        {
+//            if(scenes[i]->bLoading)
+//            {
+//                bThreadsDone = false;
+//            } else
+//            {
+//                progress++;
+//            }
+//        }
 
         if(!bThreadsDone) {
             ofPushStyle();
@@ -1088,13 +1093,15 @@ void ofApp::renderMainPage()
     }
 
     // Current selected sound info
-    if(!scenes[config.activeSceneIdx]->bLoading) {
+   // if(!scenes[config.activeSceneIdx]->bLoading)
+    {
         if(scenes[config.activeSceneIdx]->sounds[config.activeSoundIdx]->soundPlayer.isLoaded()) {
             drawSoundInfo();
         }
     }
     mainVolume.render();
-    if(!scenes[config.activeSceneIdx]->bLoading) {
+   // if(!scenes[config.activeSceneIdx]->bLoading)
+    {
         if(scenes[config.activeSceneIdx]->sounds[config.activeSoundIdx]->soundPlayer.player.size() > 1)
         {
             randomPlayback.enableEvents();

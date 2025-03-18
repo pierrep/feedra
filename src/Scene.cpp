@@ -4,7 +4,7 @@
 Scene::Scene()
 {   
     bInteractive = false;
-    bLoading = false;
+    //bLoading = false;
 }
 
 //--------------------------------------------------------------
@@ -27,20 +27,20 @@ void Scene::setup() {
 //--------------------------------------------------------------
 void Scene::setup(string _newpath)
 {    
-    bLoading = true;
+    //bLoading = true;
     ofAddListener(this->clickedEvent, this, &Scene::onClicked);
     enableInteractivity();
 
     textfield.setUseListeners(true);
-    newpath = _newpath;
+    //newpath = _newpath;
 
     bool bDoThreading = alcIsExtensionPresent(OpenALSoundPlayer::getCurrentDevice(), "ALC_EXT_thread_local_context");
-    //bDoThreading = false;
+    bDoThreading = false;
 
     if(bDoThreading)
     {
-        main_context = alcGetCurrentContext();
-        startThread();
+        //   main_context = alcGetCurrentContext();
+        //startThread();
     } else {
         for(size_t i=0;i < config->gridWidth*config->gridHeight;i++) {
             int x = i%config->gridWidth*config->spacing + config->xoffset;
@@ -51,42 +51,41 @@ void Scene::setup(string _newpath)
 
         // setup sound objects
         for(size_t i=0;i < sounds.size();i++) {
-            sounds[i]->setup();
-            sounds[i]->load(newpath);
+            //sounds[i]->setup();
+            sounds[i]->loadThreaded();
         }
-        bLoading = false;
+        //bLoading = false;
     }
-
 }
 
 //--------------------------------------------------------------
-void Scene::threadedFunction()
-{
-    if(alcIsExtensionPresent(OpenALSoundPlayer::getCurrentDevice(), "ALC_EXT_thread_local_context"))
-    {
-        ALCboolean (ALC_APIENTRY*alcSetThreadContext)(ALCcontext* context);
-        alcSetThreadContext = reinterpret_cast<ALCboolean (ALC_APIENTRY*)(ALCcontext *context)>(alcGetProcAddress(OpenALSoundPlayer::getCurrentDevice(), "alcSetThreadContext"));
+//void Scene::threadedFunction()
+//{
+//    if(alcIsExtensionPresent(OpenALSoundPlayer::getCurrentDevice(), "ALC_EXT_thread_local_context"))
+//    {
+//        ALCboolean (ALC_APIENTRY*alcSetThreadContext)(ALCcontext* context);
+//        alcSetThreadContext = reinterpret_cast<ALCboolean (ALC_APIENTRY*)(ALCcontext *context)>(alcGetProcAddress(OpenALSoundPlayer::getCurrentDevice(), "alcSetThreadContext"));
 
-        alcSetThreadContext(main_context);
+//        alcSetThreadContext(main_context);
 
-        for(size_t i=0;i < config->gridWidth*config->gridHeight;i++) {
-            int x = i%config->gridWidth*config->spacing + config->xoffset;
-            int y = (i/config->gridWidth)*config->spacing + config->yoffset;
-            SoundObject* s = new SoundObject(config,id,i,x,y,config->size,config->size);
-            sounds.push_back(s);
-        }
+//        for(size_t i=0;i < config->gridWidth*config->gridHeight;i++) {
+//            int x = i%config->gridWidth*config->spacing + config->xoffset;
+//            int y = (i/config->gridWidth)*config->spacing + config->yoffset;
+//            SoundObject* s = new SoundObject(config,id,i,x,y,config->size,config->size);
+//            sounds.push_back(s);
+//        }
 
-        // setup sound objects
-        for(size_t i=0;i < sounds.size();i++) {
-            sounds[i]->setup();
-            sounds[i]->load(newpath);
-        }
+//        // setup sound objects
+//        for(size_t i=0;i < sounds.size();i++) {
+//            sounds[i]->setup();
+//            sounds[i]->load(newpath);
+//        }
 
-        alcSetThreadContext(NULL);
-    }
-    bLoading = false;
+//        alcSetThreadContext(NULL);
+//    }
+//    bLoading = false;
 
-}
+//}
 
 //--------------------------------------------------------------
 Scene::Scene(AppConfig* _config, string name, int _id, int _activeSoundIdx, int _x, int _y, int _w, int _h)
@@ -168,7 +167,8 @@ void Scene::onClicked(ClickArgs& args) {
 //--------------------------------------------------------------
 void Scene::render()
 {
- if(!bLoading) {
+ //if(!bLoading)
+ {
     if(config->activeScene == id) {
         for(size_t i=0; i < sounds.size();i++) {
              sounds[i]->render();

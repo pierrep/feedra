@@ -5,7 +5,7 @@
 #include "UI/Interactive.h"
 #include "UI/Button.h"
 
-class Scene: public Interactive, public ofThread
+class Scene: public Interactive//, public ofThread
 {
 public:
     Scene();
@@ -16,7 +16,7 @@ public:
     void setup(string newpath);
     void render();
     void update();
-    void threadedFunction();
+   // void threadedFunction();
     void play();
     void pause();
     void stop();
@@ -49,9 +49,8 @@ public:
     long int curTime;
     long int prevTime;
     std::function<void()> fadeCallback;
-    string newpath;
-    bool bLoading;
-    ALCcontext* main_context;
+
+
 
 protected:
     bool bInteractive;
