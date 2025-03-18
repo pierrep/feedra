@@ -10,7 +10,11 @@
 #include "AL/efx-presets.h"
 
 #ifdef OF_USING_MPG123
+#ifdef _WIN32
+#include "mpg123.h"
+#else 
 #include <mpg123.h>
+#endif
 #endif
 
 using namespace std;

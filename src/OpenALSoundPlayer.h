@@ -22,6 +22,7 @@ typedef unsigned int ALuint;
 
 #ifdef _WIN32
 #include "sndfile.h"
+#define OF_USING_MPG123 1
 #else
 #include <sndfile.h>
 #endif

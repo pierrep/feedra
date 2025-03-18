@@ -201,7 +201,7 @@ void SoundObject::load(string newpath)
                         float pitch = samples["sample-"+ofToString(i)]["pitch"];                            
                         float gain = samples["sample-"+ofToString(i)]["gain"];
                         float pan = samples["sample-"+ofToString(i)]["pan"];
-                        bool panrandom;
+                        bool panrandom = false;
                         if (!samples["sample-" + ofToString(i)]["panrandom"].empty()) {
                             panrandom = samples["sample-" + ofToString(i)]["panrandom"];
                         }
