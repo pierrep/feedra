@@ -13,7 +13,7 @@
 
 //#define MAX_SOUNDS_PER_OBJECT 24
 
-class SoundObject: public Interactive
+class SoundObject: public Interactive, public ofThread
 {
 public:
 
@@ -23,6 +23,7 @@ public:
     void setup();
     void render();
     void update();
+    void threadedFunction();
     void onClicked(ClickArgs& args);
     void onDragged(ClickArgs& args);
     void onReleased(ClickArgs& args);
@@ -39,6 +40,8 @@ public:
     void loadMultipleSounds(vector<string>& filePaths,bool bClearSounds);
     void enableEditorMode();
     void disableEditorMode();
+    void loadThreaded();
+    void loadThreaded(string newpath);
 
     //Globals    
     AppConfig* config;
@@ -71,4 +74,8 @@ public:
     static ofEvent<size_t> clickedObjectEvent;
     static ofEvent<size_t> releasedObjectEvent;
     static ofEvent<size_t> draggedObjectEvent;
+
+    bool bLoading;
+    ALCcontext* main_context;
+   // string newpath;
 };
