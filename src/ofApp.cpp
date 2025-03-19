@@ -12,6 +12,7 @@ ofApp::~ofApp()
     ofRemoveListener(pitchSlider.clickedEvent, this, &ofApp::onSliderClicked);
     ofRemoveListener(gainSlider.clickedEvent, this, &ofApp::onSliderClicked);
     ofRemoveListener(randomPan.clickedEvent, this, &ofApp::onCheckboxClicked);
+    ofRemoveListener(spatialiseStereo.clickedEvent, this, &ofApp::onCheckboxClicked);
 
     ofRemoveListener(reverbSend.clickedEvent, this, &ofApp::onSliderClicked);
     ofRemoveListener(minDelay.numberChangedEvent, this, &ofApp::onNumberChanged);
@@ -335,11 +336,21 @@ void ofApp::setup(){
     randomPan.setFont(&config.f2());
     randomPan.setLabelString("Random Pan");
 
+    //Checkbox - Spatialise stereo
+    spatialiseStereo.setX(config.xoffset + 800 * config.x_scale);
+    spatialiseStereo.setY(ofGetHeight() - 30 * config.y_scale);
+    spatialiseStereo.setWidth(20 * config.x_scale);
+    spatialiseStereo.setHeight(20 * config.y_scale);
+    spatialiseStereo.setup(&config, 2);
+    spatialiseStereo.setFont(&config.f2());
+    spatialiseStereo.setLabelString("Spatialise Stereo");
+
     //Editor
     ofAddListener(panSlider.clickedEvent, this, &ofApp::onSliderClicked);    
     ofAddListener(pitchSlider.clickedEvent, this, &ofApp::onSliderClicked);
     ofAddListener(gainSlider.clickedEvent, this, &ofApp::onSliderClicked);
     ofAddListener(randomPan.clickedEvent, this, &ofApp::onCheckboxClicked);
+    ofAddListener(spatialiseStereo.clickedEvent, this, &ofApp::onCheckboxClicked);
 
     //Main
     ofAddListener(reverbSend.clickedEvent, this, &ofApp::onSliderClicked);
@@ -396,6 +407,9 @@ void ofApp::updateMainSliders()
 
     bool panRandom = scenes[config.activeSceneIdx]->sounds[config.activeSoundIdx]->soundPlayer.isRandomPan();
     randomPan.isActive = panRandom;
+
+    bool spatStereo = scenes[config.activeSceneIdx]->sounds[config.activeSoundIdx]->soundPlayer.isSpatialisedStereo();
+    spatialiseStereo.isActive = spatStereo;
 }
 
 //--------------------------------------------------------------

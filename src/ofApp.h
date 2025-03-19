@@ -78,6 +78,7 @@ class ofApp : public ofBaseApp {
         SimpleSlider pitchSlider;      
         CheckBox randomPan;
         Button* addSample;
+        CheckBox spatialiseStereo;
 
         bool bDoRender;
         bool bLoadScenes;

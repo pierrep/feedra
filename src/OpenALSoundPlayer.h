@@ -105,7 +105,7 @@ class OpenALSoundPlayer : public ofBaseSoundPlayer, public ofThread {
         std::string getSubFormatString() const {return subformat_string;}
 
         int getNumSources() {return sources.size();}
-        bool getIsStereo() {return nonSpatialisedStereo;}
+        bool getIsTrueStereo() {return nonSpatialisedStereo;}
 
         static ofEvent<OpenALSoundPlayer *> playbackEnded;
         OpenALSoundPlayer* playerPtr;

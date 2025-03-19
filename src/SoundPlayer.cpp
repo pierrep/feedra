@@ -388,11 +388,11 @@ int SoundPlayer::getCurSound() const
 }
 
 //--------------------------------------------------------------------
-bool SoundPlayer::getIsStereo() const
+bool SoundPlayer::getIsTrueStereo() const
 {
     if(player.size() == 0) return false;
 
-    return player[curSound]->audioPlayer->getIsStereo();
+    return player[curSound]->audioPlayer->getIsTrueStereo();
 }
 
 //--------------------------------------------------------------------
