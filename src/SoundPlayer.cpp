@@ -388,12 +388,21 @@ int SoundPlayer::getCurSound() const
 }
 
 //--------------------------------------------------------------------
-bool SoundPlayer::getIsTrueStereo() const
+bool SoundPlayer::isSpatialisedStereo(int index) const
 {
     if(player.size() == 0) return false;
 
-    return player[curSound]->audioPlayer->getIsTrueStereo();
+    return player[index]->audioPlayer->isSpatialisedStereo();
 }
+
+//--------------------------------------------------------------------
+void SoundPlayer::setSpatialisedStereo(int index,bool val)
+{
+    if(player.size() == 0) return;
+
+    return player[index]->audioPlayer->setSpatialisedStereo(val);
+}
+
 
 //--------------------------------------------------------------------
 int SoundPlayer::getMinDelay() const

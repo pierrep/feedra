@@ -105,7 +105,8 @@ class OpenALSoundPlayer : public ofBaseSoundPlayer, public ofThread {
         std::string getSubFormatString() const {return subformat_string;}
 
         int getNumSources() {return sources.size();}
-        bool getIsTrueStereo() {return nonSpatialisedStereo;}
+        bool isSpatialisedStereo() {return spatialisedStereo;}
+        void setSpatialisedStereo(bool val);
 
         static ofEvent<OpenALSoundPlayer *> playbackEnded;
         OpenALSoundPlayer* playerPtr;
@@ -150,6 +151,7 @@ class OpenALSoundPlayer : public ofBaseSoundPlayer, public ofThread {
 		int channels;
 		float duration; //in secs
 		int samplerate;
+        std::filesystem::path fileName;
 		std::string file_extension;
 		std::vector<ALuint> buffers;
 		std::vector<ALuint> sources;
@@ -187,7 +189,7 @@ class OpenALSoundPlayer : public ofBaseSoundPlayer, public ofThread {
 
         std::atomic<bool> stream_end;
 
-        bool nonSpatialisedStereo;
+        bool spatialisedStereo;
 
         // OpenAL filter
         ALuint filter;

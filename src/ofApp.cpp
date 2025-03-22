@@ -338,7 +338,7 @@ void ofApp::setup(){
 
     //Checkbox - Spatialise stereo
     spatialiseStereo.setX(config.xoffset + 800 * config.x_scale);
-    spatialiseStereo.setY(ofGetHeight() - 30 * config.y_scale);
+    spatialiseStereo.setY(ofGetHeight() - 25 * config.y_scale);
     spatialiseStereo.setWidth(20 * config.x_scale);
     spatialiseStereo.setHeight(20 * config.y_scale);
     spatialiseStereo.setup(&config, 2);
@@ -407,9 +407,6 @@ void ofApp::updateMainSliders()
 
     bool panRandom = scenes[config.activeSceneIdx]->sounds[config.activeSoundIdx]->soundPlayer.isRandomPan();
     randomPan.isActive = panRandom;
-
-    bool spatStereo = scenes[config.activeSceneIdx]->sounds[config.activeSoundIdx]->soundPlayer.isSpatialisedStereo();
-    spatialiseStereo.isActive = spatStereo;
 }
 
 //--------------------------------------------------------------
@@ -431,6 +428,12 @@ void ofApp::updateEditSliders()
         pct = (gain - gainSlider.getLowValue()) / total;
         //cout << "gain: " << gain << " total: " << total << " percent: " << pct << endl;
         gainSlider.setPercent(pct);
+
+        if(scenes[config.activeSceneIdx]->sounds[config.activeSoundIdx]->soundPlayer.getNumChannels() == 2)
+        {
+            bool spatStereo = scenes[config.activeSceneIdx]->sounds[config.activeSoundIdx]->soundPlayer.isSpatialisedStereo(config.activeSampleIdx);
+            spatialiseStereo.isActive = spatStereo;
+        }
     }
 }
 
@@ -499,6 +502,15 @@ void  ofApp::onCheckboxClicked(Interactive::ClickArgs& args)
         randomPan.isActive = !randomPan.isActive;
         scenes[config.activeSceneIdx]->sounds[config.activeSoundIdx]->soundPlayer.setRandomPan(randomPan.isActive);
     }
+
+    if (spatialiseStereo.bActivate) {
+        spatialiseStereo.bActivate = false;
+        if(scenes[config.activeSceneIdx]->sounds[config.activeSoundIdx]->soundPlayer.getNumChannels() == 2)
+        {
+        spatialiseStereo.isActive = !spatialiseStereo.isActive;
+        scenes[config.activeSceneIdx]->sounds[config.activeSoundIdx]->soundPlayer.setSpatialisedStereo(config.activeSampleIdx,spatialiseStereo.isActive);
+        }
+    }
 }
 
 //--------------------------------------------------------------
@@ -558,7 +570,23 @@ void ofApp::onSliderClicked(SliderData& args) {
 
 //--------------------------------------------------------------
 void ofApp::update(){
-    if(bLoading) return;
+
+    if(bLoading) {
+        if(!bThreadsDone) {
+            return;
+        } else {
+            config.prevSceneIdx = 0;
+            enableScene(config.activeSceneIdx);
+            updateMainSliders();
+            ofAddListener(SoundObject::clickedObjectEvent, this, &ofApp::onSoundObjectClicked);
+            ofAddListener(SoundObject::draggedObjectEvent, this, &ofApp::onSoundObjectDragged);
+            ofAddListener(SoundObject::releasedObjectEvent, this, &ofApp::onSoundObjectReleased);
+            ofAddListener(AudioSample::clickedSampleEvent, this, &ofApp::onSampleClicked);
+            calculateSources();
+            ofSetWindowTitle("Feedra");
+            bLoading = false;
+        }
+    }
 
     if(pageState == MAIN) {
         // clear pad
@@ -997,16 +1025,6 @@ void ofApp::draw(){
         endLoadTime = ofGetElapsedTimef();
         ofLogNotice() << "LOAD time took " << std::setw(2) << endLoadTime - startLoadTime << " secs";
         ofLogNotice() << "Finished loading scenes, setting up Feedra, config.activeSceneIdx = " << config.activeSceneIdx;
-        config.prevSceneIdx = 0;
-        enableScene(config.activeSceneIdx);
-        updateMainSliders();
-        ofAddListener(SoundObject::clickedObjectEvent, this, &ofApp::onSoundObjectClicked);
-        ofAddListener(SoundObject::draggedObjectEvent, this, &ofApp::onSoundObjectDragged);
-        ofAddListener(SoundObject::releasedObjectEvent, this, &ofApp::onSoundObjectReleased);
-        ofAddListener(AudioSample::clickedSampleEvent, this, &ofApp::onSampleClicked);
-        calculateSources();
-        ofSetWindowTitle("Feedra");
-        bLoading = false;
         return;
     }
     //int fps = ofGetFrameRate();
@@ -1148,6 +1166,10 @@ void ofApp::renderEditPage() {
     panSlider.render();
     pitchSlider.render();
     gainSlider.render();
+    if(scenes[config.activeSceneIdx]->sounds[config.activeSoundIdx]->soundPlayer.getNumChannels() == 2)
+    {
+        spatialiseStereo.render();
+    }
     randomPan.render();
     addSample->draw();
 }

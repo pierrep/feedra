@@ -345,11 +345,12 @@ OpenALSoundPlayer::OpenALSoundPlayer(){
     isStreaming		= true;
 	channels		= 0;
     samplerate      = 0;
+    fileName        = "";
     file_extension  = "";
 	duration		= 0;
 	fftCfg			= 0;
 	streamf			= 0;
-    nonSpatialisedStereo = true;
+    spatialisedStereo = false;
     bUseFilter = false;
     reverbSend      = 0.0f;
 #ifdef OF_USING_MPG123
@@ -1004,9 +1005,27 @@ size_t OpenALSoundPlayer::readFile(const std::filesystem::path& fileName){
 }
 
 //------------------------------------------------------------
+void OpenALSoundPlayer::setSpatialisedStereo(bool val)
+{
+    if(bLoadedOk)
+    {
+        if(channels == 2)
+        {
+            if(spatialisedStereo != val)
+            {
+                setPaused(true);
+                bLoadedOk = false;
+                spatialisedStereo = val;
+                load(fileName,isStreaming);
+            }
+        }
+    }
+}
+
+//------------------------------------------------------------
 bool OpenALSoundPlayer::load(const std::filesystem::path& _fileName, bool is_stream) {
 
-    std::filesystem::path fileName = _fileName;
+    fileName = _fileName;
     bMultiPlay = false;
     isStreaming = is_stream;
     int err = AL_NO_ERROR;
@@ -1082,7 +1101,7 @@ bool OpenALSoundPlayer::load(const std::filesystem::path& _fileName, bool is_str
     openALformat = AL_NONE;
     if(channels == 1)
     {
-        nonSpatialisedStereo = false;
+        spatialisedStereo = false;
         if(sample_format == Int16)
             openALformat = AL_FORMAT_MONO16;
         else if(sample_format == Float)
@@ -1091,25 +1110,25 @@ bool OpenALSoundPlayer::load(const std::filesystem::path& _fileName, bool is_str
     else if(channels == 2)
     {
         if(sample_format == Int16) {
-            if(nonSpatialisedStereo ) {
-                openALformat = AL_FORMAT_STEREO16;
-            } else {
+            if(spatialisedStereo ) {
                 openALformat = AL_FORMAT_MONO16;
+            } else {
+                openALformat = AL_FORMAT_STEREO16;
             }
         }
         else if(sample_format == Float) {
-            if(nonSpatialisedStereo ) {
-                openALformat = AL_FORMAT_STEREO_FLOAT32;
-            } else {
+            if(spatialisedStereo ) {
                 openALformat = AL_FORMAT_MONO_FLOAT32;
+            } else {
+                openALformat = AL_FORMAT_STEREO_FLOAT32;
             }
         }
     }   
 
-    if(nonSpatialisedStereo) {
-        sources.resize(1);
-    } else {
+    if(spatialisedStereo) {
         sources.resize(channels);
+    } else {
+        sources.resize(1);
     }
 
     alGetError(); // Clear error.
@@ -1127,7 +1146,7 @@ bool OpenALSoundPlayer::load(const std::filesystem::path& _fileName, bool is_str
         buffers.resize(sources.size());
 	}
 	alGenBuffers((ALsizei)buffers.size(), &buffers[0]);
-    //ofLogNotice() << "sound load " << _fileName <<" channels: "<< channels << " buffers.size: " << buffers.size() << " buffer_short.size(): " << buffer_short.size() << " duration: " << duration;
+    ofLogNotice() << "sound load " << _fileName <<" channels: "<< channels << " buffers.size: " << buffers.size() << " buffer_short.size(): " << buffer_short.size() << " duration: " << duration;
 
     if(sources.size() == 1){
 
@@ -1344,7 +1363,7 @@ void OpenALSoundPlayer::threadedFunction(){
                 processed--;
                 stream("");
 
-                if((channels > 1) && !nonSpatialisedStereo){
+                if((channels > 1) && spatialisedStereo){
 					for(int j=0;j<channels;j++){
                         if(openALformat == AL_FORMAT_MONO16) {
                             int numFrames = buffer_short.size()/channels;
@@ -1603,7 +1622,7 @@ int OpenALSoundPlayer::getPositionMS() const{
 //------------------------------------------------------------
 void OpenALSoundPlayer::setPan(float p){
 	if(sources.empty()) return;
-    if(nonSpatialisedStereo) {
+    if(!spatialisedStereo) {
         //Panning does nothing, so exit
         return;
     }
@@ -1638,6 +1657,7 @@ void OpenALSoundPlayer::setPan(float p){
 //------------------------------------------------------------
 void OpenALSoundPlayer::setPaused(bool bP){
 	if(sources.empty()) return;
+    if(!bLoadedOk) return;
     std::unique_lock<std::mutex> lock(mutex);
     bPaused = bP;
     if(bPaused){
@@ -1697,6 +1717,9 @@ void OpenALSoundPlayer::setMultiPlay(bool bMp){
 
 // ----------------------------------------------------------------------------
 void OpenALSoundPlayer::play(){
+    if(sources.empty()) return;
+    if(!bLoadedOk) return;
+
     std::unique_lock<std::mutex> lock(mutex);
 	int err = alGetError();
 
@@ -1753,8 +1776,8 @@ void OpenALSoundPlayer::play(){
 
 // ----------------------------------------------------------------------------
 void OpenALSoundPlayer::stop(){
-
-	if(sources.empty()) return;
+    if(sources.empty()) return;
+    if(!bLoadedOk) return;
 
     if(bMultiPlay) {
         std::unique_lock<std::mutex> lock(mutex);

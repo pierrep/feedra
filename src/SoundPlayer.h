@@ -55,7 +55,8 @@ public:
     
     void setRandomPan(bool val) { bRandomPan = val; }
     bool isRandomPan() { return bRandomPan; }
-    bool isSpatialisedStereo(int index) { return !player[index]->getIsTrueStereo();}
+    bool isSpatialisedStereo(int index) const;
+    void setSpatialisedStereo(int index, bool val);
 
     AppConfig* config;
     vector<AudioSample *> player;

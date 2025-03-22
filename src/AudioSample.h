@@ -22,7 +22,7 @@ public:
     float getPitch(){ return pitch;}
     float getGain(){ return gain;}
     float getPan(){ return audioPlayer->getPan();}
-    bool getIsTrueStereo() {return audioPlayer->getIsTrueStereo();}
+    bool isSpatialisedStereo() {return audioPlayer->isSpatialisedStereo();}
 
     OpenALSoundPlayer* audioPlayer;
     std::string sample_path;
