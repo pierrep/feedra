@@ -413,9 +413,19 @@ void ofApp::updateMainSliders()
 void ofApp::updateEditSliders()
 {
     if(scenes[config.activeSceneIdx]->sounds[config.activeSoundIdx]->soundPlayer.player.at(config.activeSampleIdx)) {
-        float p = scenes[config.activeSceneIdx]->sounds[config.activeSoundIdx]->soundPlayer.player.at(config.activeSampleIdx)->getPan();
-        float pct = (p+1.0f) / 2.0f;
-        panSlider.setPercent(pct);
+        float pct = 0;
+        int numChannels = scenes[config.activeSceneIdx]->sounds[config.activeSoundIdx]->soundPlayer.getNumChannels();
+        if(numChannels == 2)
+        {
+            bool spatStereo = scenes[config.activeSceneIdx]->sounds[config.activeSoundIdx]->soundPlayer.isSpatialisedStereo(config.activeSampleIdx);
+            spatialiseStereo.isActive = spatStereo;
+        }
+
+        if((numChannels == 2 && spatialiseStereo.isActive) || (numChannels == 1)) {
+            float p = scenes[config.activeSceneIdx]->sounds[config.activeSoundIdx]->soundPlayer.player.at(config.activeSampleIdx)->getPan();
+            pct = (p+1.0f) / 2.0f;
+            panSlider.setPercent(pct);
+        }
 
         float pitch = scenes[config.activeSceneIdx]->sounds[config.activeSoundIdx]->soundPlayer.player.at(config.activeSampleIdx)->getPitch();
         float total = pitchSlider.getHighValue() - pitchSlider.getLowValue();
@@ -428,12 +438,6 @@ void ofApp::updateEditSliders()
         pct = (gain - gainSlider.getLowValue()) / total;
         //cout << "gain: " << gain << " total: " << total << " percent: " << pct << endl;
         gainSlider.setPercent(pct);
-
-        if(scenes[config.activeSceneIdx]->sounds[config.activeSoundIdx]->soundPlayer.getNumChannels() == 2)
-        {
-            bool spatStereo = scenes[config.activeSceneIdx]->sounds[config.activeSoundIdx]->soundPlayer.isSpatialisedStereo(config.activeSampleIdx);
-            spatialiseStereo.isActive = spatStereo;
-        }
     }
 }
 
@@ -507,8 +511,14 @@ void  ofApp::onCheckboxClicked(Interactive::ClickArgs& args)
         spatialiseStereo.bActivate = false;
         if(scenes[config.activeSceneIdx]->sounds[config.activeSoundIdx]->soundPlayer.getNumChannels() == 2)
         {
-        spatialiseStereo.isActive = !spatialiseStereo.isActive;
-        scenes[config.activeSceneIdx]->sounds[config.activeSoundIdx]->soundPlayer.setSpatialisedStereo(config.activeSampleIdx,spatialiseStereo.isActive);
+            spatialiseStereo.isActive = !spatialiseStereo.isActive;
+            scenes[config.activeSceneIdx]->sounds[config.activeSoundIdx]->soundPlayer.setSpatialisedStereo(config.activeSampleIdx,spatialiseStereo.isActive);
+            if(!spatialiseStereo.isActive) {
+                panSlider.disableEvents();
+            }
+            else {
+                panSlider.enableEvents();
+            }
         }
     }
 }
@@ -552,7 +562,10 @@ void ofApp::onSliderClicked(SliderData& args) {
             if(args.id == 3) {
                 // panning
                 //scenes[config.activeSceneIdx]->sounds[config.activeSoundIdx]->soundPlayer.setPan(pan.getValue());
-                scenes[config.activeSceneIdx]->sounds[config.activeSoundIdx]->soundPlayer.player.at(config.activeSampleIdx)->setPan(panSlider.getValue());
+                int numChannels = scenes[config.activeSceneIdx]->sounds[config.activeSoundIdx]->soundPlayer.getNumChannels();
+                if((numChannels == 2 && spatialiseStereo.isActive) || (numChannels == 1)) {
+                    scenes[config.activeSceneIdx]->sounds[config.activeSoundIdx]->soundPlayer.player.at(config.activeSampleIdx)->setPan(panSlider.getValue());
+                }
             }
             if(args.id == 5) {
                 // pitch
@@ -1163,10 +1176,13 @@ void ofApp::renderEditPage() {
         ofVec3f pos(config.xoffset+offset,config.yoffset+(i%15)*42*config.y_scale,0);
         p.player[i]->render(pos);
     }
-    panSlider.render();
+    int numChannels = scenes[config.activeSceneIdx]->sounds[config.activeSoundIdx]->soundPlayer.getNumChannels();
+    if((numChannels == 2 && spatialiseStereo.isActive) || (numChannels == 1)) {
+        panSlider.render();
+    }
     pitchSlider.render();
     gainSlider.render();
-    if(scenes[config.activeSceneIdx]->sounds[config.activeSoundIdx]->soundPlayer.getNumChannels() == 2)
+    if(numChannels == 2)
     {
         spatialiseStereo.render();
     }

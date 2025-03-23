@@ -1146,7 +1146,7 @@ bool OpenALSoundPlayer::load(const std::filesystem::path& _fileName, bool is_str
         buffers.resize(sources.size());
 	}
 	alGenBuffers((ALsizei)buffers.size(), &buffers[0]);
-    ofLogNotice() << "sound load " << _fileName <<" channels: "<< channels << " buffers.size: " << buffers.size() << " buffer_short.size(): " << buffer_short.size() << " duration: " << duration;
+    //ofLogNotice() << "sound load " << _fileName <<" channels: "<< channels << " buffers.size: " << buffers.size() << " buffer_short.size(): " << buffer_short.size() << " duration: " << duration;
 
     if(sources.size() == 1){
 
