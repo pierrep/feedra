@@ -8,6 +8,7 @@ enum ButtonType {
     MINUS,
     PLUS,
     ADD,
+    NEW_SCENE,
     PLAY_SCENE,
     STOP_SCENE,
     DELETE_SCENE,
@@ -26,6 +27,8 @@ public:
     void setBorder(bool value) {bBorder = value;}
     void setPrimaryColour(int hexColour) {colour1 = hexColour;}
     void setSecondaryColour(int hexColour) {colour2 = hexColour;}
+    void setName(string _name) {name = _name;}
+    string getName() const {return name;}
     void draw();
     void onClicked(ClickArgs& args);
 
@@ -38,5 +41,6 @@ public:
     bool bBorder;
     int colour1;
     int colour2;
+    string name;
 
 };

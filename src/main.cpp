@@ -11,11 +11,11 @@ int main( ){
 #ifdef OF_TARGET_OPENGLES
     ofGLESWindowSettings settings;
     settings.glesVersion=2;
-    settings.setSize(1150,800);
+    settings.setSize(1150,1000);
 #else
     ofGLWindowSettings settings;
     settings.setGLVersion(2,1);
-    settings.setSize(1150,800);
+    settings.setSize(1150,1080);
 #endif
     ofCreateWindow(settings);
     //(GLFWwindow*)ofGetWindowPtr()->setWindowIcon();

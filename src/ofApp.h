@@ -50,6 +50,7 @@ class ofApp : public ofBaseApp {
         void calculateSources();
         void renderMainPage();
         void renderEditPage();
+        void renderHeader();
         void disableEvents();
         void enableEvents();
         void enableEditorMode();

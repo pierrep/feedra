@@ -82,6 +82,7 @@ void TextInputField::setFont(TEXTFIELD_FONT_RENDERER & font){
 		delete fontRef;
 	}
     fontRef = new TextInput::TypedFontRenderer(&font);
+    bounds.height = fontRef->getLineHeight();
 }
 
 //----------
@@ -187,8 +188,8 @@ void TextInputField::draw() {
 		float startX = fontRef->stringWidth(lines[beginCursorY].substr(0,beginCursorX));
 		float endX = fontRef->stringWidth(lines[endCursorY].substr(0, endCursorX));
 
-        //ofSetHexColor(0x6988db); //blueish
-        ofSetHexColor(0x9a8e84);
+        ofSetHexColor(0x6988db); //blueish
+        //ofSetHexColor(0x9a8e84);
 		ofFill();
 		
 		if(beginCursorY==endCursorY) {
@@ -216,7 +217,7 @@ void TextInputField::draw() {
 					endX, fontRef->getLineHeight()
 			);
 		}
-		ofPopStyle();
+        ofPopStyle();
 		
 		
 		//draw cursor line

@@ -170,7 +170,7 @@ void ofApp::loadConfig(string newpath)
                     int new_scene_id = setting["scene"+ofToString(i)]["id"];
                     //cout << "new_scene_id: " << new_scene_id << endl;
 
-                    int x = config.baseSceneOffset;
+                    int x = config.headerOffset;
                     int y = i* config.scene_spacing + config.scene_yoffset;
                     string name = "";
                     if(!setting["scene"+ofToString(i)]["name"].empty())
@@ -313,7 +313,7 @@ void ofApp::setup(){
     gainSlider.setLabelString("Gain");
     gainSlider.disableEvents();
 
-    // setup Add sanole button
+    // setup add sample button
     addSample = new Button(&config,3,config.xoffset, 40*config.y_scale,50*config.x_scale, 50*config.y_scale,ButtonType::ADD);
     addSample->setPrimaryColour(0x7b2800);
     addSample->setBorder(true);
@@ -364,20 +364,22 @@ void ofApp::setup(){
     loadConfig();
 
     // create scenes
-    if(maxScenes == 0) {
-        maxScenes = 4;
-        for(size_t i = 0; i < maxScenes; i++)
-        {
-            int x = config.baseSceneOffset;
-            int y = i* config.scene_spacing + config.scene_yoffset;
-            Scene* s = new Scene(&config,"",i,1,x,y,config.scene_width,config.scene_height);
-            scenes.push_back(s);
-        }
-    }
+//    if(maxScenes == 0) {
+//        maxScenes = 4;
+//        for(size_t i = 0; i < maxScenes; i++)
+//        {
+//            int x = config.baseSceneOffset;
+//            int y = i* config.scene_spacing + config.scene_yoffset;
+//            Scene* s = new Scene(&config,"",i,1,x,y,config.scene_width,config.scene_height);
+//            scenes.push_back(s);
+//        }
+//    }
 
     // setup Add Scene button
-    addScene = new Button(&config,3,config.baseSceneOffset, scenes[maxScenes-1]->y + config.scene_spacing,config.scene_height,config.scene_height,ButtonType::ADD);
-    addScene->setPrimaryColour(0x7b2800);
+    int x = config.addSceneOffset;
+    int y = config.headerOffset + scenes.size()*config.scene_height + 40*config.y_scale;
+    addScene = new Button(&config,3, x, y,config.scene_button_w, config.scene_button_h, ButtonType::NEW_SCENE);
+    addScene->setName("New Scene");
     addScene->setBorder(true);
 
     bLoading = true;
@@ -721,11 +723,12 @@ void ofApp::update(){
     }
 
     //Delete scene
-    if(scenes[config.activeSceneIdx]->delete_scene.bActivate)
-    {
-        deleteScene();
+    if(scenes.size() > 0) {
+        if(scenes[config.activeSceneIdx]->delete_scene.bActivate)
+        {
+            deleteScene();
+        }
     }
-
 }
 
 //--------------------------------------------------------------
@@ -733,7 +736,7 @@ void ofApp::addNewScene()
 {
     addScene->bActivate = false;
 
-    int x = config.baseSceneOffset;
+    int x = config.headerOffset;
     int y = scenes.size() * config.scene_spacing + config.scene_yoffset;
     int scene_width = config.scene_width;
     int scene_height = config.scene_height;
@@ -762,8 +765,10 @@ void ofApp::addNewScene()
         prev_id = cur_id;
         new_id = cur_id+1;
     }
-    if(tmp_scenes[0]->id > 0) {
-        new_id = 0;
+    if(tmp_scenes.size() > 0) {
+        if(tmp_scenes[0]->id > 0) {
+            new_id = 0;
+        }
     }
 
     Scene* s = new Scene(&config,"",new_id,1,x,y,scene_width,scene_height);
@@ -881,6 +886,8 @@ void ofApp::deleteScene()
 //--------------------------------------------------------------
 void ofApp::enableScene(int idx)
 {
+    if(scenes.size() == 0) return;
+
     for(unsigned int i =0; i < scenes.size();i++) {
         scenes[i]->endFade();
     }
@@ -1048,7 +1055,7 @@ void ofApp::draw(){
 
     if(!bDoRender || bMinimised) return;
 
-    ofBackgroundHex(0x9a8e84);
+    ofBackgroundHex(0x202020);
 
    if(pageState == EDIT) {
             if(scenes[config.activeSceneIdx]->sounds[config.activeSoundIdx]->soundPlayer.player.size() > 0) {
@@ -1129,6 +1136,8 @@ void ofApp::draw(){
 //--------------------------------------------------------------
 void ofApp::renderMainPage()
 {
+    renderHeader();
+
     for(size_t i=0; i < scenes.size();i++) {
         scenes[i]->render();
     }
@@ -1138,23 +1147,21 @@ void ofApp::renderMainPage()
     }
 
     // Current selected sound info
-   // if(!scenes[config.activeSceneIdx]->bLoading)
-    {
-        if(scenes[config.activeSceneIdx]->sounds[config.activeSoundIdx]->soundPlayer.isLoaded()) {
-            drawSoundInfo();
-        }
-    }
+//    {
+//        if(scenes[config.activeSceneIdx]->sounds[config.activeSoundIdx]->soundPlayer.isLoaded()) {
+//            drawSoundInfo();
+//        }
+//    }
     mainVolume.render();
-   // if(!scenes[config.activeSceneIdx]->bLoading)
-    {
-        if(scenes[config.activeSceneIdx]->sounds[config.activeSoundIdx]->soundPlayer.player.size() > 1)
-        {
-            randomPlayback.enableEvents();
-            randomPlayback.render();
-        } else {
-            randomPlayback.disableEvents();
-        }
-    }
+//   if(scenes.size() > 0) {
+//        if(scenes[config.activeSceneIdx]->sounds[config.activeSoundIdx]->soundPlayer.player.size() > 1)
+//        {
+//            randomPlayback.enableEvents();
+//            randomPlayback.render();
+//        } else {
+//            randomPlayback.disableEvents();
+//        }
+//    }
 
     if(bDrawDragging)
     {
@@ -1188,6 +1195,16 @@ void ofApp::renderEditPage() {
     }
     randomPan.render();
     addSample->draw();
+}
+
+//--------------------------------------------------------------
+void ofApp::renderHeader()
+{
+    ofPushStyle();
+    ofSetHexColor(0x2d2d2d);
+    ofFill();
+    ofDrawRectangle(0,0,ofGetWidth(), config.headerHeight);
+    ofPopStyle();
 }
 
 //--------------------------------------------------------------

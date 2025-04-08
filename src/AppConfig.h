@@ -10,10 +10,12 @@ public:
     void setup();
 
     // fonts
+    ofTrueTypeFont  largefont;
     ofTrueTypeFont  mainfont;
     ofTrueTypeFont  smallfont;
     ofTrueTypeFont  tinyfont;
 
+    ofTrueTypeFont& f0() {return largefont;}
     ofTrueTypeFont& f1() {return mainfont;}
     ofTrueTypeFont& f2() {return smallfont;}
     ofTrueTypeFont& f3() {return tinyfont;}
@@ -40,9 +42,15 @@ public:
     int scene_spacing;
     int scene_width;
     int scene_height;
-    int baseSceneOffset;
+    int scene_button_w;
+    int scene_button_h;
+    int headerOffset;
+    int addSceneOffset;
+    int loadSceneOffset;
     int scene_yoffset;
     int sample_gui_width;
+
+    int headerHeight;
 
     string last_path;
     bool loopByDefault;
@@ -57,6 +65,7 @@ public:
     size_t activeSample;
 
     ofImage loopicon;
+    ofImage plusIcon;
     ofJson settings;
     bool bDragging;
 

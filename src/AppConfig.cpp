@@ -8,7 +8,7 @@ AppConfig::AppConfig()
     activeSoundIdx = 0;
     prevSoundIdx = 0;
 
-    baseSceneOffset = 0;
+    headerOffset = 0;
     gridHeight = 0;
     gridWidth = 0;
     loopByDefault = false;
@@ -31,11 +31,19 @@ void AppConfig::setup()
     gridWidth = 6;
     gridHeight = 4;
 
+    headerHeight = 80*x_scale;
+
     scene_width = 255*x_scale;
     scene_height = 45*y_scale;
     scene_spacing = scene_height + 5*x_scale;
-    baseSceneOffset = gridWidth*spacing + 10*x_scale;
+    headerOffset = 80 * x_scale;
     scene_yoffset = 80*y_scale;
+    addSceneOffset = 295*x_scale;
+    loadSceneOffset = 489*x_scale;
+
+    scene_button_w = 176*x_scale;
+    scene_button_h = 44*y_scale;;
+
     max_scenes = 14;
 
     sample_gui_width = 550*x_scale;
@@ -46,11 +54,14 @@ void AppConfig::setup()
 
     loopByDefault = false;
 
+    tinyfont.load("fonts/NewMediaFett.ttf", 7 * x_scale, true, false);
     smallfont.load("fonts/NewMediaFett.ttf", 9 * x_scale, true, false);
     mainfont.load("fonts/NewMediaFett.ttf", 12 * x_scale, true, false);
-    tinyfont.load("fonts/NewMediaFett.ttf", 7 * x_scale, true, false);
+    largefont.load("fonts/NewMediaFett.ttf", 30 * x_scale, true, false);
+
 
     loopicon.load("images/loopicon.png");
+    plusIcon.load("images/plusIcon.png");
 
     defaultLibraryLocation = "/home/grimus/Downloads/5e/";
 

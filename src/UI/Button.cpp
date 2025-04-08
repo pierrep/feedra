@@ -104,7 +104,7 @@ void Button::draw()
             ofSetColor(64);
             float x = getX()+width/2.0f - config->f1().stringWidth("+")/2.0f;
             float y = getY() + getHeight()/2.0f + config->f1().stringHeight("+")/2.0f;
-            config->f1().drawString("+",x,y);
+            config->f1().drawString("",x,y);
             ofPopStyle();
             break;
         }
@@ -122,6 +122,25 @@ void Button::draw()
             ofSetLineWidth(1);
             ofDrawRectangle(getX(),getY(),getWidth()/2,getHeight()/2);
         }
+
+        ofPopStyle();
+        break;
+    }
+    case ButtonType::NEW_SCENE:
+    {
+        ofPushStyle();
+        ofSetHexColor(0x2d2d2d);
+        ofNoFill();
+        ofSetLineWidth(3);
+        ofDrawRectRounded(getX(),getY(),getWidth(), getHeight(),10*config->x_scale);
+        ofSetColor(255);
+        int tx = x +20*config->x_scale;
+        int ty = y + (height/2.0f);
+        config->f1().drawString(name,tx,ty + config->f1().stringHeight(name)/2.0f);
+        ofRectMode m = ofGetRectMode();
+        ofSetRectMode(OF_RECTMODE_CENTER);
+        config->plusIcon.draw(tx+config->f1().stringWidth(name)+20*config->x_scale,ty);
+        ofSetRectMode(m);
 
         ofPopStyle();
         break;

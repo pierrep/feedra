@@ -27,65 +27,23 @@ void Scene::setup() {
 //--------------------------------------------------------------
 void Scene::setup(string _newpath)
 {    
-    //bLoading = true;
     ofAddListener(this->clickedEvent, this, &Scene::onClicked);
     enableInteractivity();
 
     textfield.setUseListeners(true);
-    //newpath = _newpath;
 
-    bool bDoThreading = alcIsExtensionPresent(OpenALSoundPlayer::getCurrentDevice(), "ALC_EXT_thread_local_context");
-    bDoThreading = false;
-
-    if(bDoThreading)
-    {
-        //   main_context = alcGetCurrentContext();
-        //startThread();
-    } else {
-        for(size_t i=0;i < config->gridWidth*config->gridHeight;i++) {
-            int x = i%config->gridWidth*config->spacing + config->xoffset;
-            int y = (i/config->gridWidth)*config->spacing + config->yoffset;
-            SoundObject* s = new SoundObject(config,id,i,x,y,config->size,config->size);
-            sounds.push_back(s);
-        }
-
-        // setup sound objects
-        for(size_t i=0;i < sounds.size();i++) {
-            //sounds[i]->setup();
-            sounds[i]->loadThreaded();
-        }
-        //bLoading = false;
-    }
-}
-
-//--------------------------------------------------------------
-//void Scene::threadedFunction()
-//{
-//    if(alcIsExtensionPresent(OpenALSoundPlayer::getCurrentDevice(), "ALC_EXT_thread_local_context"))
-//    {
-//        ALCboolean (ALC_APIENTRY*alcSetThreadContext)(ALCcontext* context);
-//        alcSetThreadContext = reinterpret_cast<ALCboolean (ALC_APIENTRY*)(ALCcontext *context)>(alcGetProcAddress(OpenALSoundPlayer::getCurrentDevice(), "alcSetThreadContext"));
-
-//        alcSetThreadContext(main_context);
-
-//        for(size_t i=0;i < config->gridWidth*config->gridHeight;i++) {
-//            int x = i%config->gridWidth*config->spacing + config->xoffset;
-//            int y = (i/config->gridWidth)*config->spacing + config->yoffset;
-//            SoundObject* s = new SoundObject(config,id,i,x,y,config->size,config->size);
-//            sounds.push_back(s);
-//        }
-
-//        // setup sound objects
-//        for(size_t i=0;i < sounds.size();i++) {
-//            sounds[i]->setup();
-//            sounds[i]->load(newpath);
-//        }
-
-//        alcSetThreadContext(NULL);
+//    for(size_t i=0;i < config->gridWidth*config->gridHeight;i++) {
+//        int x = i%config->gridWidth*config->spacing + config->xoffset;
+//        int y = (i/config->gridWidth)*config->spacing + config->yoffset;
+//        SoundObject* s = new SoundObject(config,id,i,x,y,config->size,config->size);
+//        sounds.push_back(s);
 //    }
-//    bLoading = false;
 
-//}
+//    // setup sound objects
+//    for(size_t i=0;i < sounds.size();i++) {
+//        sounds[i]->loadThreaded();
+//    }
+}
 
 //--------------------------------------------------------------
 Scene::Scene(AppConfig* _config, string name, int _id, int _activeSoundIdx, int _x, int _y, int _w, int _h)
@@ -99,18 +57,18 @@ Scene::Scene(AppConfig* _config, string name, int _id, int _activeSoundIdx, int 
     setWidth(_w);
     setHeight(_h);
 
-    play_button.setup(config,id,0,0,20 * config->x_scale, 20 * config->y_scale,ButtonType::PLAY_SCENE);
-    delete_scene.setup(config,id,0,0,20 * config->x_scale, 20 * config->y_scale,ButtonType::DELETE_SCENE);
-    stop_button.setup(config, id, 0, 0, 20 * config->x_scale, 20 * config->y_scale,ButtonType::STOP_SCENE);
+//    play_button.setup(config,id,0,0,20 * config->x_scale, 20 * config->y_scale,ButtonType::PLAY_SCENE);
+//    delete_scene.setup(config,id,0,0,20 * config->x_scale, 20 * config->y_scale,ButtonType::DELETE_SCENE);
+//    stop_button.setup(config, id, 0, 0, 20 * config->x_scale, 20 * config->y_scale,ButtonType::STOP_SCENE);
+
+    textfield.setFont(config->f0());
 
     scene_name = "Scene "+ofToString(id+1);
     if(strcmp(name.c_str(),"")== 0) {
         textfield.text = scene_name;
     } else {
         textfield.text = name;
-    }
-
-    textfield.setFont(config->f2());
+    }    
     textfield.disable();
 
     updatePosition(_x,_y);
@@ -140,17 +98,17 @@ void Scene::updatePosition(int _x, int _y)
     setX(_x);
     setY(_y);
 
-    play_button.setX(_x + getWidth()- 120 * config->x_scale);
-    play_button.setY(_y + 10 * config->y_scale);
+//    play_button.setX(_x + getWidth()- 120 * config->x_scale);
+//    play_button.setY(_y + 10 * config->y_scale);
 
-    stop_button.setX(_x + getWidth()- 90 * config->x_scale);
-    stop_button.setY(_y + 10 * config->y_scale);
+//    stop_button.setX(_x + getWidth()- 90 * config->x_scale);
+//    stop_button.setY(_y + 10 * config->y_scale);
 
-    delete_scene.setX(_x + getWidth()- 40 * config->x_scale);
-    delete_scene.setY(_y + 10 * config->y_scale);
+//    delete_scene.setX(_x + getWidth()- 40 * config->x_scale);
+//    delete_scene.setY(_y + 10 * config->y_scale);
 
-    float txt_height = 16;
-    textfield.bounds = ofRectangle(getX()+10*config->x_scale, getY() + getHeight()/2 - txt_height/3*config->y_scale, 100*config->x_scale, txt_height*config->y_scale);
+    float txt_height = config->f0().getLineHeight();
+    textfield.bounds = ofRectangle(getX()+200*config->x_scale, getY() + getHeight()/2 - txt_height/3*config->y_scale, 200*config->x_scale, txt_height*config->y_scale);
 }
 
 //---------------------------------------------------------
@@ -177,20 +135,20 @@ void Scene::render()
  }
 
     ofPushStyle();
-    if(config->activeScene == id) {
-        ofSetColor(255.0f,100,100);
-    } else {
-        ofSetColor(64);
-    }
-    ofDrawRectangle(getX(),getY(),getWidth(), getHeight());
+//    if(config->activeScene == id) {
+//        ofSetColor(255.0f,100,100);
+//    } else {
+//        ofSetColor(64);
+//    }
+//    ofDrawRectangle(getX(),getY(),getWidth(), getHeight());
 
-    ofNoFill();
-    if(config->activeScene == id) {
-        ofSetColor(0);
-    } else {
-        ofSetColor(64);
-    }
-    ofDrawRectangle(getX(),getY(),getWidth(), getHeight());
+//    ofNoFill();
+//    if(config->activeScene == id) {
+//        ofSetColor(0);
+//    } else {
+//        ofSetColor(64);
+//    }
+//    ofDrawRectangle(getX(),getY(),getWidth(), getHeight());
 
     bool filePlaying = false;
     for(size_t i=0; i < sounds.size();i++) {
@@ -199,23 +157,24 @@ void Scene::render()
              filePlaying = true;
          }
     }
-    if(config->activeScene == id || filePlaying) {
-        play_button.draw();
-    }    
+//    if(config->activeScene == id || filePlaying) {
+//        play_button.draw();
+//    }
 
-    if(config->activeScene == id) {
-        delete_scene.draw();
-        stop_button.draw();
-    }
+//    if(config->activeScene == id) {
+//        delete_scene.draw();
+//        stop_button.draw();
+//    }
 
-    if(config->activeScene == id) {
-        ofSetColor(0);
-    } else {
-        ofSetColor(128);
-    }
-    //config->smallfont.drawString(scene_name,getX()+10*config->x_scale, getY() + getHeight()/2);
+//    if(config->activeScene == id) {
+//        ofSetColor(0);
+//    } else {
+//        ofSetColor(128);
+//    }
+    ofSetColor(255);
     textfield.draw();
     if(textfield.isEditing()) {
+        ofNoFill();
         ofDrawRectangle(textfield.bounds);
     }
     ofPopStyle();   
