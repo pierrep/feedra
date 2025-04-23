@@ -30,16 +30,19 @@ public:
     void endFade();
 
     bool selectScene;
+    bool bSceneEditMode;
     bool isPlaying;
     int activeSoundIdx;
     AppConfig* config;
 
     string scene_name;
+    Button add_pad;
     Button play_button;
     Button delete_scene;
     Button stop_button;
     vector<SoundObject*> sounds;
     TextInputField textfield;
+
 
     // Fading
     const float fadeDuration = 500;

@@ -112,16 +112,16 @@ void Button::draw()
     {
         ofPushStyle();
         ofFill();
-        ofSetHexColor(colour1);
-
-        ofDrawRectangle(getX()+getWidth()/4 - getWidth()/16,getY(),getWidth()/8, getHeight()/2);
-        ofDrawRectangle(getX(),getY()+getHeight()/4 - getHeight()/16, getWidth()/2, getHeight()/8);
-
-        if(bBorder) {
-            ofNoFill();
-            ofSetLineWidth(1);
-            ofDrawRectangle(getX(),getY(),getWidth()/2,getHeight()/2);
-        }
+        ofNoFill();
+        ofSetLineWidth(3);
+        ofDrawRectRounded(getX(),getY(),getWidth(), getHeight(),10*config->x_scale);
+        ofSetColor(255);
+        int tx = x;
+        int ty = y + (height/2.0f);
+        //ofRectMode m = ofGetRectMode();
+        //ofSetRectMode(OF_RECTMODE_CENTER);
+        config->plusIcon.draw(tx+config->f1().stringWidth(name)+20*config->x_scale,ty);
+        //ofSetRectMode(m);
 
         ofPopStyle();
         break;

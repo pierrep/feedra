@@ -42,7 +42,9 @@ void AppConfig::setup()
     loadSceneOffset = 489*x_scale;
 
     scene_button_w = 176*x_scale;
-    scene_button_h = 44*y_scale;;
+    scene_button_h = 44*y_scale;
+    add_pad_w = 44*y_scale;
+    add_pad_h = 44*y_scale;
 
     max_scenes = 14;
 

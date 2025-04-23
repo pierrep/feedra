@@ -30,7 +30,7 @@ void Scene::setup(string _newpath)
     ofAddListener(this->clickedEvent, this, &Scene::onClicked);
     enableInteractivity();
 
-    textfield.setUseListeners(true);
+    textfield.setUseListeners(true);    
 
 //    for(size_t i=0;i < config->gridWidth*config->gridHeight;i++) {
 //        int x = i%config->gridWidth*config->spacing + config->xoffset;
@@ -57,6 +57,7 @@ Scene::Scene(AppConfig* _config, string name, int _id, int _activeSoundIdx, int 
     setWidth(_w);
     setHeight(_h);
 
+    add_pad.setup(config,id,0,0,20 * config->x_scale, 20 * config->y_scale,ButtonType::ADD);
 //    play_button.setup(config,id,0,0,20 * config->x_scale, 20 * config->y_scale,ButtonType::PLAY_SCENE);
 //    delete_scene.setup(config,id,0,0,20 * config->x_scale, 20 * config->y_scale,ButtonType::DELETE_SCENE);
 //    stop_button.setup(config, id, 0, 0, 20 * config->x_scale, 20 * config->y_scale,ButtonType::STOP_SCENE);
@@ -98,6 +99,8 @@ void Scene::updatePosition(int _x, int _y)
     setX(_x);
     setY(_y);
 
+    add_pad.setX(_x + 10 * config->x_scale);
+    add_pad.setY(_y + 10 * config->y_scale);
 //    play_button.setX(_x + getWidth()- 120 * config->x_scale);
 //    play_button.setY(_y + 10 * config->y_scale);
 
@@ -151,7 +154,7 @@ void Scene::render()
 //    ofDrawRectangle(getX(),getY(),getWidth(), getHeight());
 
     bool filePlaying = false;
-    for(size_t i=0; i < sounds.size();i++) {
+    for(size_t i = 0; i < sounds.size(); i++) {
          if(sounds[i]->playButton.isPlaying)
          {
              filePlaying = true;
@@ -160,6 +163,10 @@ void Scene::render()
 //    if(config->activeScene == id || filePlaying) {
 //        play_button.draw();
 //    }
+
+    if(config->activeScene == id) {
+        add_pad.draw();
+    }
 
 //    if(config->activeScene == id) {
 //        delete_scene.draw();
@@ -288,18 +295,20 @@ void Scene::endFade()
 //--------------------------------------------------------------
 void Scene::enable()
 {
-    play_button.enableEvents();
-    delete_scene.enableEvents();
-    stop_button.enableEvents();
+    add_pad.enableEvents();
+//    play_button.enableEvents();
+//    delete_scene.enableEvents();
+//    stop_button.enableEvents();
     textfield.enable();  
 }
 
 //--------------------------------------------------------------
 void Scene::disable()
 {
-    play_button.disableEvents();
-    delete_scene.disableEvents();
-    stop_button.disableEvents();
+    add_pad.disableEvents();
+//    play_button.disableEvents();
+//    delete_scene.disableEvents();
+//    stop_button.disableEvents();
     textfield.disable();        
 }
 

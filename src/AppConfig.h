@@ -44,6 +44,8 @@ public:
     int scene_height;
     int scene_button_w;
     int scene_button_h;
+    int add_pad_w;
+    int add_pad_h;
     int headerOffset;
     int addSceneOffset;
     int loadSceneOffset;
