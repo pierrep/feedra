@@ -677,38 +677,15 @@ void ofApp::update(){
     }
 
     if(bLoadScenes) {
+        bLoadScenes = false;
         ofFileDialogResult result = ofSystemLoadDialog("Load Feedra scenes", false);
         if(result.bSuccess) {
             newPath = result.filePath;
             loadConfig(newPath);
-            //config.loadJSON(newPath);
-            // setup scenes
-//            for(size_t i=0;i < scenes.size();i++) {
-//                scenes[i]->setup(result.filePath);
-//            }
-//            config.activeSceneIdx = 0;
-//            enableScene(config.activeSceneIdx);
-//            updateMainSliders();
-
-
-//            for(size_t i=0;i < scenes.size();i++) {
-//                if(config.activeScene != scenes[i]->id) {
-//                    for(size_t j = 0; j < scenes[i]->sounds.size();j++)
-//                    {
-//                        scenes[i]->sounds[j]->disableAllEvents();
-//                    }
-//                }
-//            }
-//            updateScenePosition();
-//            addScene->enableEvents();
             bLoading = true;
             bLoadingScenes = true;
             bThreadsDone = false;
             startLoadTime = ofGetElapsedTimef();
-
-            bLoadScenes = false;
-
-            //calculateSources();
         }
     }
 
