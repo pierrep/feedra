@@ -10,7 +10,3 @@ This is meant to be used as an audio tool for TTRPGs, as well as live theatre so
 
 Currently built for Linux, with MacOS and Windows in the near future, and possibly Android in the longer term.
 
-Binaries will be soon available for download.
-
-![Feedra screenshot](./assets/screenshots/feedra-screenshot.png)
-
