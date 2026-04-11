@@ -31,6 +31,8 @@ ofApp::~ofApp()
     }
     scenes.clear();
 
+    OpenALSoundPlayer::close(); // pull down OpenAL
+
     delete addScene;
 }
 
@@ -384,7 +386,6 @@ void ofApp::setup(){
     bLoadingScenes = true;
     bThreadsDone = false;
     startLoadTime = ofGetElapsedTimef();
-    config.loadJSON();
     ofSetWindowTitle("Loading");
 }
 
@@ -591,13 +592,17 @@ void ofApp::update(){
             config.prevSceneIdx = 0;
             enableScene(config.activeSceneIdx);
             updateMainSliders();
-            ofAddListener(SoundObject::clickedObjectEvent, this, &ofApp::onSoundObjectClicked);
-            ofAddListener(SoundObject::draggedObjectEvent, this, &ofApp::onSoundObjectDragged);
-            ofAddListener(SoundObject::releasedObjectEvent, this, &ofApp::onSoundObjectReleased);
-            ofAddListener(AudioSample::clickedSampleEvent, this, &ofApp::onSampleClicked);
-            calculateSources();
-            ofSetWindowTitle("Feedra");
+            calculateSources();            
             bLoading = false;
+
+            if(bFirstStartup) {
+                ofSetWindowTitle("Feedra");
+                ofAddListener(SoundObject::clickedObjectEvent, this, &ofApp::onSoundObjectClicked);
+                ofAddListener(SoundObject::draggedObjectEvent, this, &ofApp::onSoundObjectDragged);
+                ofAddListener(SoundObject::releasedObjectEvent, this, &ofApp::onSoundObjectReleased);
+                ofAddListener(AudioSample::clickedSampleEvent, this, &ofApp::onSampleClicked);
+                bFirstStartup = false;
+            }
         }
     }
 
@@ -674,29 +679,36 @@ void ofApp::update(){
     if(bLoadScenes) {
         ofFileDialogResult result = ofSystemLoadDialog("Load Feedra scenes", false);
         if(result.bSuccess) {
-            loadConfig(result.filePath);
-            config.loadJSON(result.filePath);
+            newPath = result.filePath;
+            loadConfig(newPath);
+            //config.loadJSON(newPath);
             // setup scenes
-            for(size_t i=0;i < scenes.size();i++) {
-                scenes[i]->setup(result.filePath);
-            }
-            config.activeSceneIdx = 0;
-            enableScene(config.activeSceneIdx);
-            updateMainSliders();
+//            for(size_t i=0;i < scenes.size();i++) {
+//                scenes[i]->setup(result.filePath);
+//            }
+//            config.activeSceneIdx = 0;
+//            enableScene(config.activeSceneIdx);
+//            updateMainSliders();
 
-            for(size_t i=0;i < scenes.size();i++) {
-                if(config.activeScene != scenes[i]->id) {
-                    for(size_t j = 0; j < scenes[i]->sounds.size();j++)
-                    {
-                        scenes[i]->sounds[j]->disableAllEvents();
-                    }
-                }
-            }
-            updateScenePosition();
-            addScene->enableEvents();
+
+//            for(size_t i=0;i < scenes.size();i++) {
+//                if(config.activeScene != scenes[i]->id) {
+//                    for(size_t j = 0; j < scenes[i]->sounds.size();j++)
+//                    {
+//                        scenes[i]->sounds[j]->disableAllEvents();
+//                    }
+//                }
+//            }
+//            updateScenePosition();
+//            addScene->enableEvents();
+            bLoading = true;
+            bLoadingScenes = true;
+            bThreadsDone = false;
+            startLoadTime = ofGetElapsedTimef();
+
             bLoadScenes = false;
 
-            calculateSources();
+            //calculateSources();
         }
     }
 
@@ -989,39 +1001,33 @@ void ofApp::updateScenePosition()
 void ofApp::draw(){
 
     if(bLoading) {
-        static unsigned int progress = 0;
+
 
         if(bLoadingScenes) {
-            //Load everything else! (two scenes at a time
-//            scenes[progress]->setup();
-//            progress++;
-//            for(int i = 0; i < scenes.size();i++)
-//            {
-//                scenes[i]->setup();
-//            }
-
+            if(progress == 0) {
+                config.loadJSON(newPath);
+            }
             if(progress < scenes.size())
             {
-                scenes[progress]->setup();
+                scenes[progress]->setup(newPath);
                 progress++;
-            } else {
-                bLoadingScenes = false;
-                bThreadsDone = true;
+            } else
+            {
+                bool bLoadingDone = true;
+                for(int i = 0; i < scenes.size();i++){
+                    for(size_t j=0;j < scenes[i]->sounds.size();j++) {
+                        if(scenes[i]->sounds[j]->bLoading) {
+                            bLoadingDone = false;
+                        }
+                    }
+                }
+                if(bLoadingDone) {
+                    bLoadingScenes = false;
+                    bThreadsDone = true;
+                    progress = 0;
+                }
             }
         }
-
-
-//        progress = 0;
-//        for(int i = 0; i < scenes.size();i++)
-//        {
-//            if(scenes[i]->bLoading)
-//            {
-//                bThreadsDone = false;
-//            } else
-//            {
-//                progress++;
-//            }
-//        }
 
         if(!bThreadsDone) {
             ofPushStyle();
@@ -1036,8 +1042,7 @@ void ofApp::draw(){
         }
 
         endLoadTime = ofGetElapsedTimef();
-        ofLogNotice() << "LOAD time took " << std::setw(2) << endLoadTime - startLoadTime << " secs";
-        ofLogNotice() << "Finished loading scenes, setting up Feedra, config.activeSceneIdx = " << config.activeSceneIdx;
+        ofLogNotice() << "Load time took: " << std::fixed << std::setprecision(3) << (endLoadTime - startLoadTime) << " secs";
         return;
     }
     //int fps = ofGetFrameRate();

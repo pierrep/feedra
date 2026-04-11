@@ -97,10 +97,14 @@ class ofApp : public ofBaseApp {
         enum PageState { MAIN, EDIT, SETTINGS };
         PageState pageState;
 
+        bool bFirstStartup = true;
+        unsigned int progress = 0;
         bool bLoading;
         bool bLoadingScenes;
-        bool bThreadsDone;
+        std::atomic<bool> bThreadsDone = false;
         float startLoadTime;
         float endLoadTime;
+
+        string newPath = "settings/settings.json";
 };
 

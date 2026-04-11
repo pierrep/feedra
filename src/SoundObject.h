@@ -75,7 +75,10 @@ public:
     static ofEvent<size_t> releasedObjectEvent;
     static ofEvent<size_t> draggedObjectEvent;
 
-    bool bLoading;
+    std::atomic<bool> bLoading = false;
     ALCcontext* main_context;
    // string newpath;
+
+private:
+    static std::mutex globalLoadMutex;
 };

@@ -7,6 +7,8 @@ ofEvent<size_t> SoundObject::clickedObjectEvent;
 ofEvent<size_t> SoundObject::releasedObjectEvent;
 ofEvent<size_t> SoundObject::draggedObjectEvent;
 
+std::mutex SoundObject::globalLoadMutex;
+
 //--------------------------------------------------------------
 SoundObject::SoundObject()
 {
@@ -171,52 +173,30 @@ void SoundObject::enableAllEvents()
 //--------------------------------------------------------------
 void SoundObject::threadedFunction()
 {
-    if(alcIsExtensionPresent(OpenALSoundPlayer::getCurrentDevice(), "ALC_EXT_thread_local_context"))
-    {
-        ALCboolean (ALC_APIENTRY*alcSetThreadContext)(ALCcontext* context);
-        alcSetThreadContext = reinterpret_cast<ALCboolean (ALC_APIENTRY*)(ALCcontext *context)>(alcGetProcAddress(OpenALSoundPlayer::getCurrentDevice(), "alcSetThreadContext"));
-        alcSetThreadContext(main_context);
-
-        setup();
-        load();
-
-        alcSetThreadContext(NULL);
-    }
+    setup();
+    load();
     bLoading = false;
-
 }
-
-//--------------------------------------------------------------
-//void SoundObject::loadThreaded()
-//{
-//    loadThreaded("settings/settings.json");
-//}
 
 //--------------------------------------------------------------
 void SoundObject::loadThreaded()
 {
-    bool bDoThreading = alcIsExtensionPresent(OpenALSoundPlayer::getCurrentDevice(), "ALC_EXT_thread_local_context");
-    if(bDoThreading) {
-        main_context = alcGetCurrentContext();
-        bLoading = true;
-        //newpath = _newpath;
-        startThread();
-    }
+    bLoading = true;
+    startThread();
 }
-
-////--------------------------------------------------------------
-//void SoundObject::load()
-//{
-//    load("settings/settings.json");
-//}
 
 //--------------------------------------------------------------
 void SoundObject::load()
 {
     string base = "scene"+ofToString(scene_id);
     string prefix = ofToString(scene_id)+"-"+ofToString(id);
+
     soundpath.clear();
-    for(auto & json_obj: config->json){
+    globalLoadMutex.lock();
+    ofJson jsonobj = config->json;
+    globalLoadMutex.unlock();
+
+    for(auto & json_obj: jsonobj){
         if(!json_obj.empty())
         {
             ofJson setting = json_obj[prefix];
@@ -260,7 +240,6 @@ void SoundObject::load()
                         }
                         bool bLoaded = soundPlayer.load(new_path, i, isStream);
                         if(bLoaded) {
-                            //cout << "loaded " << soundpath[i] << " id = "<< soundPlayer.player[i]->id << endl;
                             soundPlayer.recalculateDelay(i);
                             soundPlayer.player[i]->sample_path = new_path;
                             soundPlayer.player[i]->setPitch(pitch);

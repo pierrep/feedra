@@ -364,9 +364,9 @@ OpenALSoundPlayer::~OpenALSoundPlayer(){
 	unload();
 	kiss_fftr_free(fftCfg);
 	players().erase(this);
-	if( players().empty() ){
-		close();
-	}
+//	if( players().empty() ){
+//		close();
+//	}
     this->waitForThread();
 }
 
@@ -1024,14 +1024,13 @@ void OpenALSoundPlayer::setSpatialisedStereo(bool val)
 
 //------------------------------------------------------------
 bool OpenALSoundPlayer::load(const std::filesystem::path& _fileName, bool is_stream) {
-
     fileName = _fileName;
     bMultiPlay = false;
     isStreaming = is_stream;
     int err = AL_NO_ERROR;
 
     // [1] init sound systems, if necessary
-    initialize();
+    //initialize();
 
     // [2] try to unload any previously loaded sounds
     // & prevent user-created memory leaks
