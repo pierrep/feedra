@@ -191,8 +191,9 @@ class OpenALSoundPlayer : public ofBaseSoundPlayer, public ofThread {
 
         bool spatialisedStereo;
 
-        // OpenAL filter
-        ALuint filter;
+        // OpenAL filters
+        ALuint filters[3];
         float reverbSend;
+        float reverbSend2;
         bool bUseFilter;
 };

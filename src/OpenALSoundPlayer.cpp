@@ -23,12 +23,18 @@ static ALCdevice * alDevice = nullptr;
 static ALCcontext * alContext = nullptr;
 
 static bool bUseEffects = false;
-static ALuint effects[2] = { 0, 0 };
-static ALuint slots[2] = { 0, 0 };
+static ALuint ir_buffer;
+static ALuint effects[3] = { 0, 0, 0 };
+static ALuint slots[3] = { 0, 0, 0 };
 static EFXEAXREVERBPROPERTIES reverbs[2] = {
     EFX_REVERB_PRESET_ALLEY,
     EFX_REVERB_PRESET_ARENA
 };
+
+#ifndef AL_SOFT_convolution_effect
+#define AL_SOFT_convolution_effect
+#define AL_EFFECT_CONVOLUTION_SOFT               0xA000
+#endif
 
 ofEvent<OpenALSoundPlayer *> OpenALSoundPlayer::playbackEnded;
 
@@ -273,10 +279,185 @@ static string getMpg123EncodingString(int encoding) {
 }
 #endif
 
+const char *FormatName(ALenum format)
+{
+    switch(format)
+    {
+    case AL_FORMAT_MONO8: return "Mono, U8";
+    case AL_FORMAT_MONO16: return "Mono, S16";
+    case AL_FORMAT_MONO_FLOAT32: return "Mono, Float32";
+    case AL_FORMAT_MONO_MULAW: return "Mono, muLaw";
+    case AL_FORMAT_MONO_ALAW_EXT: return "Mono, aLaw";
+    case AL_FORMAT_MONO_IMA4: return "Mono, IMA4 ADPCM";
+    case AL_FORMAT_MONO_MSADPCM_SOFT: return "Mono, MS ADPCM";
+    case AL_FORMAT_STEREO8: return "Stereo, U8";
+    case AL_FORMAT_STEREO16: return "Stereo, S16";
+    case AL_FORMAT_STEREO_FLOAT32: return "Stereo, Float32";
+    case AL_FORMAT_STEREO_MULAW: return "Stereo, muLaw";
+    case AL_FORMAT_STEREO_ALAW_EXT: return "Stereo, aLaw";
+    case AL_FORMAT_STEREO_IMA4: return "Stereo, IMA4 ADPCM";
+    case AL_FORMAT_STEREO_MSADPCM_SOFT: return "Stereo, MS ADPCM";
+    case AL_FORMAT_QUAD8: return "Quadraphonic, U8";
+    case AL_FORMAT_QUAD16: return "Quadraphonic, S16";
+    case AL_FORMAT_QUAD32: return "Quadraphonic, Float32";
+    case AL_FORMAT_QUAD_MULAW: return "Quadraphonic, muLaw";
+    case AL_FORMAT_51CHN8: return "5.1 Surround, U8";
+    case AL_FORMAT_51CHN16: return "5.1 Surround, S16";
+    case AL_FORMAT_51CHN32: return "5.1 Surround, Float32";
+    case AL_FORMAT_51CHN_MULAW: return "5.1 Surround, muLaw";
+    case AL_FORMAT_61CHN8: return "6.1 Surround, U8";
+    case AL_FORMAT_61CHN16: return "6.1 Surround, S16";
+    case AL_FORMAT_61CHN32: return "6.1 Surround, Float32";
+    case AL_FORMAT_61CHN_MULAW: return "6.1 Surround, muLaw";
+    case AL_FORMAT_71CHN8: return "7.1 Surround, U8";
+    case AL_FORMAT_71CHN16: return "7.1 Surround, S16";
+    case AL_FORMAT_71CHN32: return "7.1 Surround, Float32";
+    case AL_FORMAT_71CHN_MULAW: return "7.1 Surround, muLaw";
+    case AL_FORMAT_BFORMAT2D_8: return "B-Format 2D, U8";
+    case AL_FORMAT_BFORMAT2D_16: return "B-Format 2D, S16";
+    case AL_FORMAT_BFORMAT2D_FLOAT32: return "B-Format 2D, Float32";
+    case AL_FORMAT_BFORMAT2D_MULAW: return "B-Format 2D, muLaw";
+    case AL_FORMAT_BFORMAT3D_8: return "B-Format 3D, U8";
+    case AL_FORMAT_BFORMAT3D_16: return "B-Format 3D, S16";
+    case AL_FORMAT_BFORMAT3D_FLOAT32: return "B-Format 3D, Float32";
+    case AL_FORMAT_BFORMAT3D_MULAW: return "B-Format 3D, muLaw";
+    case AL_FORMAT_UHJ2CHN8_SOFT: return "UHJ 2-channel, U8";
+    case AL_FORMAT_UHJ2CHN16_SOFT: return "UHJ 2-channel, S16";
+    case AL_FORMAT_UHJ2CHN_FLOAT32_SOFT: return "UHJ 2-channel, Float32";
+    case AL_FORMAT_UHJ3CHN8_SOFT: return "UHJ 3-channel, U8";
+    case AL_FORMAT_UHJ3CHN16_SOFT: return "UHJ 3-channel, S16";
+    case AL_FORMAT_UHJ3CHN_FLOAT32_SOFT: return "UHJ 3-channel, Float32";
+    case AL_FORMAT_UHJ4CHN8_SOFT: return "UHJ 4-channel, U8";
+    case AL_FORMAT_UHJ4CHN16_SOFT: return "UHJ 4-channel, S16";
+    case AL_FORMAT_UHJ4CHN_FLOAT32_SOFT: return "UHJ 4-channel, Float32";
+    }
+    return "Unknown Format";
+}
+
+static ALuint LoadSound(const string filename)
+{
+    const char *namepart;
+    ALenum err;
+    ALenum format;
+    ALuint buffer;
+    SNDFILE *sndfile;
+    SF_INFO sfinfo;
+    float *membuf;
+    sf_count_t num_frames;
+    ALsizei num_bytes;
+
+    /* Open the audio file and check that it's usable. */
+    sndfile = sf_open(filename.c_str(), SFM_READ, &sfinfo);
+    if(!sndfile)
+    {
+        fprintf(stderr, "Could not open audio in %s: %s\n", filename.c_str(), sf_strerror(sndfile));
+        return 0;
+    }
+    if(sfinfo.frames < 1 || sfinfo.frames > (sf_count_t)(INT_MAX/sizeof(float))/sfinfo.channels)
+    {
+        ofLogError() << "Bad sample count in " << filename.c_str() << " (" << sfinfo.frames << ")";
+        sf_close(sndfile);
+        return 0;
+    }
+
+    /* Get the sound format, and figure out the OpenAL format. Use floats since
+     * impulse responses will usually have more than 16-bit precision.
+     */
+    format = AL_NONE;
+    if(sfinfo.channels == 1) {
+        format = AL_FORMAT_MONO_FLOAT32;
+    }
+    else if(sfinfo.channels == 2) {
+        format = AL_FORMAT_STEREO_FLOAT32;
+    }
+    else if(sfinfo.channels == 3)
+    {
+        if(sf_command(sndfile, SFC_WAVEX_GET_AMBISONIC, NULL, 0) == SF_AMBISONIC_B_FORMAT)
+            format = AL_FORMAT_BFORMAT2D_FLOAT32;
+    }
+    else if(sfinfo.channels == 4)
+    {
+        if(sf_command(sndfile, SFC_WAVEX_GET_AMBISONIC, NULL, 0) == SF_AMBISONIC_B_FORMAT)
+            format = AL_FORMAT_BFORMAT3D_FLOAT32;
+    }
+    if(!format)
+    {
+        fprintf(stderr, "Unsupported channel count: %d\n", sfinfo.channels);
+        sf_close(sndfile);
+        return 0;
+    }
+
+    namepart = strrchr(filename.c_str(), '/');
+    if(!namepart) namepart = strrchr(filename.c_str(), '\\');
+    if(!namepart) namepart = filename.c_str();
+    else namepart++;
+
+    ofLogNotice() << "Loading impulse response: " << namepart << " (" << FormatName(format) << ","
+                  << sfinfo.samplerate << "hz, " << sfinfo.frames <<" samples / "
+                  << std::fixed << std::setprecision(2) << (double)sfinfo.frames / sfinfo.samplerate << "seconds";
+
+
+    /* Decode the whole audio file to a buffer. */
+    membuf = (float *) malloc((size_t)(sfinfo.frames * sfinfo.channels) * sizeof(float));
+
+    num_frames = sf_readf_float(sndfile, membuf, sfinfo.frames);
+    if(num_frames < 1)
+    {
+        free(membuf);
+        sf_close(sndfile);
+        ofLogError() << "Failed to read samples in " << filename.c_str() << " (" << num_frames << ")";
+        return 0;
+    }
+    num_bytes = (ALsizei)(num_frames * sfinfo.channels) * (ALsizei)sizeof(float);
+
+    /* Buffer the audio data into a new buffer object, then free the data and
+     * close the file.
+     */
+    buffer = 0;
+    alGenBuffers(1, &buffer);
+    alBufferData(buffer, format, membuf, num_bytes, sfinfo.samplerate);
+
+    free(membuf);
+    sf_close(sndfile);
+
+    /* Check if an error occurred, and clean up if so. */
+    err = alGetError();
+    if(err != AL_NO_ERROR)
+    {
+        fprintf(stderr, "OpenAL Error: %s\n", alGetString(err));
+        if(buffer && alIsBuffer(buffer))
+            alDeleteBuffers(1, &buffer);
+        return 0;
+    }
+
+    return buffer;
+}
+
+
+static ALuint CreateConvolutionReverbEffect(ALuint effect)
+{
+    ALenum err;
+
+    ofLogNotice() << "Create Convolution Reverb...";
+
+    /* Set the convolution effect type. */
+    alEffecti(effect, AL_EFFECT_TYPE, AL_EFFECT_CONVOLUTION_SOFT);
+
+    /* Check if an error occurred, and clean up if so. */
+    err = alGetError();
+    if(err != AL_NO_ERROR)
+    {
+        fprintf(stderr, "OpenAL error: %s\n", alGetString(err));
+        return 0;
+    }
+
+    return effect;
+}
+
 /* LoadEffect loads the given initial reverb properties into the given OpenAL
  * effect object, and returns non-zero on success.
  */
-static int LoadEffect(ALuint effect, const EFXEAXREVERBPROPERTIES *reverb)
+static int CreateEAXReverbEffect(ALuint effect, const EFXEAXREVERBPROPERTIES *reverb)
 {
     ALenum err;
 
@@ -652,18 +833,29 @@ void OpenALSoundPlayer::initialize(){
                 ofLogNotice() << "Device supports " << num_sends <<" effect sends";
 
                 /* Generate FX slots */
-                alGenEffects(2, effects);
-                if(!LoadEffect(effects[0], &reverbs[0]) || !LoadEffect(effects[1], &reverbs[1]))
+                alGenEffects(3, effects);
+                if(!CreateEAXReverbEffect(effects[0], &reverbs[0]) || !CreateEAXReverbEffect(effects[1], &reverbs[1]) || !CreateConvolutionReverbEffect(effects[2]))
                 {
-                    ofLogError( ) <<  "Failed to load effects, aborting...";
+                    ofLogError( ) <<  "Failed to create reverb effects, aborting...";
                     bUseEffects = false;
-                    alDeleteEffects(2, effects);
+                    alDeleteEffects(3, effects);
+                    close();
+                    return;
+                }
+
+                /* Load the impulse response sound into a buffer. */
+                string ir_path = ofToDataPath("ir/impulse.wav");
+                ir_buffer = LoadSound(ir_path);
+                if(!ir_buffer)
+                {
+                    ofLogError( ) <<  "Failed to create reverb effects, aborting...";
+                    alDeleteEffects(3, effects);
                     close();
                     return;
                 }
 
                 /* Create the effect slot objects, one for each "active" effect. */
-                alGenAuxiliaryEffectSlots(2, slots);
+                alGenAuxiliaryEffectSlots(3, slots);
 
                 /* Tell the effect slots to use the loaded effect objects, with slot 0 for
                  * Zone 0 and slot 1 for Zone 1. Note that this effectively copies the
@@ -672,6 +864,11 @@ void OpenALSoundPlayer::initialize(){
                  */
                 alAuxiliaryEffectSloti(slots[0], AL_EFFECTSLOT_EFFECT, (ALint)effects[0]);
                 alAuxiliaryEffectSloti(slots[1], AL_EFFECTSLOT_EFFECT, (ALint)effects[1]);
+                assert(alGetError()==AL_NO_ERROR && "Failed to set effect slot");
+
+                alAuxiliaryEffectSloti(slots[2], AL_BUFFER, (ALint)ir_buffer);
+                alAuxiliaryEffectSlotf(slots[2], AL_EFFECTSLOT_GAIN, 1.0f/16.0f );
+                alAuxiliaryEffectSloti(slots[2], AL_EFFECTSLOT_EFFECT, (ALint)effects[2]);
                 assert(alGetError()==AL_NO_ERROR && "Failed to set effect slot");
             }
         }
@@ -719,8 +916,8 @@ void OpenALSoundPlayer::close(){
 			mpg123_exit();
 #endif
             if(bUseEffects) {
-                alDeleteAuxiliaryEffectSlots(2, slots);
-                alDeleteEffects(2, effects);
+                alDeleteAuxiliaryEffectSlots(3, slots);
+                alDeleteEffects(3, effects);
                 bUseEffects = false;
             }
 
@@ -731,7 +928,7 @@ void OpenALSoundPlayer::close(){
 		if( alcCloseDevice( alDevice )==ALC_FALSE ){
 			ofLogNotice("OpenALSoundPlayer") << "initialize(): error closing OpenAL device.";
 		}
-		alDevice = nullptr;
+        alDevice = nullptr;
 	}
 }
 
@@ -1294,11 +1491,11 @@ bool OpenALSoundPlayer::load(const std::filesystem::path& _fileName, bool is_str
 
     if (bUseEffects) {
         reverbSend = 0.0f;
-        alGenFilters(1, &filter);
-        alFilteri(filter, AL_FILTER_TYPE, AL_FILTER_LOWPASS);
+        alGenFilters(3, filters);
+        alFilteri(filters[0], AL_FILTER_TYPE, AL_FILTER_LOWPASS);
+        alFilterf(filters[0], AL_LOWPASS_GAIN, reverbSend);
 
-        alFilterf(filter, AL_LOWPASS_GAIN, reverbSend);
-        alSource3i(sources[0], AL_AUXILIARY_SEND_FILTER, (ALint)slots[1], 0, filter);
+        alSource3i(sources[0], AL_AUXILIARY_SEND_FILTER, (ALint)slots[2], 0, filters[0]);
 
         err = alGetError();
         if (err != AL_NO_ERROR) {
@@ -1446,8 +1643,8 @@ void OpenALSoundPlayer::update(ofEventArgs & args){
 
     if(bUseEffects)
     {
-        alFilterf(filter, AL_LOWPASS_GAIN, reverbSend);
-        alSource3i(sources[0], AL_AUXILIARY_SEND_FILTER, (ALint)slots[0], 0, filter);
+        alFilterf(filters[0], AL_LOWPASS_GAIN, reverbSend);
+        alSource3i(sources[0], AL_AUXILIARY_SEND_FILTER, (ALint)slots[2], 0, filters[0]);
     }
 }
 
@@ -1475,7 +1672,7 @@ void OpenALSoundPlayer::unload(){
         sources.clear();
         buffers.clear();
         if(bUseFilter) {
-            alDeleteFilters(1, &filter);
+            alDeleteFilters(3, filters);
             bUseFilter = false;
         }
 	}
