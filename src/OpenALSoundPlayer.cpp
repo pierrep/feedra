@@ -918,6 +918,7 @@ void OpenALSoundPlayer::close(){
             if(bUseEffects) {
                 alDeleteAuxiliaryEffectSlots(3, slots);
                 alDeleteEffects(3, effects);
+                alDeleteBuffers(1, &ir_buffer);
                 bUseEffects = false;
             }
 
