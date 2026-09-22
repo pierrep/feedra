@@ -20,6 +20,7 @@ public:
     SoundObject();
     ~SoundObject();
     SoundObject(AppConfig* config, size_t _scene_id, int _id, int _x, int _y, int _w, int _h);
+    void joinThread();
     void setup();
     void render();
     void update();

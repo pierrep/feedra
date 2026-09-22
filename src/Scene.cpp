@@ -49,35 +49,6 @@ void Scene::setup(string _newpath)
 }
 
 //--------------------------------------------------------------
-//void Scene::threadedFunction()
-//{
-//    if(alcIsExtensionPresent(OpenALSoundPlayer::getCurrentDevice(), "ALC_EXT_thread_local_context"))
-//    {
-//        ALCboolean (ALC_APIENTRY*alcSetThreadContext)(ALCcontext* context);
-//        alcSetThreadContext = reinterpret_cast<ALCboolean (ALC_APIENTRY*)(ALCcontext *context)>(alcGetProcAddress(OpenALSoundPlayer::getCurrentDevice(), "alcSetThreadContext"));
-
-//        alcSetThreadContext(main_context);
-
-//        for(size_t i=0;i < config->gridWidth*config->gridHeight;i++) {
-//            int x = i%config->gridWidth*config->spacing + config->xoffset;
-//            int y = (i/config->gridWidth)*config->spacing + config->yoffset;
-//            SoundObject* s = new SoundObject(config,id,i,x,y,config->size,config->size);
-//            sounds.push_back(s);
-//        }
-
-//        // setup sound objects
-//        for(size_t i=0;i < sounds.size();i++) {
-//            sounds[i]->setup();
-//            sounds[i]->load(newpath);
-//        }
-
-//        alcSetThreadContext(NULL);
-//    }
-//    bLoading = false;
-
-//}
-
-//--------------------------------------------------------------
 Scene::Scene(AppConfig* _config, string name, int _id, int _activeSoundIdx, int _x, int _y, int _w, int _h)
 {
     id = _id;

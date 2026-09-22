@@ -456,7 +456,8 @@ void ofApp::onSoundObjectDragged(size_t& id)
 
     //ofLogNotice() << "SoundObject id: " << id << " dragged";
     if(draggingStarted <= 1)
-    { // If dragging outside of an object hasn't begun
+    {
+        // Dragging outside of a pad has just begun
         config.bDragging = true;
         bDrawDragging = true;
     }
@@ -472,15 +473,15 @@ void ofApp::onSoundObjectReleased(size_t& id)
         // Drag and Drop Sound pad
         //ofLogNotice() << "Drag and Drop Sound pad from id:" << config.prevSoundIdx << " to id: " << config.activeSoundIdx;
         bDoDragDrop = true;
+        updateMainSliders();
     }
-    updateMainSliders();
     config.bDragging = false;
 }
 
 //--------------------------------------------------------------
 void ofApp::onSampleClicked(int& id)
 {
-    //ofLogNotice() << "sample clicked: " << id;
+    ofLogNotice() << "sample clicked: " << id;
     config.activeSample = id;
 
     for(unsigned int i =0; i < scenes[config.activeSceneIdx]->sounds[config.activeSoundIdx]->soundPlayer.player.size();i++) {
@@ -609,13 +610,14 @@ void ofApp::update(){
     if(pageState == MAIN) {
         // clear pad
         if(bClearPad) {
-            clearPad();
+            clearPad(config.activeSoundIdx);
             bClearPad = false;
         }
 
-        if(bDoDragDrop) {
-            clearPad();
+        if(bDoDragDrop) {            
+            clearPad(config.activeSoundIdx);
             copyPad(config.prevSoundIdx,config.activeSoundIdx);
+            clearPad(config.prevSoundIdx);
             bDoDragDrop = false;
         }
 
@@ -779,9 +781,9 @@ void ofApp::addNewScene()
 }
 
 //--------------------------------------------------------------
-void ofApp::clearPad()
+void ofApp::clearPad(int idx)
 {
-    SoundObject* s = scenes[config.activeSceneIdx]->sounds[config.activeSoundIdx];
+    SoundObject* s = scenes[config.activeSceneIdx]->sounds[idx];
     int x = s->x;
     int y = s->y;
     int id = s->id;
@@ -789,7 +791,7 @@ void ofApp::clearPad()
     s = new SoundObject(&config,config.activeScene,id,x,y,config.size,config.size);
     s->setup();
     s->enableAllEvents();
-    scenes[config.activeSceneIdx]->sounds[config.activeSoundIdx] = s;
+    scenes[config.activeSceneIdx]->sounds[idx] = s;
 }
 
 //--------------------------------------------------------------
@@ -995,6 +997,8 @@ void ofApp::draw(){
                     for(size_t j=0;j < scenes[i]->sounds.size();j++) {
                         if(scenes[i]->sounds[j]->bLoading) {
                             bLoadingDone = false;
+                        } else {
+                            scenes[i]->sounds[j]->joinThread();
                         }
                     }
                 }

@@ -23,7 +23,7 @@ public:
     struct ClickArgs
     {
         int id;
-        ofMouseEventArgs mouseButton;
+        ofMouseEventArgs mouseArgs;
     };
 
     ofEvent<ClickArgs> clickedEvent;

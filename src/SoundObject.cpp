@@ -77,6 +77,18 @@ SoundObject::SoundObject(AppConfig* _config, size_t _scene_id, int _id, int _x, 
 //--------------------------------------------------------------
 SoundObject::~SoundObject()
 {    
+    joinThread();
+    ofRemoveListener(ofEvents().fileDragEvent, this, &SoundObject::onDragEvent);
+    ofRemoveListener(this->clickedEvent, this, &SoundObject::onClicked);
+    ofRemoveListener(this->releasedEvent, this, &SoundObject::onReleased);
+    ofRemoveListener(this->draggedEvent, this, &SoundObject::onDragged);
+    disableAllEvents();
+    //ofLogNotice() << "SoundObject destructor called...ID = " << id;
+}
+
+//--------------------------------------------------------------
+void SoundObject::joinThread()
+{
     try {
         if(getNativeThread().joinable()) {
             getNativeThread().join();
@@ -84,12 +96,7 @@ SoundObject::~SoundObject()
     } catch (const std::exception &exc) {
         cout << "exception called:" << exc.what() <<  endl;
     }
-    ofRemoveListener(ofEvents().fileDragEvent, this, &SoundObject::onDragEvent);
-    ofRemoveListener(this->clickedEvent, this, &SoundObject::onClicked);
-    ofRemoveListener(this->releasedEvent, this, &SoundObject::onReleased);
-    ofRemoveListener(this->draggedEvent, this, &SoundObject::onDragged);
-    disableAllEvents();
-    //ofLogNotice() << "SoundObject destructor called...ID = " << id;
+    waitForThread();
 }
 
 //--------------------------------------------------------------
@@ -176,6 +183,7 @@ void SoundObject::threadedFunction()
     setup();
     load();
     bLoading = false;
+    ofLogNotice() << "Worker processing job";
 }
 
 //--------------------------------------------------------------

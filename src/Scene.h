@@ -5,7 +5,7 @@
 #include "UI/Interactive.h"
 #include "UI/Button.h"
 
-class Scene: public Interactive//, public ofThread
+class Scene: public Interactive
 {
 public:
     Scene();
@@ -16,7 +16,6 @@ public:
     void setup(string newpath);
     void render();
     void update();
-   // void threadedFunction();
     void play();
     void pause();
     void stop();

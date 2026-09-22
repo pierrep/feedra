@@ -14,6 +14,8 @@ public:
     void setup();
     void render(ofVec3f pos);    
     void onClicked(ClickArgs& args);
+    void onDragged(ClickArgs& args);
+    void onReleased(ClickArgs& args);
     void enableEditorMode();
     void disableEditorMode();
     void setPitch(float val);

@@ -8,6 +8,8 @@ ofEvent<int> AudioSample::clickedSampleEvent;
 AudioSample::~AudioSample()
 {
     ofRemoveListener(this->clickedEvent, this, &AudioSample::onClicked);
+    ofRemoveListener(this->draggedEvent, this, &AudioSample::onDragged);
+    ofRemoveListener(this->releasedEvent, this, &AudioSample::onReleased);
     //ofLogNotice() << "Deleted audiosample id: " << id;
 }
 AudioSample::AudioSample()
@@ -28,6 +30,8 @@ AudioSample::AudioSample()
 void AudioSample::setup()
 {
     ofAddListener(this->clickedEvent, this, &AudioSample::onClicked);
+    ofAddListener(this->draggedEvent, this, &AudioSample::onDragged);
+    ofAddListener(this->releasedEvent, this, &AudioSample::onReleased);
 }
 
 //--------------------------------------------------------------
@@ -102,4 +106,18 @@ void AudioSample::onClicked(ClickArgs& args) {
     config->activeSample = id;
 
     ofNotifyEvent(clickedSampleEvent,  id);
+}
+
+//--------------------------------------------------------------
+void AudioSample::onDragged(ClickArgs& args) {
+    if(!bEditorMode) return;
+
+    ofLogNotice() << "AudioSample mouseDragged " << " id: " << args.id << " mouseButton: " << args.mouseArgs;
+}
+
+//--------------------------------------------------------------
+void AudioSample::onReleased(ClickArgs& args) {
+    if(!bEditorMode) return;
+
+    ofLogNotice() << "AudioSample mouseReleased " << " id: " << args.id << " mouseButton: " << args.mouseArgs;
 }

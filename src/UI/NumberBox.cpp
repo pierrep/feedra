@@ -112,11 +112,11 @@ void NumberBox::onClicked(ClickArgs& args) {
     //ofLogNotice() << "NumberBox id: " << args.id << " clicked";
     clickTime = ofGetElapsedTimeMillis();
 
-    if((args.id == 1) && (args.mouseButton.type == ofMouseEventArgs::Pressed))
+    if((args.id == 1) && (args.mouseArgs.type == ofMouseEventArgs::Pressed))
     {
         decrementValue();        
     }
-    if((args.id == 2) && (args.mouseButton.type == ofMouseEventArgs::Pressed))
+    if((args.id == 2) && (args.mouseArgs.type == ofMouseEventArgs::Pressed))
     {
         incrementValue();
     }

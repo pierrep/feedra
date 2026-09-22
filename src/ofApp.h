@@ -43,7 +43,7 @@ class ofApp : public ofBaseApp {
         void loadConfig(string newpath);
         void addNewScene();
         void deleteScene();
-        void clearPad();
+        void clearPad(int idx);
         void copyPad(int id_from, int id_to);
         void checkAudioDeviceChange();
         void drawSoundInfo();
