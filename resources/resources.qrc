@@ -1,0 +1,8 @@
+<RCC>
+    <qresource prefix="/">
+        <file>feedra.qss</file>
+        <file alias="fonts/NewMediaFett.ttf">../bin/data/fonts/NewMediaFett.ttf</file>
+        <file alias="images/loopicon.png">../bin/data/images/loopicon.png</file>
+        <file alias="images/feedra.png">../bin/data/feedra.png</file>
+    </qresource>
+</RCC>

@@ -1,58 +1,54 @@
 #pragma once
 
-#include "AppConfig.h"
-#include "SoundObject.h"
-#include "UI/Interactive.h"
-#include "UI/Button.h"
+#include "widgets/SoundPadWidget.h"
+#include "widgets/SceneRowWidget.h"
 
-class Scene: public Interactive//, public ofThread
+#include <QElapsedTimer>
+#include <QObject>
+#include <QString>
+#include <QVector>
+#include <functional>
+
+class AppConfig;
+class QWidget;
+
+class Scene : public QObject
 {
+    Q_OBJECT
 public:
-    Scene();
-    ~Scene();
-    Scene(const Scene& d);
-    Scene(AppConfig* config, string name,int _id, int _activeSound, int _x, int _y, int _w, int _h);
-    void setup();
-    void setup(string newpath);
-    void render();
-    void update();
-   // void threadedFunction();
+    Scene(AppConfig* config, int id, const QString& name, QWidget* gridParent, QWidget* listParent, QObject* parent = nullptr);
+    ~Scene() override;
+
+    int id = 0;
+    int activeSoundIdx = 0;
+    QString name;
+    bool isPlaying = false;
+    bool selectRequested = false;
+
+    QWidget* grid() const { return m_grid; }
+    SceneRowWidget* row() const { return m_row; }
+    QVector<SoundPadWidget*> pads;
+
+    SoundPadWidget* padAt(int idx) const;
     void play();
     void pause();
     void stop();
-    void updatePosition(int x,int y);
-    void onClicked(ClickArgs& args);
-    void enable();
-    void enableInteractivity();
-    void disable();
-    void disableInteractivity();
-    bool isInteractive() {return bInteractive;}
+    void update();
     void endFade();
+    void setActive(bool active);
+    void layoutGrid();
+    void stopImmediate();
 
-    bool selectScene;
-    bool isPlaying;
-    int activeSoundIdx;
-    AppConfig* config;
+signals:
+    void padSelected(int sceneId, int padId);
 
-    string scene_name;
-    Button play_button;
-    Button delete_scene;
-    Button stop_button;
-    vector<SoundObject*> sounds;
-    TextInputField textfield;
-
-    // Fading
-    const float fadeDuration = 500;
-    bool isFading;
-    int fadeDirection;
-    float fadeVolume;
-    long int curTime;
-    long int prevTime;
-    std::function<void()> fadeCallback;
-
-
-
-protected:
-    bool bInteractive;
+private:
+    AppConfig* m_config = nullptr;
+    QWidget* m_grid = nullptr;
+    SceneRowWidget* m_row = nullptr;
+    bool m_fading = false;
+    int m_fadeDirection = 0;
+    float m_fadeVolume = 1.0f;
+    QElapsedTimer m_fadeTimer;
+    std::function<void()> m_fadeCallback;
 };
-

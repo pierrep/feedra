@@ -1,362 +1,249 @@
 #include "Scene.h"
-#include "AL/alc.h"
+#include "AppConfig.h"
 
-Scene::Scene()
-{   
-    bInteractive = false;
-    //bLoading = false;
-}
+#include <QScrollArea>
+#include <QSizePolicy>
+#include <QVector>
+#include <QWidget>
+#include <cmath>
 
-//--------------------------------------------------------------
-Scene::~Scene()
+namespace {
+constexpr int kGridMargin = 8;
+constexpr int kGridHSpace = 25;
+constexpr int kGridVSpace = 10;
+
+class PadGridWidget : public QWidget
 {
-    for(size_t i=0;i < sounds.size();i++) {
-        delete sounds[i];
-    }
-    sounds.clear();
-
-    ofRemoveListener(Interactive::clickedEvent, this, &Scene::onClicked);
-    //ofLogNotice() << "Scene destructor for id: " << id << " called...";
-}
-
-//--------------------------------------------------------------
-void Scene::setup() {
-    setup("settings/settings.json");
-}
-
-//--------------------------------------------------------------
-void Scene::setup(string _newpath)
-{    
-    //bLoading = true;
-    ofAddListener(this->clickedEvent, this, &Scene::onClicked);
-    enableInteractivity();
-
-    textfield.setUseListeners(true);
-    //newpath = _newpath;
-
-    bool bDoThreading = alcIsExtensionPresent(OpenALSoundPlayer::getCurrentDevice(), "ALC_EXT_thread_local_context");
-    bDoThreading = false;
-
-    if(bDoThreading)
+public:
+    PadGridWidget(int cols, int rows, QWidget* parent = nullptr)
+        : QWidget(parent)
+        , m_cols(cols)
+        , m_rows(rows)
     {
-        //   main_context = alcGetCurrentContext();
-        //startThread();
-    } else {
-        for(size_t i=0;i < config->gridWidth*config->gridHeight;i++) {
-            int x = i%config->gridWidth*config->spacing + config->xoffset;
-            int y = (i/config->gridWidth)*config->spacing + config->yoffset;
-            SoundObject* s = new SoundObject(config,id,i,x,y,config->size,config->size);
-            sounds.push_back(s);
-        }
-
-        // setup sound objects
-        for(size_t i=0;i < sounds.size();i++) {
-            //sounds[i]->setup();
-            sounds[i]->loadThreaded();
-        }
-        //bLoading = false;
-    }
-}
-
-//--------------------------------------------------------------
-//void Scene::threadedFunction()
-//{
-//    if(alcIsExtensionPresent(OpenALSoundPlayer::getCurrentDevice(), "ALC_EXT_thread_local_context"))
-//    {
-//        ALCboolean (ALC_APIENTRY*alcSetThreadContext)(ALCcontext* context);
-//        alcSetThreadContext = reinterpret_cast<ALCboolean (ALC_APIENTRY*)(ALCcontext *context)>(alcGetProcAddress(OpenALSoundPlayer::getCurrentDevice(), "alcSetThreadContext"));
-
-//        alcSetThreadContext(main_context);
-
-//        for(size_t i=0;i < config->gridWidth*config->gridHeight;i++) {
-//            int x = i%config->gridWidth*config->spacing + config->xoffset;
-//            int y = (i/config->gridWidth)*config->spacing + config->yoffset;
-//            SoundObject* s = new SoundObject(config,id,i,x,y,config->size,config->size);
-//            sounds.push_back(s);
-//        }
-
-//        // setup sound objects
-//        for(size_t i=0;i < sounds.size();i++) {
-//            sounds[i]->setup();
-//            sounds[i]->load(newpath);
-//        }
-
-//        alcSetThreadContext(NULL);
-//    }
-//    bLoading = false;
-
-//}
-
-//--------------------------------------------------------------
-Scene::Scene(AppConfig* _config, string name, int _id, int _activeSoundIdx, int _x, int _y, int _w, int _h)
-{
-    id = _id;
-
-    config = _config;
-    activeSoundIdx = _activeSoundIdx;
-    bInteractive = false;
-
-    setWidth(_w);
-    setHeight(_h);
-
-    play_button.setup(config,id,0,0,20 * config->x_scale, 20 * config->y_scale,ButtonType::PLAY_SCENE);
-    delete_scene.setup(config,id,0,0,20 * config->x_scale, 20 * config->y_scale,ButtonType::DELETE_SCENE);
-    stop_button.setup(config, id, 0, 0, 20 * config->x_scale, 20 * config->y_scale,ButtonType::STOP_SCENE);
-
-    scene_name = "Scene "+ofToString(id+1);
-    if(strcmp(name.c_str(),"")== 0) {
-        textfield.text = scene_name;
-    } else {
-        textfield.text = name;
+        setObjectName(QStringLiteral("PadGrid"));
+        setAttribute(Qt::WA_StyledBackground, true);
+        setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
     }
 
-    textfield.setFont(config->f2());
-    textfield.disable();
-
-    updatePosition(_x,_y);
-
-    selectScene = false;
-    isPlaying = false;
-    isFading = false;
-
-    fadeVolume = 1.0f;
-}
-
-//--------------------------------------------------------------
-Scene::Scene(const Scene& parent) {
-    ofLogNotice() << "Scene copy constructor called";
-
-    id = parent.id;
-    setX(parent.x);
-    setY(parent.y);
-    setWidth(parent.width);
-    setHeight(parent.height);
-    bInteractive = parent.bInteractive;
-}
-
-//---------------------------------------------------------
-void Scene::updatePosition(int _x, int _y)
-{
-    setX(_x);
-    setY(_y);
-
-    play_button.setX(_x + getWidth()- 120 * config->x_scale);
-    play_button.setY(_y + 10 * config->y_scale);
-
-    stop_button.setX(_x + getWidth()- 90 * config->x_scale);
-    stop_button.setY(_y + 10 * config->y_scale);
-
-    delete_scene.setX(_x + getWidth()- 40 * config->x_scale);
-    delete_scene.setY(_y + 10 * config->y_scale);
-
-    float txt_height = 16;
-    textfield.bounds = ofRectangle(getX()+10*config->x_scale, getY() + getHeight()/2 - txt_height/3*config->y_scale, 100*config->x_scale, txt_height*config->y_scale);
-}
-
-//---------------------------------------------------------
-void Scene::onClicked(ClickArgs& args) {
-    if(!bInteractive) return;
-
-    ofLogNotice() << "Scene id: " << id << " clicked";
-    if(config->activeScene != id) {
-        config->activeScene = id;
-        selectScene = true;
-    }
-}
-
-//--------------------------------------------------------------
-void Scene::render()
-{
- //if(!bLoading)
- {
-    if(config->activeScene == id) {
-        for(size_t i=0; i < sounds.size();i++) {
-             sounds[i]->render();
-        }
-    }
- }
-
-    ofPushStyle();
-    if(config->activeScene == id) {
-        ofSetColor(255.0f,100,100);
-    } else {
-        ofSetColor(64);
-    }
-    ofDrawRectangle(getX(),getY(),getWidth(), getHeight());
-
-    ofNoFill();
-    if(config->activeScene == id) {
-        ofSetColor(0);
-    } else {
-        ofSetColor(64);
-    }
-    ofDrawRectangle(getX(),getY(),getWidth(), getHeight());
-
-    bool filePlaying = false;
-    for(size_t i=0; i < sounds.size();i++) {
-         if(sounds[i]->playButton.isPlaying)
-         {
-             filePlaying = true;
-         }
-    }
-    if(config->activeScene == id || filePlaying) {
-        play_button.draw();
-    }    
-
-    if(config->activeScene == id) {
-        delete_scene.draw();
-        stop_button.draw();
-    }
-
-    if(config->activeScene == id) {
-        ofSetColor(0);
-    } else {
-        ofSetColor(128);
-    }
-    //config->smallfont.drawString(scene_name,getX()+10*config->x_scale, getY() + getHeight()/2);
-    textfield.draw();
-    if(textfield.isEditing()) {
-        ofDrawRectangle(textfield.bounds);
-    }
-    ofPopStyle();   
-}
-
-//--------------------------------------------------------------
-void Scene::play()
-{
-    isFading = true;
-    prevTime = ofGetElapsedTimeMillis();
-    fadeDirection = 0;
-    fadeCallback = [this]() -> void
+    void addPad(QWidget* pad)
     {
-        //std::cout << "End play fade-in" << endl;
-    };
-
-    for(size_t i=0; i < sounds.size();i++) {
-        sounds[i]->soundPlayer.setPaused(false);
-        sounds[i]->stopper.isStopped  = false;
+        pad->setParent(this);
+        m_pads.push_back(pad);
     }
-}
 
-//--------------------------------------------------------------
-void Scene::pause()
-{
-    isFading = true;
-    prevTime = ofGetElapsedTimeMillis();
-    fadeDirection = 1;
-    fadeCallback = [this]() -> void
+    QSize designSize() const
     {
-        //std::cout << "End pause fade-out" << endl;
-        for(size_t i=0; i < sounds.size();i++) {
-            sounds[i]->soundPlayer.setPaused(true);
-        }
-    };
+        return QSize(
+            2 * kGridMargin + m_cols * SoundPadWidget::kDesignWidth + (m_cols - 1) * kGridHSpace,
+            2 * kGridMargin + m_rows * SoundPadWidget::kDesignHeight + (m_rows - 1) * kGridVSpace);
+    }
 
-}
+    QSize sizeHint() const override { return designSize(); }
+    QSize minimumSizeHint() const override { return designSize(); }
+    void relayout() { layoutPads(); }
 
-//--------------------------------------------------------------
-void Scene::stop()
-{
-    isFading = true;
-    prevTime = ofGetElapsedTimeMillis();
-    fadeDirection = 1;
-    fadeCallback = [this]() -> void
+protected:
+    void resizeEvent(QResizeEvent*) override { layoutPads(); }
+
+private:
+    void layoutPads()
     {
-        //std::cout << "End stop fade-out" << endl;
-        for(size_t i=0; i < sounds.size();i++) {
-            sounds[i]->soundPlayer.stop();
+        const QSize design = designSize();
+        const qreal s = std::max(1.0, std::min(
+            width() / qreal(design.width()),
+            height() / qreal(design.height())));
+        const int padW = qRound(SoundPadWidget::kDesignWidth * s);
+        const int padH = qRound(SoundPadWidget::kDesignHeight * s);
+        const int hSpace = qRound(kGridHSpace * s);
+        const int vSpace = qRound(kGridVSpace * s);
+        const int margin = qRound(kGridMargin * s);
+        const int gridW = 2 * margin + m_cols * padW + (m_cols - 1) * hSpace;
+        const int gridH = 2 * margin + m_rows * padH + (m_rows - 1) * vSpace;
+        const int ox = (width() - gridW) / 2;
+        const int oy = 0;
+        for (int i = 0; i < m_pads.size(); ++i) {
+            const int col = i % m_cols;
+            const int row = i / m_cols;
+            m_pads[i]->setGeometry(
+                ox + margin + col * (padW + hSpace),
+                oy + margin + row * (padH + vSpace),
+                padW,
+                padH);
         }
-    };
+    }
 
+    int m_cols = 0;
+    int m_rows = 0;
+    QVector<QWidget*> m_pads;
+};
 }
 
-//--------------------------------------------------------------
-void Scene::update()
+Scene::Scene(AppConfig* config, int id, const QString& name, QWidget* gridParent, QWidget* listParent, QObject* parent)
+    : QObject(parent)
+    , id(id)
+    , name(name)
+    , m_config(config)
 {
-    activeSoundIdx = config->activeSoundIdx;
+    if (this->name.isEmpty()) {
+        this->name = QString("Scene %1").arg(id + 1);
+    }
 
-    if(play_button.bActivate) {
-        if(isPlaying) {
+    auto* host = new PadGridWidget(config->gridWidth, config->gridHeight);
+    const int count = config->gridWidth * config->gridHeight;
+    pads.reserve(count);
+    for (int i = 0; i < count; ++i) {
+        auto* pad = new SoundPadWidget(config, id, i, host);
+        pads.push_back(pad);
+        host->addPad(pad);
+        connect(pad, &SoundPadWidget::padClicked, this, [this](int padId) {
+            activeSoundIdx = padId;
+            emit padSelected(this->id, padId);
+        });
+    }
+
+    auto* scroll = new QScrollArea(gridParent);
+    scroll->setFrameShape(QFrame::NoFrame);
+    scroll->setWidgetResizable(true);
+    scroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAsNeeded);
+    scroll->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    scroll->viewport()->setAutoFillBackground(true);
+    scroll->setWidget(host);
+    m_grid = scroll;
+
+    m_row = new SceneRowWidget(id, this->name, listParent);
+    connect(m_row, &SceneRowWidget::selected, this, [this]() {
+        selectRequested = true;
+    });
+    connect(m_row, &SceneRowWidget::nameChanged, this, [this](int, const QString& newName) {
+        this->name = newName;
+    });
+    connect(m_row, &SceneRowWidget::playPauseRequested, this, [this]() {
+        if (isPlaying) {
             isPlaying = false;
             pause();
+            m_row->setPlaying(false);
         } else {
             isPlaying = true;
             play();
+            m_row->setPlaying(true);
         }
-        play_button.bActivate = false;
-    }
-
-    if(stop_button.bActivate)
-    {
-        stop_button.bActivate = false;
+    });
+    connect(m_row, &SceneRowWidget::stopRequested, this, [this]() {
         isPlaying = false;
         stop();
-        play_button.bIsActive = false;
-    }
+        m_row->setPlaying(false);
+    });
+}
 
-    if(isFading) {
-        curTime = ofGetElapsedTimeMillis();
-        //if(fadeDirection == 1)
-        //{
-            //double decay_time = 0.01; // time to fall to ~37% of original amplitude
-            //double sample_time = 1.0 / 48000;
-            //fadeVolume = exp(- sample_time / decay_time);
-        //}
-        fadeVolume = fabs(fadeDirection - (curTime - prevTime)/fadeDuration);
-        //std::cout << "fade: " << fadeVolume << endl;
-        if(curTime - prevTime > fadeDuration)
-        {
+Scene::~Scene()
+{
+    delete m_grid;
+    m_grid = nullptr;
+    delete m_row;
+    m_row = nullptr;
+}
+
+SoundPadWidget* Scene::padAt(int idx) const
+{
+    if (idx < 0 || idx >= pads.size()) {
+        return nullptr;
+    }
+    return pads[idx];
+}
+
+void Scene::play()
+{
+    m_fading = true;
+    m_fadeDirection = 0;
+    m_fadeTimer.restart();
+    m_fadeCallback = {};
+    for (SoundPadWidget* pad : pads) {
+        pad->soundPlayer().setPaused(false);
+    }
+}
+
+void Scene::pause()
+{
+    m_fading = true;
+    m_fadeDirection = 1;
+    m_fadeTimer.restart();
+    m_fadeCallback = [this]() {
+        for (SoundPadWidget* pad : pads) {
+            pad->soundPlayer().setPaused(true);
+        }
+    };
+}
+
+void Scene::stop()
+{
+    m_fading = true;
+    m_fadeDirection = 1;
+    m_fadeTimer.restart();
+    m_fadeCallback = [this]() {
+        for (SoundPadWidget* pad : pads) {
+            pad->soundPlayer().stop();
+        }
+    };
+}
+
+void Scene::stopImmediate()
+{
+    endFade();
+    isPlaying = false;
+    for (SoundPadWidget* pad : pads) {
+        pad->soundPlayer().stop();
+    }
+    m_row->setPlaying(false);
+}
+
+void Scene::update()
+{
+    if (m_fading) {
+        constexpr float fadeDuration = 500.0f;
+        const float elapsed = static_cast<float>(m_fadeTimer.elapsed());
+        m_fadeVolume = std::abs(static_cast<float>(m_fadeDirection) - elapsed / fadeDuration);
+        if (elapsed > fadeDuration) {
             endFade();
         }
     }
-
-    for(size_t i=0; i < sounds.size();i++) {
-        sounds[i]->fadeVolume = fadeVolume;
-        sounds[i]->update();
+    for (SoundPadWidget* pad : pads) {
+        pad->setFadeVolume(m_fadeVolume);
+        pad->updateAudio();
     }
 }
 
-//--------------------------------------------------------------
 void Scene::endFade()
 {
-    if(isFading) {
-        isFading = false;
-        fadeCallback();
-        fadeVolume = 1.0f;
+    if (!m_fading) {
+        return;
+    }
+    m_fading = false;
+    if (m_fadeCallback) {
+        m_fadeCallback();
+    }
+    m_fadeVolume = 1.0f;
+}
+
+void Scene::setActive(bool active)
+{
+    m_row->setActive(active);
+    m_row->setInteractive(true);
+    for (SoundPadWidget* pad : pads) {
+        pad->setInteractive(active);
+        pad->setSelected(active && pad->padId() == activeSoundIdx);
     }
 }
 
-//--------------------------------------------------------------
-void Scene::enable()
+void Scene::layoutGrid()
 {
-    play_button.enableEvents();
-    delete_scene.enableEvents();
-    stop_button.enableEvents();
-    textfield.enable();  
-}
-
-//--------------------------------------------------------------
-void Scene::disable()
-{
-    play_button.disableEvents();
-    delete_scene.disableEvents();
-    stop_button.disableEvents();
-    textfield.disable();        
-}
-
-//--------------------------------------------------------------
-void Scene::enableInteractivity()
-{
-    if(!bInteractive) {
-        //cout << "enable interactivity scene id:" << id << endl;        
-        bInteractive = true;
+    auto* scroll = qobject_cast<QScrollArea*>(m_grid);
+    if (!scroll || !scroll->widget() || scroll->viewport()->size().isEmpty()) {
+        return;
     }
-}
-
-//--------------------------------------------------------------
-void Scene::disableInteractivity()
-{
-    if(bInteractive) {        
-        bInteractive = false;
+    auto* host = static_cast<PadGridWidget*>(scroll->widget());
+    const QSize fitted = scroll->viewport()->size().expandedTo(host->minimumSizeHint());
+    if (host->size() != fitted) {
+        host->resize(fitted);
     }
+    host->relayout();
 }

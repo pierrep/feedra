@@ -1,15 +1,20 @@
 #include "OpenALSoundPlayer.h"
-
-#include "ofConstants.h"
-#include "glm/gtc/constants.hpp"
-#include "glm/common.hpp"
-#include "ofLog.h"
-#include "ofEvents.h"
+#include "Log.h"
 #include <sndfile.h>
+#include <algorithm>
+#include <cmath>
+#include <cctype>
+#include <cstdio>
+#include <cstring>
+#include <cassert>
+#include <set>
+#include <map>
+#include <thread>
+#include <chrono>
 #include "AL/efx.h"
 #include "AL/efx-presets.h"
 
-#ifdef OF_USING_MPG123
+#ifdef FEEDRA_USING_MPG123
 #ifdef _WIN32
 #include "mpg123.h"
 #else 
@@ -24,13 +29,40 @@ static ALCcontext * alContext = nullptr;
 
 static bool bUseEffects = false;
 static ALuint effects[2] = { 0, 0 };
-static ALuint slots[2] = { 0, 0 };
+static ALuint effectSlots[2] = { 0, 0 };
 static EFXEAXREVERBPROPERTIES reverbs[2] = {
     EFX_REVERB_PRESET_ALLEY,
-    EFX_REVERB_PRESET_ARENA
+    EFX_REVERB_PRESET_ALLEY
 };
 
-ofEvent<OpenALSoundPlayer *> OpenALSoundPlayer::playbackEnded;
+static std::mutex playbackEndedMutex;
+static std::map<void*, OpenALSoundPlayer::PlaybackEndedCallback> playbackEndedListeners;
+
+void OpenALSoundPlayer::addPlaybackEndedListener(void* owner, PlaybackEndedCallback cb)
+{
+    std::lock_guard<std::mutex> lock(playbackEndedMutex);
+    playbackEndedListeners[owner] = std::move(cb);
+}
+
+void OpenALSoundPlayer::removePlaybackEndedListener(void* owner)
+{
+    std::lock_guard<std::mutex> lock(playbackEndedMutex);
+    playbackEndedListeners.erase(owner);
+}
+
+void OpenALSoundPlayer::notifyPlaybackEnded(OpenALSoundPlayer* player)
+{
+    std::vector<PlaybackEndedCallback> cbs;
+    {
+        std::lock_guard<std::mutex> lock(playbackEndedMutex);
+        for (auto& kv : playbackEndedListeners) {
+            cbs.push_back(kv.second);
+        }
+    }
+    for (auto& cb : cbs) {
+        cb(player);
+    }
+}
 
 vector<float> OpenALSoundPlayer::window;
 float OpenALSoundPlayer::windowSum = 0.f;
@@ -48,6 +80,15 @@ static set<OpenALSoundPlayer*> & players(){
 
 void OpenALSoundUpdate(){
 	alcProcessContext(alContext);
+}
+
+void OpenALSoundPlayer::updateAll()
+{
+    OpenALSoundUpdate();
+    auto copy = players();
+    for (auto* p : copy) {
+        p->update();
+    }
 }
 
 #include "AL/alext.h"
@@ -175,7 +216,7 @@ static string getSoundFileFormatString(int format) {
         return "Mp3";
     }
 
-    return "Unknown format: " + ofToString(format);
+    return "Unknown format: " + std::to_string(format);
 }
 
 static string getSoundFileSubFormatString(int format) {
@@ -219,10 +260,10 @@ static string getSoundFileSubFormatString(int format) {
         return "Microsoft ADPCM";
     }
 
-    return "Unknown format: " + ofToString(format);
+    return "Unknown format: " + std::to_string(format);
 }
 
-#ifdef OF_USING_MPG123
+#ifdef FEEDRA_USING_MPG123
 static string getMpg123EncodingString(int encoding) {
 	switch(encoding) {
 		case MPG123_ENC_16:
@@ -329,6 +370,305 @@ static int LoadEffect(ALuint effect, const EFXEAXREVERBPROPERTIES *reverb)
     return 1;
 }
 
+namespace {
+
+struct ReverbPreset {
+    const char* id;
+    EFXEAXREVERBPROPERTIES props;
+};
+
+#define FEEDRA_REVERB(name) { #name, EFX_REVERB_PRESET_##name }
+
+const ReverbPreset kReverbPresets[] = {
+    FEEDRA_REVERB(GENERIC),
+    FEEDRA_REVERB(PADDEDCELL),
+    FEEDRA_REVERB(ROOM),
+    FEEDRA_REVERB(BATHROOM),
+    FEEDRA_REVERB(LIVINGROOM),
+    FEEDRA_REVERB(STONEROOM),
+    FEEDRA_REVERB(AUDITORIUM),
+    FEEDRA_REVERB(CONCERTHALL),
+    FEEDRA_REVERB(CAVE),
+    FEEDRA_REVERB(ARENA),
+    FEEDRA_REVERB(HANGAR),
+    FEEDRA_REVERB(CARPETEDHALLWAY),
+    FEEDRA_REVERB(HALLWAY),
+    FEEDRA_REVERB(STONECORRIDOR),
+    FEEDRA_REVERB(ALLEY),
+    FEEDRA_REVERB(FOREST),
+    FEEDRA_REVERB(CITY),
+    FEEDRA_REVERB(MOUNTAINS),
+    FEEDRA_REVERB(QUARRY),
+    FEEDRA_REVERB(PLAIN),
+    FEEDRA_REVERB(PARKINGLOT),
+    FEEDRA_REVERB(SEWERPIPE),
+    FEEDRA_REVERB(UNDERWATER),
+    FEEDRA_REVERB(DRUGGED),
+    FEEDRA_REVERB(DIZZY),
+    FEEDRA_REVERB(PSYCHOTIC),
+    FEEDRA_REVERB(CASTLE_SMALLROOM),
+    FEEDRA_REVERB(CASTLE_SHORTPASSAGE),
+    FEEDRA_REVERB(CASTLE_MEDIUMROOM),
+    FEEDRA_REVERB(CASTLE_LARGEROOM),
+    FEEDRA_REVERB(CASTLE_LONGPASSAGE),
+    FEEDRA_REVERB(CASTLE_HALL),
+    FEEDRA_REVERB(CASTLE_CUPBOARD),
+    FEEDRA_REVERB(CASTLE_COURTYARD),
+    FEEDRA_REVERB(CASTLE_ALCOVE),
+    FEEDRA_REVERB(FACTORY_SMALLROOM),
+    FEEDRA_REVERB(FACTORY_SHORTPASSAGE),
+    FEEDRA_REVERB(FACTORY_MEDIUMROOM),
+    FEEDRA_REVERB(FACTORY_LARGEROOM),
+    FEEDRA_REVERB(FACTORY_LONGPASSAGE),
+    FEEDRA_REVERB(FACTORY_HALL),
+    FEEDRA_REVERB(FACTORY_CUPBOARD),
+    FEEDRA_REVERB(FACTORY_COURTYARD),
+    FEEDRA_REVERB(FACTORY_ALCOVE),
+    FEEDRA_REVERB(ICEPALACE_SMALLROOM),
+    FEEDRA_REVERB(ICEPALACE_SHORTPASSAGE),
+    FEEDRA_REVERB(ICEPALACE_MEDIUMROOM),
+    FEEDRA_REVERB(ICEPALACE_LARGEROOM),
+    FEEDRA_REVERB(ICEPALACE_LONGPASSAGE),
+    FEEDRA_REVERB(ICEPALACE_HALL),
+    FEEDRA_REVERB(ICEPALACE_CUPBOARD),
+    FEEDRA_REVERB(ICEPALACE_COURTYARD),
+    FEEDRA_REVERB(ICEPALACE_ALCOVE),
+    FEEDRA_REVERB(SPACESTATION_SMALLROOM),
+    FEEDRA_REVERB(SPACESTATION_SHORTPASSAGE),
+    FEEDRA_REVERB(SPACESTATION_MEDIUMROOM),
+    FEEDRA_REVERB(SPACESTATION_LARGEROOM),
+    FEEDRA_REVERB(SPACESTATION_LONGPASSAGE),
+    FEEDRA_REVERB(SPACESTATION_HALL),
+    FEEDRA_REVERB(SPACESTATION_CUPBOARD),
+    FEEDRA_REVERB(SPACESTATION_ALCOVE),
+    FEEDRA_REVERB(WOODEN_SMALLROOM),
+    FEEDRA_REVERB(WOODEN_SHORTPASSAGE),
+    FEEDRA_REVERB(WOODEN_MEDIUMROOM),
+    FEEDRA_REVERB(WOODEN_LARGEROOM),
+    FEEDRA_REVERB(WOODEN_LONGPASSAGE),
+    FEEDRA_REVERB(WOODEN_HALL),
+    FEEDRA_REVERB(WOODEN_CUPBOARD),
+    FEEDRA_REVERB(WOODEN_COURTYARD),
+    FEEDRA_REVERB(WOODEN_ALCOVE),
+    FEEDRA_REVERB(SPORT_EMPTYSTADIUM),
+    FEEDRA_REVERB(SPORT_SQUASHCOURT),
+    FEEDRA_REVERB(SPORT_SMALLSWIMMINGPOOL),
+    FEEDRA_REVERB(SPORT_LARGESWIMMINGPOOL),
+    FEEDRA_REVERB(SPORT_GYMNASIUM),
+    FEEDRA_REVERB(SPORT_FULLSTADIUM),
+    FEEDRA_REVERB(SPORT_STADIUMTANNOY),
+    FEEDRA_REVERB(PREFAB_WORKSHOP),
+    FEEDRA_REVERB(PREFAB_SCHOOLROOM),
+    FEEDRA_REVERB(PREFAB_PRACTISEROOM),
+    FEEDRA_REVERB(PREFAB_OUTHOUSE),
+    FEEDRA_REVERB(PREFAB_CARAVAN),
+    FEEDRA_REVERB(DOME_TOMB),
+    FEEDRA_REVERB(PIPE_SMALL),
+    FEEDRA_REVERB(DOME_SAINTPAULS),
+    FEEDRA_REVERB(PIPE_LONGTHIN),
+    FEEDRA_REVERB(PIPE_LARGE),
+    FEEDRA_REVERB(PIPE_RESONANT),
+    FEEDRA_REVERB(OUTDOORS_BACKYARD),
+    FEEDRA_REVERB(OUTDOORS_ROLLINGPLAINS),
+    FEEDRA_REVERB(OUTDOORS_DEEPCANYON),
+    FEEDRA_REVERB(OUTDOORS_CREEK),
+    FEEDRA_REVERB(OUTDOORS_VALLEY),
+    FEEDRA_REVERB(MOOD_HEAVEN),
+    FEEDRA_REVERB(MOOD_HELL),
+    FEEDRA_REVERB(MOOD_MEMORY),
+    FEEDRA_REVERB(DRIVING_COMMENTATOR),
+    FEEDRA_REVERB(DRIVING_PITGARAGE),
+    FEEDRA_REVERB(DRIVING_INCAR_RACER),
+    FEEDRA_REVERB(DRIVING_INCAR_SPORTS),
+    FEEDRA_REVERB(DRIVING_INCAR_LUXURY),
+    FEEDRA_REVERB(DRIVING_FULLGRANDSTAND),
+    FEEDRA_REVERB(DRIVING_EMPTYGRANDSTAND),
+    FEEDRA_REVERB(DRIVING_TUNNEL),
+    FEEDRA_REVERB(CITY_STREETS),
+    FEEDRA_REVERB(CITY_SUBWAY),
+    FEEDRA_REVERB(CITY_MUSEUM),
+    FEEDRA_REVERB(CITY_LIBRARY),
+    FEEDRA_REVERB(CITY_UNDERPASS),
+    FEEDRA_REVERB(CITY_ABANDONED),
+    FEEDRA_REVERB(DUSTYROOM),
+    FEEDRA_REVERB(CHAPEL),
+    FEEDRA_REVERB(SMALLWATERROOM),
+};
+
+#undef FEEDRA_REVERB
+
+int g_reverbIndex = -1;
+
+int alleyPresetIndex()
+{
+    const int count = static_cast<int>(sizeof(kReverbPresets) / sizeof(kReverbPresets[0]));
+    for (int i = 0; i < count; ++i) {
+        if (std::strcmp(kReverbPresets[i].id, "ALLEY") == 0) {
+            return i;
+        }
+    }
+    return 0;
+}
+
+std::string titleIfUpper(const std::string& part)
+{
+    for (unsigned char ch : part) {
+        if (std::islower(ch)) {
+            return part;
+        }
+    }
+    std::string out;
+    bool cap = true;
+    for (unsigned char ch : part) {
+        if (ch == ' ') {
+            out.push_back(' ');
+            cap = true;
+            continue;
+        }
+        out.push_back(static_cast<char>(cap ? std::toupper(ch) : std::tolower(ch)));
+        cap = false;
+    }
+    return out;
+}
+
+std::string humanizeReverbId(std::string id)
+{
+    struct Rep {
+        const char* from;
+        const char* to;
+    };
+    static const Rep reps[] = {
+        {"SMALLSWIMMINGPOOL", "Small Swimming Pool"},
+        {"LARGESWIMMINGPOOL", "Large Swimming Pool"},
+        {"CARPETEDHALLWAY", "Carpeted Hallway"},
+        {"EMPTYGRANDSTAND", "Empty Grandstand"},
+        {"FULLGRANDSTAND", "Full Grandstand"},
+        {"SMALLWATERROOM", "Small Water Room"},
+        {"STADIUMTANNOY", "Stadium Tannoy"},
+        {"STONECORRIDOR", "Stone Corridor"},
+        {"ROLLINGPLAINS", "Rolling Plains"},
+        {"SHORTPASSAGE", "Short Passage"},
+        {"PRACTISEROOM", "Practise Room"},
+        {"EMPTYSTADIUM", "Empty Stadium"},
+        {"DEEPCANYON", "Deep Canyon"},
+        {"CONCERTHALL", "Concert Hall"},
+        {"SPACESTATION", "Space Station"},
+        {"SQUASHCOURT", "Squash Court"},
+        {"SAINTPAULS", "St Paul's"},
+        {"SCHOOLROOM", "School Room"},
+        {"PADDEDCELL", "Padded Cell"},
+        {"PARKINGLOT", "Parking Lot"},
+        {"MEDIUMROOM", "Medium Room"},
+        {"LONGPASSAGE", "Long Passage"},
+        {"LIVINGROOM", "Living Room"},
+        {"ICEPALACE", "Ice Palace"},
+        {"FULLSTADIUM", "Full Stadium"},
+        {"STONEROOM", "Stone Room"},
+        {"SEWERPIPE", "Sewer Pipe"},
+        {"PITGARAGE", "Pit Garage"},
+        {"LARGEROOM", "Large Room"},
+        {"DUSTYROOM", "Dusty Room"},
+        {"SMALLROOM", "Small Room"},
+        {"LONGTHIN", "Long Thin"},
+        {"INCAR", "In-car"},
+    };
+    std::vector<Rep> ordered(std::begin(reps), std::end(reps));
+    std::sort(ordered.begin(), ordered.end(), [](const Rep& a, const Rep& b) {
+        return std::strlen(a.from) > std::strlen(b.from);
+    });
+    for (const Rep& rep : ordered) {
+        const std::string from = rep.from;
+        const std::string to = rep.to;
+        std::size_t pos = 0;
+        while ((pos = id.find(from, pos)) != std::string::npos) {
+            id.replace(pos, from.size(), to);
+            pos += to.size();
+        }
+    }
+
+    std::string label;
+    std::size_t start = 0;
+    while (start <= id.size()) {
+        const std::size_t cut = id.find('_', start);
+        const std::string part = id.substr(start, cut == std::string::npos ? std::string::npos : cut - start);
+        if (!label.empty()) {
+            label += " / ";
+        }
+        label += titleIfUpper(part);
+        if (cut == std::string::npos) {
+            break;
+        }
+        start = cut + 1;
+    }
+    return label;
+}
+
+void applyReverbPreset(int index)
+{
+    reverbs[0] = kReverbPresets[index].props;
+    reverbs[1] = kReverbPresets[index].props;
+    if (!bUseEffects || effects[0] == 0 || effects[1] == 0) {
+        return;
+    }
+    if (!LoadEffect(effects[0], &reverbs[0]) || !LoadEffect(effects[1], &reverbs[1])) {
+        return;
+    }
+    alAuxiliaryEffectSloti(effectSlots[0], AL_EFFECTSLOT_EFFECT, static_cast<ALint>(effects[0]));
+    alAuxiliaryEffectSloti(effectSlots[1], AL_EFFECTSLOT_EFFECT, static_cast<ALint>(effects[1]));
+    alGetError();
+}
+
+} // namespace
+
+int OpenALSoundPlayer::reverbPresetCount()
+{
+    return static_cast<int>(sizeof(kReverbPresets) / sizeof(kReverbPresets[0]));
+}
+
+std::string OpenALSoundPlayer::reverbPresetId(int index)
+{
+    if (index < 0 || index >= reverbPresetCount()) {
+        return {};
+    }
+    return kReverbPresets[index].id;
+}
+
+std::string OpenALSoundPlayer::reverbPresetLabel(int index)
+{
+    if (index < 0 || index >= reverbPresetCount()) {
+        return {};
+    }
+    return humanizeReverbId(kReverbPresets[index].id);
+}
+
+int OpenALSoundPlayer::reverbPresetIndex()
+{
+    if (g_reverbIndex < 0) {
+        g_reverbIndex = alleyPresetIndex();
+    }
+    return g_reverbIndex;
+}
+
+void OpenALSoundPlayer::setReverbPreset(int index)
+{
+    if (index < 0 || index >= reverbPresetCount()) {
+        return;
+    }
+    g_reverbIndex = index;
+    applyReverbPreset(index);
+}
+
+bool OpenALSoundPlayer::setReverbPresetById(const std::string& id)
+{
+    for (int i = 0; i < reverbPresetCount(); ++i) {
+        if (id == kReverbPresets[i].id) {
+            setReverbPreset(i);
+            return true;
+        }
+    }
+    return false;
+}
+
 #define BUFFER_STREAM_SIZE 4096
 
 
@@ -353,11 +693,46 @@ OpenALSoundPlayer::OpenALSoundPlayer(){
     spatialisedStereo = false;
     bUseFilter = false;
     reverbSend      = 0.0f;
-#ifdef OF_USING_MPG123
+#ifdef FEEDRA_USING_MPG123
 	mp3streamf		= 0;
 #endif
 	players().insert(this);
 }
+void OpenALSoundPlayer::startThread()
+{
+    if (threadRunning) {
+        return;
+    }
+    if (worker.joinable() && worker.get_id() != std::this_thread::get_id()) {
+        worker.join();
+    }
+    threadRunning = true;
+    worker = std::thread(&OpenALSoundPlayer::threadedFunction, this);
+}
+
+void OpenALSoundPlayer::stopThread()
+{
+    threadRunning = false;
+}
+
+void OpenALSoundPlayer::waitForThread()
+{
+    threadRunning = false;
+    if (worker.joinable() && worker.get_id() != std::this_thread::get_id()) {
+        worker.join();
+    }
+}
+
+bool OpenALSoundPlayer::isThreadRunning() const
+{
+    return threadRunning;
+}
+
+void OpenALSoundPlayer::sleepMs(int ms)
+{
+    std::this_thread::sleep_for(std::chrono::milliseconds(ms));
+}
+
 
 // ----------------------------------------------------------------------------
 OpenALSoundPlayer::~OpenALSoundPlayer(){
@@ -367,7 +742,7 @@ OpenALSoundPlayer::~OpenALSoundPlayer(){
 	if( players().empty() ){
 		close();
 	}
-    this->waitForThread();
+    waitForThread();
 }
 
 int getDevices(const char *type, const char *list, bool printOutput)
@@ -376,21 +751,21 @@ int getDevices(const char *type, const char *list, bool printOutput)
   int num_devices = 0;
 
   ptr = (ALCchar *)list;
-  if(printOutput) ofLogNotice() << "List of all available " << type << " devices: ";
+  if(printOutput) qInfo() << "List of all available " << type << " devices: ";
   if (!list)
   {
-    if(printOutput) ofLogNotice() << "none";
+    if(printOutput) qInfo() << "none";
   }
   else
   {
     nptr = ptr;
     while (*(nptr += strlen(ptr)+1) != 0)
     {
-      if(printOutput) ofLogNotice() << "* " << ptr;
+      if(printOutput) qInfo() << "* " << ptr;
       ptr = nptr;
       num_devices++;
     }
-    if(printOutput) ofLogNotice() << "* " << ptr;
+    if(printOutput) qInfo() << "* " << ptr;
     num_devices++;
   }
 
@@ -447,7 +822,7 @@ int OpenALSoundPlayer::listDevices(bool printOutput)
     }
     int num_devices = getDevices("output",devices, printOutput);
     if(printOutput) {
-        ofLogNotice() << "Default output device name: " << defaultDeviceName;
+        qInfo() << "Default output device name: " << defaultDeviceName;
     }
 
     if(printOutput)
@@ -595,10 +970,10 @@ void OpenALSoundPlayer::initialize(){
         ALCint major, minor;
 		alDevice = alcOpenDevice( nullptr );
 		if( !alDevice ){
-			ofLogError("OpenALSoundPlayer") << "initialize(): couldn't open OpenAL default device";
+			qCritical() << "OpenALSoundPlayer" << "initialize(): couldn't open OpenAL default device";
 			return;
         }else{            
-            ofLogNotice("OpenALSoundPlayer") << "initialize(): opening "<< alcGetString( alDevice, ALC_DEVICE_SPECIFIER );
+            qInfo() << "OpenALSoundPlayer" << "initialize(): opening "<< alcGetString( alDevice, ALC_DEVICE_SPECIFIER );
             alcGetIntegerv(alDevice, ALC_MAJOR_VERSION, 1, &major);
             alcGetIntegerv(alDevice, ALC_MINOR_VERSION, 1, &minor);            
 		}
@@ -607,38 +982,38 @@ void OpenALSoundPlayer::initialize(){
         alContext = alcCreateContext( alDevice, attrlist );
 		if( !alContext ){
 			ALCenum err = alcGetError( alDevice ); 
-			ofLogError("OpenALSoundPlayer") << "initialize(): couldn't not create OpenAL context : "<< getALCErrorString( err );
+			qCritical() << "OpenALSoundPlayer" << "initialize(): couldn't not create OpenAL context : "<< getALCErrorString( err );
 			close();
 			return;
 		}
 
 		if( alcMakeContextCurrent( alContext )==ALC_FALSE ){
 			ALCenum err = alcGetError( alDevice ); 
-			ofLogError("OpenALSoundPlayer") << "initialize(): couldn't not make current the create OpenAL context : "<< getALCErrorString( err );
+			qCritical() << "OpenALSoundPlayer" << "initialize(): couldn't not make current the create OpenAL context : "<< getALCErrorString( err );
 			close();
 			return;
 		};
 		alListener3f( AL_POSITION, 0,0,0 );
-#ifdef OF_USING_MPG123
+#ifdef FEEDRA_USING_MPG123
 		mpg123_init();
 #endif
 
-        ofLogNotice() << "Vendor: \""<<  alGetString(AL_VENDOR) << "\"";
-        ofLogNotice() << "Renderer: \""<< alGetString(AL_RENDERER) << "\"";
-        ofLogNotice() << "Version: " << alGetString(AL_VERSION);
-        ofLogNotice() << "ALC version: " << major << "." << minor;        
+        qInfo() << "Vendor: \""<<  alGetString(AL_VENDOR) << "\"";
+        qInfo() << "Renderer: \""<< alGetString(AL_RENDERER) << "\"";
+        qInfo() << "Version: " << alGetString(AL_VERSION);
+        qInfo() << "ALC version: " << major << "." << minor;        
         ALCint data[16];
         alcGetIntegerv(alDevice, ALC_FREQUENCY, 1, data);
-        ofLogNotice() << "Mixer sample rate: " << data[0] << " hz";
+        qInfo() << "Mixer sample rate: " << data[0] << " hz";
         listDevices();
 
         if(!alcIsExtensionPresent(alDevice, "ALC_EXT_EFX"))
         {
-            ofLogError() << "EFX not supported, disabling effects";
+            qCritical() << "EFX not supported, disabling effects";
             bUseEffects = false;
         } else {
             bUseEffects = true;
-            ofLogNotice() << "EFX enabled, using effects";
+            qInfo() << "EFX enabled, using effects";
         }
 
         if(bUseEffects) {
@@ -646,16 +1021,16 @@ void OpenALSoundPlayer::initialize(){
             alcGetIntegerv(alDevice, ALC_MAX_AUXILIARY_SENDS, 1, &num_sends);
             if(alcGetError(alDevice) != ALC_NO_ERROR || num_sends < 2)
             {
-                ofLogError() <<  "Device does not support multiple sends (" << num_sends <<" available)";
+                qCritical() <<  "Device does not support multiple sends (" << num_sends <<" available)";
                 bUseEffects = false;
             } else {
-                ofLogNotice() << "Device supports " << num_sends <<" effect sends";
+                qInfo() << "Device supports " << num_sends <<" effect sends";
 
                 /* Generate FX slots */
                 alGenEffects(2, effects);
                 if(!LoadEffect(effects[0], &reverbs[0]) || !LoadEffect(effects[1], &reverbs[1]))
                 {
-                    ofLogError( ) <<  "Failed to load effects, aborting...";
+                    qCritical( ) <<  "Failed to load effects, aborting...";
                     bUseEffects = false;
                     alDeleteEffects(2, effects);
                     close();
@@ -663,15 +1038,15 @@ void OpenALSoundPlayer::initialize(){
                 }
 
                 /* Create the effect slot objects, one for each "active" effect. */
-                alGenAuxiliaryEffectSlots(2, slots);
+                alGenAuxiliaryEffectSlots(2, effectSlots);
 
                 /* Tell the effect slots to use the loaded effect objects, with slot 0 for
                  * Zone 0 and slot 1 for Zone 1. Note that this effectively copies the
                  * effect properties. Modifying or deleting the effect object afterward
                  * won't directly affect the effect slot until they're reapplied like this.
                  */
-                alAuxiliaryEffectSloti(slots[0], AL_EFFECTSLOT_EFFECT, (ALint)effects[0]);
-                alAuxiliaryEffectSloti(slots[1], AL_EFFECTSLOT_EFFECT, (ALint)effects[1]);
+                alAuxiliaryEffectSloti(effectSlots[0], AL_EFFECTSLOT_EFFECT, (ALint)effects[0]);
+                alAuxiliaryEffectSloti(effectSlots[1], AL_EFFECTSLOT_EFFECT, (ALint)effects[1]);
                 assert(alGetError()==AL_NO_ERROR && "Failed to set effect slot");
             }
         }
@@ -685,11 +1060,11 @@ void OpenALSoundPlayer::initialize(){
         {
            if( attrs[i] == ALC_MONO_SOURCES )
            {
-              ofLogNotice() << "Max mono sources: " << attrs[i+1];
+              qInfo() << "Max mono sources: " << attrs[i+1];
            }
            if( attrs[i] == ALC_STEREO_SOURCES )
            {
-              ofLogNotice() << "Max stereo sources: " << attrs[i+1];
+              qInfo() << "Max stereo sources: " << attrs[i+1];
            }
         }
 //        alcGetIntegerv(alDevice, ALC_REFRESH, 1, data+1);
@@ -704,7 +1079,7 @@ void OpenALSoundPlayer::createWindow(int size){
 		window.resize(size);
 		// hanning window
 		for(int i = 0; i < size; i++){
-			window[i] = .54 - .46 * cos((glm::two_pi<float>() * i) / (size - 1));
+			window[i] = .54 - .46 * cos((6.28318530717958647692f * i) / (size - 1));
 			windowSum += window[i];
 		}
 	}
@@ -715,11 +1090,11 @@ void OpenALSoundPlayer::close(){
 	// Destroy the OpenAL context (if any) before closing the device
 	if( alDevice ){
 		if( alContext ){
-#ifdef OF_USING_MPG123
+#ifdef FEEDRA_USING_MPG123
 			mpg123_exit();
 #endif
             if(bUseEffects) {
-                alDeleteAuxiliaryEffectSlots(2, slots);
+                alDeleteAuxiliaryEffectSlots(2, effectSlots);
                 alDeleteEffects(2, effects);
                 bUseEffects = false;
             }
@@ -729,7 +1104,7 @@ void OpenALSoundPlayer::close(){
 			alContext = nullptr;
 		}
 		if( alcCloseDevice( alDevice )==ALC_FALSE ){
-			ofLogNotice("OpenALSoundPlayer") << "initialize(): error closing OpenAL device.";
+			qInfo() << "OpenALSoundPlayer" << "initialize(): error closing OpenAL device.";
 		}
 		alDevice = nullptr;
 	}
@@ -740,7 +1115,7 @@ bool OpenALSoundPlayer::sfReadFile(const std::filesystem::path& path){
 	SF_INFO sfInfo;
 	SNDFILE* f = sf_open(path.string().c_str(),SFM_READ,&sfInfo);
 	if(!f){
-		ofLogError("OpenALSoundPlayer") << "sfReadFile(): couldn't read \"" << path << "\"";
+		qCritical() << "OpenALSoundPlayer" << "sfReadFile(): couldn't read \"" << path << "\"";
 		return false;
 	}
 
@@ -758,7 +1133,7 @@ bool OpenALSoundPlayer::sfReadFile(const std::filesystem::path& path){
 
         sf_count_t samples_read = sf_read_float (f, &buffer_float[0], buffer_float.size());
         if(samples_read<(int)buffer_float.size()){
-			ofLogWarning("OpenALSoundPlayer") << "sfReadFile(): read " << samples_read << " float samples, expected "
+			qWarning() << "OpenALSoundPlayer" << "sfReadFile(): read " << samples_read << " float samples, expected "
             << buffer_float.size() << " for \"" << path << "\"";
 		}
         for (int i = 0 ; i < int(buffer_float.size()) ; i++){
@@ -768,14 +1143,14 @@ bool OpenALSoundPlayer::sfReadFile(const std::filesystem::path& path){
 	}else{
         sf_count_t frames_read = sf_readf_short(f,&buffer_short[0],sfInfo.frames);
 		if(frames_read<sfInfo.frames){
-			ofLogError("OpenALSoundPlayer") << "sfReadFile(): read " << frames_read << " frames from buffer, expected "
+			qCritical() << "OpenALSoundPlayer" << "sfReadFile(): read " << frames_read << " frames from buffer, expected "
 			<< sfInfo.frames << " for \"" << path << "\"";
 			return false;
 		}
 		sf_seek(f,0,SEEK_SET);
         frames_read = sf_readf_float(f,&buffer_float[0],sfInfo.frames);
 		if(frames_read<sfInfo.frames){
-			ofLogError("OpenALSoundPlayer") << "sfReadFile(): read " << frames_read << " frames from fft buffer, expected "
+			qCritical() << "OpenALSoundPlayer" << "sfReadFile(): read " << frames_read << " frames from fft buffer, expected "
 			<< sfInfo.frames << " for \"" << path << "\"";
 			return false;
 		}
@@ -788,13 +1163,13 @@ bool OpenALSoundPlayer::sfReadFile(const std::filesystem::path& path){
 	return true;
 }
 
-#ifdef OF_USING_MPG123
+#ifdef FEEDRA_USING_MPG123
 //------------------------------------------------------------
 bool OpenALSoundPlayer::mpg123ReadFile(const std::filesystem::path& path){
 	int err = MPG123_OK;
 	mpg123_handle * f = mpg123_new(nullptr,&err);
 	if(mpg123_open(f,path.string().c_str())!=MPG123_OK){
-		ofLogError("OpenALSoundPlayer") << "mpg123ReadFile(): couldn't read \"" << path << "\"";
+		qCritical() << "OpenALSoundPlayer" << "mpg123ReadFile(): couldn't read \"" << path << "\"";
 		return false;
 	}
 
@@ -803,7 +1178,7 @@ bool OpenALSoundPlayer::mpg123ReadFile(const std::filesystem::path& path){
 	mpg123_getformat(f,&rate,&channels,(int*)&encoding);
     subformat_string = getMpg123EncodingString(encoding);
 	if(encoding!=MPG123_ENC_SIGNED_16){
-		ofLogError("OpenALSoundPlayer") << "mpg123ReadFile(): " << getMpg123EncodingString(encoding)
+		qCritical() << "OpenALSoundPlayer" << "mpg123ReadFile(): " << getMpg123EncodingString(encoding)
 			<< " encoding for \"" << path << "\"" << " unsupported, expecting MPG123_ENC_SIGNED_16";
 		return false;
 	}
@@ -834,7 +1209,7 @@ bool OpenALSoundPlayer::sfStream(const std::filesystem::path& path){
 		SF_INFO sfInfo;
 		streamf = sf_open(path.string().c_str(),SFM_READ,&sfInfo);
 		if(!streamf){
-            ofLogError("OpenALSoundPlayer") << "sfStream(): couldn't read " << path;
+            qCritical() << "OpenALSoundPlayer" << "sfStream(): couldn't read " << path;
 			return false;
 		}
 
@@ -905,7 +1280,7 @@ bool OpenALSoundPlayer::sfStream(const std::filesystem::path& path){
 	return true;
 }
 
-#ifdef OF_USING_MPG123
+#ifdef FEEDRA_USING_MPG123
 //------------------------------------------------------------
 bool OpenALSoundPlayer::mpg123Stream(const std::filesystem::path& path){
 	if(!mp3streamf){
@@ -915,7 +1290,7 @@ bool OpenALSoundPlayer::mpg123Stream(const std::filesystem::path& path){
 			mpg123_close(mp3streamf);
 			mpg123_delete(mp3streamf);
             mp3streamf = 0;
-            ofLogError("OpenALSoundPlayer") << "mpg123Stream(): couldn't read " << path;
+            qCritical() << "OpenALSoundPlayer" << "mpg123Stream(): couldn't read " << path;
 			return false;
 		}
 
@@ -923,7 +1298,7 @@ bool OpenALSoundPlayer::mpg123Stream(const std::filesystem::path& path){
 		mpg123_getformat(mp3streamf,&rate,&channels,(int*)&stream_encoding);
         subformat_string = getMpg123EncodingString(stream_encoding);
 		if(stream_encoding!=MPG123_ENC_SIGNED_16){
-			ofLogError("OpenALSoundPlayer") << "mpg123Stream(): " << getMpg123EncodingString(stream_encoding)
+			qCritical() << "OpenALSoundPlayer" << "mpg123Stream(): " << getMpg123EncodingString(stream_encoding)
 			<< " encoding for \"" << path << "\"" << " unsupported, expecting MPG123_ENC_SIGNED_16";
 			return false;
 		}
@@ -963,7 +1338,7 @@ bool OpenALSoundPlayer::mpg123Stream(const std::filesystem::path& path){
 
 //------------------------------------------------------------
 size_t OpenALSoundPlayer::stream(const std::filesystem::path& fileName){
-#ifdef OF_USING_MPG123
+#ifdef FEEDRA_USING_MPG123
     if(file_extension == ".mp3" || mp3streamf){
         if(!mpg123Stream(fileName)) return 0;
 	}else
@@ -983,7 +1358,7 @@ size_t OpenALSoundPlayer::stream(const std::filesystem::path& fileName){
 }
 
 size_t OpenALSoundPlayer::readFile(const std::filesystem::path& fileName){
-#ifdef OF_USING_MPG123
+#ifdef FEEDRA_USING_MPG123
     if(file_extension !=".mp3"){
         if(!sfReadFile(fileName)) return 0;
 	}else{
@@ -1093,7 +1468,7 @@ bool OpenALSoundPlayer::load(const std::filesystem::path& _fileName, bool is_str
 
     if(numFrames == 0)
     {
-        ofLogError() << "Sound file load failed - wrong file type or empty file";
+        qCritical() << "Sound file load failed - wrong file type or empty file";
         return false;
     }
 
@@ -1135,7 +1510,7 @@ bool OpenALSoundPlayer::load(const std::filesystem::path& _fileName, bool is_str
     alGenSources((ALsizei) sources.size(), &sources[0]);
     err = alGetError();
     if (err != AL_NO_ERROR){
-        ofLogError("OpenALSoundPlayer") << "loadSound(): couldn't generate sources for " << fileName << ": "
+        qCritical() << "OpenALSoundPlayer" << "loadSound(): couldn't generate sources for " << fileName << ": "
         << (int) err << " " << getALErrorString(err);
         return false;
     }
@@ -1146,7 +1521,7 @@ bool OpenALSoundPlayer::load(const std::filesystem::path& _fileName, bool is_str
         buffers.resize(sources.size());
 	}
 	alGenBuffers((ALsizei)buffers.size(), &buffers[0]);
-    //ofLogNotice() << "sound load " << _fileName <<" channels: "<< channels << " buffers.size: " << buffers.size() << " buffer_short.size(): " << buffer_short.size() << " duration: " << duration;
+    //qInfo() << "sound load " << _fileName <<" channels: "<< channels << " buffers.size: " << buffers.size() << " buffer_short.size(): " << buffer_short.size() << " duration: " << duration;
 
     if(sources.size() == 1){
 
@@ -1168,7 +1543,7 @@ bool OpenALSoundPlayer::load(const std::filesystem::path& _fileName, bool is_str
             }
 			err = alGetError();
 			if (err != AL_NO_ERROR){
-                ofLogError("OpenALSoundPlayer:") << "loadSound(): couldn't create buffer for " << fileName << ": "
+                qCritical() << "OpenALSoundPlayer:" << "loadSound(): couldn't create buffer for " << fileName << ": "
 				<< (int) err << " " << getALErrorString(err);
 				return false;
 			}
@@ -1179,7 +1554,7 @@ bool OpenALSoundPlayer::load(const std::filesystem::path& _fileName, bool is_str
             alSourcei (sources[0], AL_BUFFER, buffers[0]);
             err = alGetError();
             if (err != AL_NO_ERROR){
-                ofLogError("OpenALSoundPlayer:") << "loadSound(): couldn't source for \"" << fileName << "\": "
+                qCritical() << "OpenALSoundPlayer:" << "loadSound(): couldn't source for \"" << fileName << "\": "
                 << (int) err << " " << getALErrorString(err);
                 return false;
             }
@@ -1199,7 +1574,7 @@ bool OpenALSoundPlayer::load(const std::filesystem::path& _fileName, bool is_str
         } else if(openALformat == AL_FORMAT_MONO_FLOAT32) {
             multibuffer_float.resize(channels);
         } else {
-            ofLogError("OpenALSoundPlayer:") << "Unknown multiple source format, aborting!";
+            qCritical() << "OpenALSoundPlayer:" << "Unknown multiple source format, aborting!";
             return false;
         }
 
@@ -1234,7 +1609,7 @@ bool OpenALSoundPlayer::load(const std::filesystem::path& _fileName, bool is_str
                     }
                     err = alGetError();
                     if ( err != AL_NO_ERROR){
-                        ofLogError("OpenALSoundPlayer") << "loadSound(): couldn't create stereo buffers for \"" << fileName << "\": " << (int) err << " " << getALErrorString(err);
+                        qCritical() << "OpenALSoundPlayer" << "loadSound(): couldn't create stereo buffers for \"" << fileName << "\": " << (int) err << " " << getALErrorString(err);
                         sources.clear();
                         multibuffer_short.clear();
                         return false;
@@ -1263,7 +1638,7 @@ bool OpenALSoundPlayer::load(const std::filesystem::path& _fileName, bool is_str
                 }
 				err = alGetError();
 				if (err != AL_NO_ERROR){
-					ofLogError("OpenALSoundPlayer") << "loadSound(): couldn't create stereo buffers for \"" << fileName << "\": "
+					qCritical() << "OpenALSoundPlayer" << "loadSound(): couldn't create stereo buffers for \"" << fileName << "\": "
 					<< (int) err << " " << getALErrorString(err);
 					return false;
 				}
@@ -1275,7 +1650,7 @@ bool OpenALSoundPlayer::load(const std::filesystem::path& _fileName, bool is_str
         for(int i=0;i<channels;i++){
             err = alGetError();
             if (err != AL_NO_ERROR){
-                ofLogError("OpenALSoundPlayer") << "loadSound(): couldn't create stereo sources for \"" << fileName << "\": "
+                qCritical() << "OpenALSoundPlayer" << "loadSound(): couldn't create stereo sources for \"" << fileName << "\": "
                 << (int) err << " " << getALErrorString(err);
                 return false;
             }
@@ -1299,15 +1674,14 @@ bool OpenALSoundPlayer::load(const std::filesystem::path& _fileName, bool is_str
         alFilteri(filter, AL_FILTER_TYPE, AL_FILTER_LOWPASS);
 
         alFilterf(filter, AL_LOWPASS_GAIN, reverbSend);
-        alSource3i(sources[0], AL_AUXILIARY_SEND_FILTER, (ALint)slots[1], 0, filter);
+        alSource3i(sources[0], AL_AUXILIARY_SEND_FILTER, (ALint)effectSlots[1], 0, filter);
 
         err = alGetError();
         if (err != AL_NO_ERROR) {
-            ofLogError("OpenALSoundPlayer:") << "attaching FX sends failed..."
+            qCritical() << "OpenALSoundPlayer:" << "attaching FX sends failed..."
                 << (int)err << " " << getALErrorString(err);
             return false;
         }
-        ofAddListener(ofEvents().update, this, &OpenALSoundPlayer::update);
         bUseFilter = true;
     }
 
@@ -1333,7 +1707,7 @@ void OpenALSoundPlayer::threadedFunction(){
     }
 
 	while(isThreadRunning()){
-        sleep(1);
+        sleepMs(1);
 		std::unique_lock<std::mutex> lock(mutex);
 
         int loop;
@@ -1400,13 +1774,13 @@ void OpenALSoundPlayer::threadedFunction(){
                 if(stream_end && !(state == AL_STOPPED)){
                     //cout << "threadedFunction() - stream end! state: " << state << endl;
                     playerPtr = this;
-                    ofNotifyEvent(playbackEnded, playerPtr);
+                    notifyPlaybackEnded(playerPtr);
 					break;
 				}
 			}
 
 			bool stream_running=false;
-			#ifdef OF_USING_MPG123
+			#ifdef FEEDRA_USING_MPG123
 				stream_running = streamf || mp3streamf;
 			#else
 				stream_running = streamf;
@@ -1424,7 +1798,8 @@ void OpenALSoundPlayer::threadedFunction(){
 }
 
 //------------------------------------------------------------
-void OpenALSoundPlayer::update(ofEventArgs & args){
+void OpenALSoundPlayer::update(){
+    if(sources.empty()) return;
 
     if(bMultiPlay) {
         for(int i=1; i<int(sources.size())/channels; ){
@@ -1433,7 +1808,7 @@ void OpenALSoundPlayer::update(ofEventArgs & args){
 
             ALdouble offsets[2];
             alGetSourcedvSOFT(sources[i*channels], AL_SEC_OFFSET_LATENCY_SOFT, offsets);
-            ofLogVerbose() << " Offset: " << offsets[0] << " - Latency: " << (ALuint)(offsets[1]*1000) << " ms";
+            qDebug() << " Offset: " << offsets[0] << " - Latency: " << (ALuint)(offsets[1]*1000) << " ms";
             if(state != AL_PLAYING){
                 alDeleteSources(channels,&sources[i*channels]);
                 for(int j=0;j<channels;j++){
@@ -1448,18 +1823,17 @@ void OpenALSoundPlayer::update(ofEventArgs & args){
     if(bUseEffects)
     {
         alFilterf(filter, AL_LOWPASS_GAIN, reverbSend);
-        alSource3i(sources[0], AL_AUXILIARY_SEND_FILTER, (ALint)slots[0], 0, filter);
+        alSource3i(sources[0], AL_AUXILIARY_SEND_FILTER, (ALint)effectSlots[0], 0, filter);
     }
 }
 
 //------------------------------------------------------------
 void OpenALSoundPlayer::unload(){
 	stop();
-	ofRemoveListener(ofEvents().update,this,&OpenALSoundPlayer::update);
+    waitForThread();
 
     if(bUseEffects)
     {
-        ofRemoveListener(ofEvents().update,this,&OpenALSoundPlayer::update);
     }
 
 	// Only lock the thread where necessary.
@@ -1482,7 +1856,7 @@ void OpenALSoundPlayer::unload(){
 	}
 
 	// Free resources and close file descriptors.
-#ifdef OF_USING_MPG123
+#ifdef FEEDRA_USING_MPG123
 	if(mp3streamf){
 		mpg123_close(mp3streamf);
 		mpg123_delete(mp3streamf);
@@ -1567,7 +1941,7 @@ void OpenALSoundPlayer::setPositionMS(int ms){
 	if(sources.empty()) return;
     std::unique_lock<std::mutex> lock(mutex);
 
-#ifdef OF_USING_MPG123
+#ifdef FEEDRA_USING_MPG123
 	if(mp3streamf){
 		mpg123_seek(mp3streamf,float(ms)/1000.f*samplerate,SEEK_SET);
 //        int queued = 0;
@@ -1606,7 +1980,7 @@ float OpenALSoundPlayer::getPosition() const{
 int OpenALSoundPlayer::getPositionMS() const{
 	if(sources.empty()) return 0;
 	float pos;
-#ifdef OF_USING_MPG123
+#ifdef FEEDRA_USING_MPG123
 	if(mp3streamf){
 		pos = float(mpg123_tell(mp3streamf)) / float(samplerate);
 	}else
@@ -1627,7 +2001,7 @@ void OpenALSoundPlayer::setPan(float p){
         return;
     }
 
-	p = glm::clamp(p, -1.f, 1.f);
+	p = std::clamp(p, -1.f, 1.f);
 	pan = p;
     if(channels==1){
         float pos[3] = {pan, 0, -sqrtf(1.0f - pan*pan)};
@@ -1658,20 +2032,24 @@ void OpenALSoundPlayer::setPan(float p){
 void OpenALSoundPlayer::setPaused(bool bP){
 	if(sources.empty()) return;
     if(!bLoadedOk) return;
-    std::unique_lock<std::mutex> lock(mutex);
-    bPaused = bP;
-    if(bPaused){
-		alSourcePausev(sources.size(),&sources[0]);
-        if(isStreaming){
+    {
+        std::unique_lock<std::mutex> lock(mutex);
+        bPaused = bP;
+        if(bPaused){
+            alSourcePausev(sources.size(),&sources[0]);
+        }else{
+            alSourcePlayv(sources.size(),&sources[0]);
+        }
+    }
+    if(isStreaming){
+        if(bPaused){
             stopThread();
-		}
-	}else{
-		alSourcePlayv(sources.size(),&sources[0]);
-        if(isStreaming){
+            waitForThread();
+        }else{
             stream_end = false;
-            startThread(); //Need to delete std::unique_lock<std::mutex> lck(mutex) from void ofThread::startThread() in ofThread.cpp to have this work with above lock()
-		}
-	}
+            startThread();
+        }
+    }
 }
 
 
@@ -1703,16 +2081,14 @@ void OpenALSoundPlayer::setLoop(bool bLp){
 // ----------------------------------------------------------------------------
 void OpenALSoundPlayer::setMultiPlay(bool bMp){
 	if(isStreaming && bMp){
-		ofLogWarning("OpenALSoundPlayer") << "setMultiPlay(): sorry, no support for multiplay streams";
+		qWarning() << "OpenALSoundPlayer" << "setMultiPlay(): sorry, no support for multiplay streams";
 		return;
 	}
 	bMultiPlay = bMp;		// be careful with this...
 	if(sources.empty()) return;
 	if(bMultiPlay){
-		ofAddListener(ofEvents().update,this,&OpenALSoundPlayer::update);
 	}else{
-		ofRemoveListener(ofEvents().update,this,&OpenALSoundPlayer::update);
-	}
+		}
 }
 
 // ----------------------------------------------------------------------------
@@ -1720,8 +2096,10 @@ void OpenALSoundPlayer::play(){
     if(sources.empty()) return;
     if(!bLoadedOk) return;
 
+    int err = AL_NO_ERROR;
+    {
     std::unique_lock<std::mutex> lock(mutex);
-	int err = alGetError();
+	err = alGetError();
 
 	// if the sound is set to multiplay, then create new sources,
 	// do not multiplay on loop or we won't be able to stop it
@@ -1731,7 +2109,7 @@ void OpenALSoundPlayer::play(){
 		alGenSources(channels, &sources[sources.size()-channels]);
 		err = alGetError();
 		if (err != AL_NO_ERROR){
-			ofLogError("OpenALSoundPlayer") << "play(): couldn't create multiplay stereo sources: "
+			qCritical() << "OpenALSoundPlayer" << "play(): couldn't create multiplay stereo sources: "
 			<< (int) err << " " << getALErrorString(err);
 			return;
 		}
@@ -1749,9 +2127,9 @@ void OpenALSoundPlayer::play(){
 		    alSourcei (sources[sources.size()-channels+i], AL_SOURCE_RELATIVE, AL_TRUE);
 		}
 
-		err = glGetError();
+		err = alGetError();
 		if (err != AL_NO_ERROR){
-			ofLogError("OpenALSoundPlayer") << "play(): couldn't assign multiplay buffers: "
+			qCritical() << "OpenALSoundPlayer" << "play(): couldn't assign multiplay buffers: "
 			<< (int) err << " " << getALErrorString(err);
 			return;
 		}
@@ -1762,10 +2140,8 @@ void OpenALSoundPlayer::play(){
     } else {
         alSourcePlayv(sources.size(),&sources[sources.size()-channels]);
     }
+    }
 
-	if(bMultiPlay){
-		ofAddListener(ofEvents().update,this,&OpenALSoundPlayer::update);
-	}
 	if(isStreaming){
 		setPosition(0);
 		stream_end = false;

@@ -1,0 +1,213 @@
+/* Colours are applied at runtime from Theme. This file records the parchment palette. */
+QMainWindow, QWidget#central, QStackedWidget,
+QScrollArea, QAbstractScrollArea::viewport,
+QWidget#PadGrid, QWidget#SceneListHost, QWidget#SampleListHost, QWidget#CollapseFill, QWidget#SettingsPage {
+    background-color: #9a8e84;
+    color: #1c1410;
+}
+
+QMenuBar {
+    background: #7d7168;
+    color: #fbe9d8;
+}
+
+QLabel {
+    color: #1c1410;
+}
+
+QWidget#SoundPad, QWidget#PadCard {
+    background: transparent;
+    border: none;
+}
+
+QPushButton#SceneStop {
+    background: #faa078;
+    border: none;
+}
+
+QLineEdit#PadName {
+    background: transparent;
+    border: none;
+    color: #1c1410;
+    padding: 0;
+}
+
+QLineEdit#PadName:focus {
+    background: #f4ebe3;
+    border: 1px solid #404040;
+}
+
+QLabel#PadVolumeValue {
+    background: transparent;
+    color: #1c1410;
+    padding: 0;
+}
+
+QSlider#PadVolume::groove:horizontal {
+    height: 6px;
+    background: #c4b8ae;
+    border-radius: 3px;
+}
+
+QSlider#PadVolume::handle:horizontal {
+    background: #68533e;
+    width: 12px;
+    margin: -4px 0;
+    border-radius: 6px;
+}
+
+QWidget#SceneRow {
+    background: transparent;
+    color: #f2f2f2;
+    border: none;
+}
+
+QLineEdit#SceneName {
+    background: transparent;
+    border: none;
+    color: #f2f2f2;
+    padding: 0;
+}
+
+QLineEdit#SceneName[editing="true"] {
+    background: #f4ebe3;
+    border: 1px solid #68533e;
+    color: #1c1410;
+    padding: 2px 4px;
+}
+
+QPushButton#AddScene, QPushButton#AddSample, QPushButton#SceneDelete {
+    background: #7b2800;
+    color: #fbe9d8;
+    border: 1px solid #3a1400;
+    font-size: 20px;
+}
+
+QWidget#SampleRow {
+    background: #404040;
+    border: 1px solid #2a2a2a;
+    border-radius: 4px;
+}
+
+QWidget#SampleRow QLabel {
+    color: #f4ebe3;
+    background: transparent;
+}
+
+QWidget#SampleRow QLabel#SampleGrip {
+    color: #a89888;
+    font-size: 14px;
+}
+
+QFrame#SampleDropIndicator {
+    background: #ff6464;
+    border: none;
+}
+
+QWidget#SampleRow QProgressBar {
+    background: #2a2a2a;
+    border: none;
+    border-radius: 3px;
+}
+
+QWidget#SampleRow QProgressBar::chunk {
+    background: #68533e;
+    border-radius: 3px;
+}
+
+QWidget#SampleRow[selected="true"] {
+    border: 2px solid #ff6464;
+}
+
+QSlider::groove:horizontal {
+    height: 8px;
+    background: #c4b8ae;
+    border-radius: 4px;
+}
+
+QSlider::handle:horizontal {
+    background: #68533e;
+    width: 14px;
+    margin: -4px 0;
+    border-radius: 7px;
+}
+
+QLineEdit, QComboBox {
+    background: #f4ebe3;
+    border: 1px solid #68533e;
+    padding: 2px 4px;
+    color: #1c1410;
+}
+
+QSpinBox {
+    background: #f4ebe3;
+    border: 1px solid #68533e;
+    padding: 2px 18px 2px 4px;
+    color: #1c1410;
+    min-height: 22px;
+}
+
+QSpinBox::up-button, QSpinBox::down-button {
+    subcontrol-origin: border;
+    width: 16px;
+}
+
+QSpinBox::up-button {
+    subcontrol-position: top right;
+}
+
+QSpinBox::down-button {
+    subcontrol-position: bottom right;
+}
+
+QComboBox QAbstractItemView {
+    background: #f4ebe3;
+    color: #1c1410;
+    selection-background-color: #d08331;
+    selection-color: #1c1410;
+}
+
+QScrollArea {
+    border: none;
+    background-color: #9a8e84;
+}
+
+QWidget#BottomPanel, QWidget#BottomTabBar, QStackedWidget#BottomPages {
+    background-color: #7d7168;
+    color: #1c1410;
+}
+
+QStackedWidget#BottomPages, QStackedWidget#SidebarPages {
+    background-color: #9a8e84;
+    border-top: 1px solid #5a524c;
+}
+
+QLabel#SettingsTitle {
+    font-size: 18px;
+}
+
+QPushButton#BottomTab {
+    background: #685e56;
+    color: #fbe9d8;
+    border: 1px solid #4a433e;
+    border-bottom: none;
+    padding: 4px 14px;
+    min-width: 72px;
+}
+
+QPushButton#BottomTab[active="true"] {
+    background: #9a8e84;
+    color: #1c1410;
+}
+
+QPushButton#BottomCollapse {
+    background: #685e56;
+    color: #fbe9d8;
+    border: 1px solid #4a433e;
+    padding: 0;
+    font-size: 14px;
+}
+
+QLabel#SampleInfo {
+    color: #1c1410;
+}

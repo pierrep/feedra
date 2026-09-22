@@ -1,44 +1,31 @@
-#ifndef AUDIOSAMPLE_H
-#define AUDIOSAMPLE_H
+#pragma once
 
 #include "OpenALSoundPlayer.h"
-#include "ofVec3f.h"
-#include "AppConfig.h"
-#include "Interactive.h"
 
-class AudioSample: public Interactive
+#include <string>
+
+class AudioSample
 {
 public:
-    ~AudioSample();
     AudioSample();
-    void setup();
-    void render(ofVec3f pos);    
-    void onClicked(ClickArgs& args);
-    void enableEditorMode();
-    void disableEditorMode();
+    ~AudioSample();
+
     void setPitch(float val);
     void setGain(float val);
-    void setPan(float val) {audioPlayer->setPan(val);}
-    float getPitch(){ return pitch;}
-    float getGain(){ return gain;}
-    float getPan(){ return audioPlayer->getPan();}
-    bool isSpatialisedStereo() {return audioPlayer->isSpatialisedStereo();}
+    void setPan(float val);
+    float getPitch() const { return pitch; }
+    float getGain() const { return gain; }
+    float getPan() const;
+    bool isSpatialisedStereo() const;
 
-    OpenALSoundPlayer* audioPlayer;
+    OpenALSoundPlayer* audioPlayer = nullptr;
     std::string sample_path;
-    AppConfig* config;
+    int id = 0;
 
-    bool bEditorMode;
-    bool bSelected;
-    static int count; // used to auto-generate a unique id
-    static ofEvent<int> clickedSampleEvent;
+    float totalDelay = 0.0f;
+    float curDelay = 0.0f;
 
-    float totalDelay; // in secs
-    float curDelay; // in secs
-
-protected:
-    float gain; //0.5f - 2.0f ?
-    float pitch;
+private:
+    float gain = 1.0f;
+    float pitch = 1.0f;
 };
-
-#endif // AUDIOSAMPLE_H

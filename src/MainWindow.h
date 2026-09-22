@@ -1,0 +1,134 @@
+#pragma once
+
+#include "AppConfig.h"
+
+#include <QMainWindow>
+#include <QVector>
+
+class Scene;
+class SoundPadWidget;
+class SampleRowWidget;
+class QCheckBox;
+class QComboBox;
+class QJsonObject;
+class QLabel;
+class QLineEdit;
+class QPushButton;
+class QSlider;
+class QSpinBox;
+class QStackedWidget;
+class QVBoxLayout;
+class QWidget;
+
+class MainWindow : public QMainWindow
+{
+    Q_OBJECT
+public:
+    explicit MainWindow(QWidget* parent = nullptr);
+    ~MainWindow() override;
+
+protected:
+    void closeEvent(QCloseEvent* event) override;
+    void keyPressEvent(QKeyEvent* event) override;
+
+private:
+    enum class Page { Main, Settings, Theme };
+    enum class SidebarView { Scenes, Editor };
+
+    void buildUi();
+    void buildMenus();
+    void buildSettingsPage();
+    void buildThemePage();
+    void syncSettingsPage();
+    void refreshThemeSwatches();
+    void applyAppSettings(const QJsonObject& global);
+    void createDefaultScenes();
+    void addNewScene();
+    void deleteActiveScene();
+    void enableScene(int idx);
+    void updateSceneListLayout();
+    void updateMainControls();
+    void updateEditControls();
+    void rebuildEditSamples();
+    void moveEditorSample(int fromIndex, int insertIndex);
+    void setPage(Page page);
+    void setSidebarView(SidebarView view);
+    void saveConfig();
+    void saveConfigAs();
+    bool saveConfigTo(const QString& path, bool copyFiles);
+    void loadConfig();
+    void loadConfigFrom(const QString& path);
+    void saveWindowLayout(QJsonObject& global) const;
+    void restoreWindowLayout(const QJsonObject& global);
+    void clearActivePad();
+    void copyPad(int fromIdx, int toIdx);
+    void clearActiveSample();
+    void tick();
+    void checkAudioDevice();
+    void onPadClicked(int sceneId, int padId);
+    void setBottomTab(int index);
+    void setBottomCollapsed(bool collapsed);
+    void refreshTabButton(QPushButton* button, bool active);
+    SoundPadWidget* activePad() const;
+    Scene* activeScene() const;
+
+    AppConfig m_config;
+    QVector<Scene*> m_scenes;
+    Page m_page = Page::Main;
+    SidebarView m_sidebar = SidebarView::Scenes;
+
+    QStackedWidget* m_padStack = nullptr;
+    QWidget* m_sceneListHost = nullptr;
+    QVBoxLayout* m_sceneListLayout = nullptr;
+    QPushButton* m_addScene = nullptr;
+    QStackedWidget* m_pages = nullptr;
+    QStackedWidget* m_sidebarStack = nullptr;
+    QWidget* m_mainPage = nullptr;
+    QWidget* m_scenesPage = nullptr;
+    QWidget* m_editorPage = nullptr;
+    QWidget* m_settingsPage = nullptr;
+    QWidget* m_themePage = nullptr;
+    QPushButton* m_scenesTab = nullptr;
+    QPushButton* m_editorTab = nullptr;
+    QVBoxLayout* m_sampleListLayout = nullptr;
+    QVector<SampleRowWidget*> m_sampleRows;
+
+    QSlider* m_mainVolume = nullptr;
+    QWidget* m_bottomPanel = nullptr;
+    QStackedWidget* m_bottomStack = nullptr;
+    QPushButton* m_sampleTab = nullptr;
+    QPushButton* m_padTab = nullptr;
+    QPushButton* m_collapseBottom = nullptr;
+    QWidget* m_collapseFill = nullptr;
+    int m_bottomPageHeight = 0;
+    QSpinBox* m_minDelay = nullptr;
+    QSpinBox* m_maxDelay = nullptr;
+    QSlider* m_reverbSend = nullptr;
+    QCheckBox* m_randomPlayback = nullptr;
+    QLabel* m_infoLabel = nullptr;
+    bool m_bottomCollapsed = false;
+
+    QSlider* m_pan = nullptr;
+    QSlider* m_pitch = nullptr;
+    QSlider* m_gain = nullptr;
+    QCheckBox* m_randomPan = nullptr;
+    QCheckBox* m_spatialise = nullptr;
+    QPushButton* m_addSample = nullptr;
+    QLabel* m_editTitle = nullptr;
+
+    QCheckBox* m_loopByDefault = nullptr;
+    QSpinBox* m_sceneLimit = nullptr;
+    QSpinBox* m_gridColumns = nullptr;
+    QSpinBox* m_gridRows = nullptr;
+    QLineEdit* m_libraryPath = nullptr;
+    QComboBox* m_reverbPreset = nullptr;
+    QComboBox* m_themePreset = nullptr;
+    struct ThemeSwatch {
+        QPushButton* button = nullptr;
+        QLabel* hex = nullptr;
+    };
+    QVector<ThemeSwatch> m_themeSwatches;
+
+    QString m_curDevice;
+    bool m_updatingControls = false;
+};

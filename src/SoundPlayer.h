@@ -1,15 +1,23 @@
 #pragma once
 
-#include "UI/Interactive.h"
-#include "AppConfig.h"
 #include "AudioSample.h"
 
-class SoundPlayer: public Interactive
+#include <QElapsedTimer>
+#include <QObject>
+#include <filesystem>
+#include <string>
+#include <vector>
+
+class AppConfig;
+class OpenALSoundPlayer;
+
+class SoundPlayer : public QObject
 {
+    Q_OBJECT
 public:
-    SoundPlayer();
-    ~SoundPlayer();
-    SoundPlayer(const SoundPlayer& d);
+    explicit SoundPlayer(QObject* parent = nullptr);
+    ~SoundPlayer() override;
+
     void setup(AppConfig* conf, int id);
     void close();
     void play();
@@ -27,13 +35,13 @@ public:
     void setPositionMS(int ms);
     void setMinDelay(int delay);
     void setMaxDelay(int delay);
+
     float getPosition() const;
     int getPositionMS() const;
     bool isPlaying() const;
     bool isPlayingDelay() const;
     bool isLoaded() const;
     bool isLooping() const;
-    float getGain() const;
     float getSpeed() const;
     float getPan() const;
     float getVolume() const;
@@ -41,39 +49,41 @@ public:
     int getSampleRate() const;
     int getNumChannels() const;
     int getCurSound() const;
-    bool getIsStereo() const;
     int getMinDelay() const;
     int getMaxDelay() const;
     float getTotalDelay() const;
     float getReverbSend() const;
     void setReverbSend(float send);
     void recalculateDelay(int id);
-    void playbackEnded(OpenALSoundPlayer*& args);
 
-    void setRandomPlayback(bool val) {bRandomPlayback = val;}
-    bool isPlayingRandom() { return bRandomPlayback; }
-    
+    void setRandomPlayback(bool val) { bRandomPlayback = val; }
+    bool isPlayingRandom() const { return bRandomPlayback; }
+
     void setRandomPan(bool val) { bRandomPan = val; }
-    bool isRandomPan() { return bRandomPan; }
+    bool isRandomPan() const { return bRandomPan; }
     bool isSpatialisedStereo(int index) const;
     void setSpatialisedStereo(int index, bool val);
 
-    AppConfig* config;
-    vector<AudioSample *> player;
-    int minDelay;
-    int maxDelay;
-    bool bPlayingDelay;
-    int curSound;
+    AppConfig* config = nullptr;
+    std::vector<AudioSample*> player;
+    int minDelay = 0;
+    int maxDelay = 0;
+    bool bPlayingDelay = false;
+    int curSound = 0;
+    int id = 0;
 
-    float curTime;
-    float prevTime;
+    bool bPaused = true;
+    bool bIsLooping = false;
+    bool bPlayBackEnded = false;
+    bool bCheckPlayBackEnded = false;
+    bool bRandomPlayback = false;
+    bool bRandomPan = false;
 
-    bool bPaused;
-    bool bIsLooping;
-    bool bPlayBackEnded;
-    bool bCheckPlayBackEnded;
-    bool bRandomPlayback;
-    bool bRandomPan;
+private:
+    void onPlaybackEnded(OpenALSoundPlayer* ended);
+    float randomRange(float minV, float maxV) const;
+    float randomF() const;
 
-    ofEvent<OpenALSoundPlayer*> playbackEndedEvent;
+    QElapsedTimer clock;
+    qint64 prevMs = 0;
 };

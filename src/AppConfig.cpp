@@ -1,80 +1,82 @@
 #include "AppConfig.h"
 
-AppConfig::AppConfig()
-{
-    activeScene = 0;
-    activeSceneIdx = 0;
-    prevSceneIdx = 0;
-    activeSoundIdx = 0;
-    prevSoundIdx = 0;
+#include <QCoreApplication>
+#include <QDir>
+#include <QFile>
+#include <QIODevice>
+#include <QJsonDocument>
+#include <QStandardPaths>
 
-    baseSceneOffset = 0;
-    gridHeight = 0;
-    gridWidth = 0;
-    loopByDefault = false;
-    bDragging = false;
-}
+AppConfig::AppConfig() = default;
 
-//--------------------------------------------------------------
-AppConfig::~AppConfig()
-{
-    ofLogVerbose() << "AppConfig destructor called...";
-}
-
-//--------------------------------------------------------------
 void AppConfig::setup()
 {
-    xoffset = 15*x_scale;
-    yoffset = 80*y_scale;
-    size = 120*x_scale;
-    spacing = size + 25*x_scale;
-    gridWidth = 6;
-    gridHeight = 4;
-
-    scene_width = 255*x_scale;
-    scene_height = 45*y_scale;
-    scene_spacing = scene_height + 5*x_scale;
-    baseSceneOffset = gridWidth*spacing + 10*x_scale;
-    scene_yoffset = 80*y_scale;
-    max_scenes = 14;
-
-    sample_gui_width = 550*x_scale;
-
-    activeScene = 0;
-    activeSoundIdx = 0;
-    prevSoundIdx = 0;
-
-    loopByDefault = false;
-
-    smallfont.load("fonts/NewMediaFett.ttf", 9 * x_scale, true, false);
-    mainfont.load("fonts/NewMediaFett.ttf", 12 * x_scale, true, false);
-    tinyfont.load("fonts/NewMediaFett.ttf", 7 * x_scale, true, false);
-
-    loopicon.load("images/loopicon.png");
-
-    defaultLibraryLocation = "/home/grimus/Downloads/5e/";
-
-    settings.clear();
-
-    masterVolume = 1.0f;
-    masterFade = 1.0f;
-
-    activeSample = 0;
-    activeSampleIdx = 0;
-}
-
-//--------------------------------------------------------------
-void AppConfig::loadJSON()
-{
-    loadJSON("settings/settings.json");
-}
-
-//--------------------------------------------------------------
-void AppConfig::loadJSON(string newpath)
-{
-    ofFile file(newpath);
-    if(file.exists())
-    {
-         file >> json;
+    defaultLibraryLocation = QStandardPaths::writableLocation(QStandardPaths::MusicLocation);
+    if (defaultLibraryLocation.isEmpty()) {
+        defaultLibraryLocation = QDir::homePath();
     }
+    m_masterVolume = 1.0f;
+    m_masterFade = 1.0f;
+    loopByDefault = false;
+}
+
+QString AppConfig::dataDir() const
+{
+    auto findBinData = [](QDir dir, int maxUp) -> QString {
+        for (int i = 0; i < maxUp; ++i) {
+            if (dir.exists(QStringLiteral("bin/data"))) {
+                return dir.absoluteFilePath(QStringLiteral("bin/data"));
+            }
+            if (!dir.cdUp()) {
+                break;
+            }
+        }
+        return {};
+    };
+
+    // Prefer the project bin/data folder (same path the original OF app used).
+    // CMake copies data next to the exe, so applicationDir/data would otherwise
+    // win and Save would not update bin/data/settings/settings.json.
+    const QString fromApp = findBinData(QDir(QCoreApplication::applicationDirPath()), 8);
+    if (!fromApp.isEmpty()) {
+        return fromApp;
+    }
+    const QString fromCwd = findBinData(QDir::current(), 8);
+    if (!fromCwd.isEmpty()) {
+        return fromCwd;
+    }
+
+    QDir appDir(QCoreApplication::applicationDirPath());
+    if (appDir.exists(QStringLiteral("data"))) {
+        return appDir.absoluteFilePath(QStringLiteral("data"));
+    }
+
+    QDir cwd(QDir::current());
+    if (cwd.exists(QStringLiteral("data"))) {
+        return cwd.absoluteFilePath(QStringLiteral("data"));
+    }
+
+    appDir.mkpath(QStringLiteral("data/settings"));
+    return appDir.absoluteFilePath(QStringLiteral("data"));
+}
+
+QString AppConfig::defaultSettingsPath() const
+{
+    return QDir(dataDir()).filePath("settings/settings.json");
+}
+
+bool AppConfig::loadJson(const QString& path)
+{
+    QFile file(path);
+    if (!file.open(QIODevice::ReadOnly)) {
+        m_json = QJsonObject();
+        return false;
+    }
+    const QJsonDocument doc = QJsonDocument::fromJson(file.readAll());
+    if (!doc.isObject()) {
+        m_json = QJsonObject();
+        return false;
+    }
+    m_json = doc.object();
+    return true;
 }

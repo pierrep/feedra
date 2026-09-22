@@ -1,64 +1,49 @@
 #pragma once
 
-#include "ofMain.h"
+#include <QJsonObject>
+#include <QString>
+#include <cstddef>
 
 class AppConfig
 {
 public:
     AppConfig();
-    ~AppConfig();
+
     void setup();
 
-    // fonts
-    ofTrueTypeFont  mainfont;
-    ofTrueTypeFont  smallfont;
-    ofTrueTypeFont  tinyfont;
+    QString dataDir() const;
+    QString defaultSettingsPath() const;
+    QString libraryLocation() const { return defaultLibraryLocation; }
 
-    ofTrueTypeFont& f1() {return mainfont;}
-    ofTrueTypeFont& f2() {return smallfont;}
-    ofTrueTypeFont& f3() {return tinyfont;}
+    float masterVolume() const { return m_masterVolume; }
+    void setMasterVolume(float v) { m_masterVolume = v; }
+    float masterFade() const { return m_masterFade; }
+    void setMasterFade(float v) { m_masterFade = v; }
 
-    const string getLibraryLocation() { return defaultLibraryLocation; }
-    const float getMasterVolume() { return masterVolume;}
+    bool loadJson(const QString& path);
+    QJsonObject& json() { return m_json; }
+    const QJsonObject& json() const { return m_json; }
 
-    void loadJSON();
-    void loadJSON(string newpath);
+    QString defaultLibraryLocation;
+    QString lastPath;
 
+    int gridWidth = 6;
+    int gridHeight = 4;
+    unsigned int maxScenes = 14;
+    bool loopByDefault = false;
 
-    string defaultLibraryLocation;
+    int activeSceneId = 0;
+    int activeSceneIdx = 0;
+    int prevSceneIdx = 0;
+    int activeSoundIdx = 0;
+    int prevSoundIdx = 0;
+    int activeSampleIdx = 0;
+    int activeSampleId = 0;
 
-    float masterVolume;
-    float masterFade;
-    float x_scale;
-    float y_scale;
-    int xoffset;
-    int yoffset;
-    int size;
-    int spacing;
-    int gridWidth;
-    int gridHeight;
-    int scene_spacing;
-    int scene_width;
-    int scene_height;
-    int baseSceneOffset;
-    int scene_yoffset;
-    int sample_gui_width;
+    bool dragging = false;
 
-    string last_path;
-    bool loopByDefault;
-
-    unsigned int max_scenes;
-    int activeScene;
-    size_t activeSceneIdx;
-    size_t prevSceneIdx;
-    size_t activeSoundIdx;
-    size_t prevSoundIdx;
-    size_t activeSampleIdx;
-    size_t activeSample;
-
-    ofImage loopicon;
-    ofJson settings;
-    bool bDragging;
-
-    ofJson json;    
+private:
+    float m_masterVolume = 1.0f;
+    float m_masterFade = 1.0f;
+    QJsonObject m_json;
 };
