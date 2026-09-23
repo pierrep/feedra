@@ -158,7 +158,9 @@ void Scene::play()
     m_fadeTimer.restart();
     m_fadeCallback = {};
     for (SoundPadWidget* pad : pads) {
-        pad->soundPlayer().setPaused(false);
+        if (!pad->isLoading()) {
+            pad->soundPlayer().setPaused(false);
+        }
     }
 }
 

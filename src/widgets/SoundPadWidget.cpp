@@ -2,6 +2,7 @@
 #include "AppConfig.h"
 #include "AudioSample.h"
 #include "OpenALSoundPlayer.h"
+#include "SampleLoadQueue.h"
 #include "Theme.h"
 
 #include <QApplication>
@@ -277,7 +278,7 @@ SoundPadWidget::SoundPadWidget(AppConfig* config, int sceneId, int padId, QWidge
 
     connect(m_load, &QAbstractButton::clicked, this, &SoundPadWidget::chooseFiles);
     connect(m_play, &QAbstractButton::clicked, this, [this]() {
-        if (!m_player.isLoaded()) {
+        if (isLoading() || !m_player.isLoaded()) {
             return;
         }
         if (m_player.isPlaying()) {
@@ -308,6 +309,13 @@ SoundPadWidget::SoundPadWidget(AppConfig* config, int sceneId, int padId, QWidge
             kid->update();
         }
     });
+}
+
+SoundPadWidget::~SoundPadWidget()
+{
+    if (m_loadGeneration) {
+        m_loadGeneration->fetch_add(1);
+    }
 }
 
 QString SoundPadWidget::soundName() const
@@ -356,7 +364,7 @@ void SoundPadWidget::updateAudio()
     m_player.update();
     applyVolume();
 
-    const bool loaded = m_player.isLoaded();
+    const bool loaded = !isLoading() && m_player.isLoaded();
     const bool playing = m_player.isPlaying();
     m_play->setLoaded(loaded);
     m_play->setPlaying(playing);
@@ -387,6 +395,19 @@ void SoundPadWidget::paintEvent(QPaintEvent*)
     p.setBrush(theme.padFill);
     p.setPen(QPen(m_selected ? theme.padSelected : theme.padBorder, (m_selected ? 4 : 3) * s));
     p.drawRoundedRect(card, 5 * s, 5 * s);
+    if (isLoading() && m_loadTotal > 0) {
+        p.setPen(Qt::NoPen);
+        p.setBrush(QColor(0, 0, 0, 80));
+        p.drawRoundedRect(card, 5 * s, 5 * s);
+        const qreal barH = std::max(3.0, 4.0 * s);
+        const QRectF track(card.left() + 8 * s, card.bottom() - barH - 8 * s, card.width() - 16 * s, barH);
+        p.setBrush(theme.progressTrack);
+        p.drawRoundedRect(track, barH / 2, barH / 2);
+        QRectF chunk = track;
+        chunk.setWidth(track.width() * (static_cast<qreal>(m_nextCommit) / static_cast<qreal>(m_loadTotal)));
+        p.setBrush(theme.progressChunk);
+        p.drawRoundedRect(chunk, barH / 2, barH / 2);
+    }
 }
 
 QSize SoundPadWidget::sizeHint() const
@@ -471,6 +492,165 @@ void SoundPadWidget::setFadeVolume(float fade)
     m_fadeVolume = fade;
 }
 
+void SoundPadWidget::setLoadQueue(SampleLoadQueue* queue)
+{
+    m_queue = queue;
+}
+
+bool SoundPadWidget::isLoading() const
+{
+    return m_loadTotal > 0 && m_nextCommit < m_loadTotal;
+}
+
+void SoundPadWidget::cancelLoading()
+{
+    m_loadGeneration->fetch_add(1);
+    m_incoming.clear();
+    m_slots.clear();
+    m_loadTotal = 0;
+    m_nextCommit = 0;
+    m_finishSent = false;
+    m_notifyWhenDone = false;
+    update();
+}
+
+void SoundPadWidget::enqueueSample(const QString& path, float pitch, float gain, float pan, bool panRandom)
+{
+    if (path.isEmpty()) {
+        return;
+    }
+    if (m_nextCommit >= m_loadTotal) {
+        m_finishSent = false;
+    }
+    LoadSlot slot;
+    slot.path = path;
+    slot.pitch = pitch;
+    slot.gain = gain;
+    slot.pan = pan;
+    slot.panRandom = panRandom;
+    m_slots.push_back(slot);
+    const int index = m_loadTotal++;
+    m_config->lastPath = QFileInfo(path).absolutePath();
+
+    if (!m_queue) {
+        DecodedAudio audio = OpenALSoundPlayer::decodeFile(std::filesystem::path(path.toStdString()), m_stream);
+        submitDecoded(index, m_loadGeneration->load(), std::move(audio));
+        return;
+    }
+
+    SampleLoadJob job;
+    job.sceneId = m_sceneId;
+    job.padId = m_padId;
+    job.sampleIndex = index;
+    job.generation = m_loadGeneration->load();
+    job.generationToken = m_loadGeneration;
+    job.path = path;
+    job.stream = m_stream;
+    m_queue->enqueue(job);
+    update();
+    emit loadStateChanged();
+}
+
+void SoundPadWidget::submitDecoded(int index, int generation, DecodedAudio audio)
+{
+    if (!m_loadGeneration || generation != m_loadGeneration->load()) {
+        return;
+    }
+    if (index < 0 || index >= static_cast<int>(m_slots.size())) {
+        return;
+    }
+    m_incoming.insert_or_assign(index, std::move(audio));
+    flushIncoming();
+}
+
+bool SoundPadWidget::commitDecoded(int slotIndex, DecodedAudio audio)
+{
+    if (slotIndex < 0 || slotIndex >= static_cast<int>(m_slots.size()) || !audio.ok) {
+        return false;
+    }
+    auto* sample = new AudioSample();
+    sample->audioPlayer = new OpenALSoundPlayer();
+    int maxId = 0;
+    for (AudioSample* existing : m_player.player) {
+        maxId = std::max(maxId, existing->id);
+    }
+    sample->id = m_player.player.empty() ? 0 : maxId + 1;
+    if (!sample->audioPlayer->uploadDecoded(std::move(audio))) {
+        delete sample;
+        return false;
+    }
+    const LoadSlot& slot = m_slots[static_cast<size_t>(slotIndex)];
+    sample->sample_path = slot.path.toStdString();
+    sample->setPitch(slot.pitch);
+    sample->setGain(slot.gain);
+    sample->setPan(slot.pan);
+    m_player.setRandomPan(slot.panRandom);
+    m_player.player.push_back(sample);
+    setupLoadedSound(slot.path);
+    m_player.recalculateDelay(static_cast<int>(m_player.player.size()) - 1);
+    m_player.setReverbSend(m_reverb);
+    return true;
+}
+
+void SoundPadWidget::flushIncoming()
+{
+    while (m_incoming.find(m_nextCommit) != m_incoming.end()) {
+        DecodedAudio audio = std::move(m_incoming[m_nextCommit]);
+        m_incoming.erase(m_nextCommit);
+        const int slotIndex = m_nextCommit++;
+        if (!commitDecoded(slotIndex, std::move(audio))) {
+            m_slots[static_cast<size_t>(slotIndex)].failed = true;
+        }
+    }
+    update();
+    emit loadStateChanged();
+    if (m_loadTotal > 0 && m_nextCommit >= m_loadTotal && !m_finishSent) {
+        m_finishSent = true;
+        emit loadingFinished();
+        if (m_notifyWhenDone) {
+            m_notifyWhenDone = false;
+            emit filesDropped();
+        }
+    }
+}
+
+std::vector<SoundPadWidget::LoadSlot> SoundPadWidget::sampleSpecs() const
+{
+    if (!isLoading()) {
+        std::vector<LoadSlot> specs;
+        const int count = std::min(static_cast<int>(m_player.player.size()), static_cast<int>(m_soundPaths.size()));
+        for (int i = 0; i < count; ++i) {
+            LoadSlot spec;
+            spec.path = QString::fromStdString(m_soundPaths[static_cast<size_t>(i)]);
+            spec.pitch = m_player.player[static_cast<size_t>(i)]->getPitch();
+            spec.gain = m_player.player[static_cast<size_t>(i)]->getGain();
+            spec.pan = m_player.player[static_cast<size_t>(i)]->getPan();
+            spec.panRandom = m_player.isRandomPan();
+            specs.push_back(spec);
+        }
+        return specs;
+    }
+
+    std::vector<LoadSlot> specs;
+    int playerIndex = 0;
+    for (int i = 0; i < static_cast<int>(m_slots.size()); ++i) {
+        if (m_slots[static_cast<size_t>(i)].failed) {
+            continue;
+        }
+        LoadSlot spec = m_slots[static_cast<size_t>(i)];
+        if (i < m_nextCommit && playerIndex < static_cast<int>(m_player.player.size())) {
+            AudioSample* sample = m_player.player[static_cast<size_t>(playerIndex)];
+            spec.pitch = sample->getPitch();
+            spec.gain = sample->getGain();
+            spec.pan = sample->getPan();
+            spec.panRandom = m_player.isRandomPan();
+            ++playerIndex;
+        }
+        specs.push_back(spec);
+    }
+    return specs;
+}
+
 void SoundPadWidget::loadFromJson(const QJsonObject& sceneObj)
 {
     const QString prefix = QString("%1-%2").arg(m_sceneId).arg(m_padId);
@@ -479,6 +659,8 @@ void SoundPadWidget::loadFromJson(const QJsonObject& sceneObj)
         return;
     }
 
+    clearPad();
+    m_notifyWhenDone = false;
     m_stream = pad.value(QStringLiteral("isstream")).toBool(true);
     m_player.minDelay = pad.value(QStringLiteral("mindelay")).toInt();
     m_player.maxDelay = pad.value(QStringLiteral("maxdelay")).toInt();
@@ -488,7 +670,9 @@ void SoundPadWidget::loadFromJson(const QJsonObject& sceneObj)
     setPadVolume(static_cast<float>(pad.value(QStringLiteral("volume")).toDouble(0.7)));
     m_sampleRate = pad.value(QStringLiteral("samplerate")).toInt();
     m_channels = pad.value(QStringLiteral("channels")).toInt();
-    const float reverb = static_cast<float>(pad.value(QStringLiteral("reverbsend")).toDouble());
+    m_reverb = static_cast<float>(pad.value(QStringLiteral("reverbsend")).toDouble());
+    m_player.setup(m_config, m_padId);
+    m_player.setReverbSend(m_reverb);
 
     const QJsonObject samples = pad.value(QStringLiteral("samples")).toObject();
     for (int i = 0;; ++i) {
@@ -500,31 +684,11 @@ void SoundPadWidget::loadFromJson(const QJsonObject& sceneObj)
         if (path.isEmpty()) {
             continue;
         }
-        auto* audio = new AudioSample();
-        audio->audioPlayer = new OpenALSoundPlayer();
-        audio->id = static_cast<int>(m_player.player.size());
-        m_player.player.push_back(audio);
-        if (m_player.load(path.toStdString(), audio->id, m_stream)) {
-            audio->sample_path = path.toStdString();
-            audio->setPitch(static_cast<float>(sample.value(QStringLiteral("pitch")).toDouble(1.0)));
-            audio->setGain(static_cast<float>(sample.value(QStringLiteral("gain")).toDouble(1.0)));
-            audio->setPan(static_cast<float>(sample.value(QStringLiteral("pan")).toDouble()));
-            m_player.setRandomPan(sample.value(QStringLiteral("panrandom")).toBool());
-            m_player.recalculateDelay(audio->id);
-            m_soundPaths.push_back(path.toStdString());
-            m_config->lastPath = QFileInfo(path).absolutePath();
-        } else {
-            m_player.player.pop_back();
-            delete audio;
-        }
-    }
-
-    m_player.setup(m_config, m_padId);
-    m_player.setLoop(isLooping());
-    m_player.setReverbSend(reverb);
-    if (!m_soundPaths.empty()) {
-        m_sampleRate = m_player.getSampleRate();
-        m_channels = m_player.getNumChannels();
+        enqueueSample(path,
+            static_cast<float>(sample.value(QStringLiteral("pitch")).toDouble(1.0)),
+            static_cast<float>(sample.value(QStringLiteral("gain")).toDouble(1.0)),
+            static_cast<float>(sample.value(QStringLiteral("pan")).toDouble()),
+            sample.value(QStringLiteral("panrandom")).toBool());
     }
 }
 
@@ -570,24 +734,24 @@ void SoundPadWidget::saveToJson(QJsonObject& sceneObj) const
 
 void SoundPadWidget::loadFiles(const QStringList& paths, bool clearExisting)
 {
-    bool loadedAny = false;
-    bool clear = clearExisting;
-    for (const QString& path : paths) {
-        if (loadSingleSound(path, clear)) {
-            loadedAny = true;
-            clear = false;
-        }
+    if (paths.isEmpty()) {
+        return;
     }
-    if (loadedAny && soundName().isEmpty() && !paths.isEmpty()) {
+    if (clearExisting) {
+        clearPad();
+    }
+    m_notifyWhenDone = true;
+    if (soundName().isEmpty()) {
         setSoundName(QFileInfo(paths.front()).completeBaseName());
     }
-    if (loadedAny) {
-        emit filesDropped();
+    for (const QString& path : paths) {
+        enqueueSample(path, 1.0f, 1.0f, 0.0f, false);
     }
 }
 
 void SoundPadWidget::clearPad()
 {
+    cancelLoading();
     m_player.stop();
     m_player.close();
     m_soundPaths.clear();
@@ -603,38 +767,49 @@ void SoundPadWidget::clearPad()
     m_playhead->setProgress(0.0f);
     m_playhead->setTimeText(QString());
     m_playhead->setVisible(false);
+    m_reverb = 0.0f;
 }
 
 void SoundPadWidget::copyFrom(SoundPadWidget& other)
 {
-    clearPad();
-    m_stream = other.m_stream;
-    m_sampleRate = other.m_sampleRate;
-    m_channels = other.m_channels;
-    setLooping(other.isLooping());
-    m_player.minDelay = other.m_player.minDelay;
-    m_player.maxDelay = other.m_player.maxDelay;
-    m_player.bRandomPlayback = other.m_player.bRandomPlayback;
-    m_player.setRandomPan(other.m_player.isRandomPan());
-    setSoundName(other.soundName());
-    setPadVolume(other.padVolume());
+    const std::vector<LoadSlot> specs = other.sampleSpecs();
+    const bool stream = other.m_stream;
+    const int sampleRate = other.m_sampleRate;
+    const int channels = other.m_channels;
+    const bool looping = other.isLooping();
+    const int minDelay = other.m_player.minDelay;
+    const int maxDelay = other.m_player.maxDelay;
+    const bool randomPlayback = other.m_player.bRandomPlayback;
+    const bool randomPan = other.m_player.isRandomPan();
+    const QString name = other.soundName();
+    const float volume = other.padVolume();
+    const float reverb = (other.isLoading() || other.m_player.player.empty())
+        ? other.m_reverb
+        : other.m_player.getReverbSend();
 
-    for (int i = 0; i < static_cast<int>(other.m_soundPaths.size()); ++i) {
-        const QString path = QString::fromStdString(other.m_soundPaths[i]);
-        if (!loadSingleSound(path, false)) {
-            continue;
-        }
-        const int idx = static_cast<int>(m_player.player.size()) - 1;
-        m_player.player[idx]->setPitch(other.m_player.player[i]->getPitch());
-        m_player.player[idx]->setGain(other.m_player.player[i]->getGain());
-        m_player.player[idx]->setPan(other.m_player.player[i]->getPan());
-        m_player.recalculateDelay(idx);
+    clearPad();
+    m_stream = stream;
+    m_sampleRate = sampleRate;
+    m_channels = channels;
+    setLooping(looping);
+    m_player.minDelay = minDelay;
+    m_player.maxDelay = maxDelay;
+    m_player.bRandomPlayback = randomPlayback;
+    m_player.setRandomPan(randomPan);
+    setSoundName(name);
+    setPadVolume(volume);
+    m_reverb = reverb;
+    m_notifyWhenDone = true;
+    for (const LoadSlot& spec : specs) {
+        enqueueSample(spec.path, spec.pitch, spec.gain, spec.pan, spec.panRandom || randomPan);
     }
-    m_player.setReverbSend(other.m_player.getReverbSend());
 }
 
 int SoundPadWidget::moveSample(int from, int insertIndex)
 {
+    if (isLoading()) {
+        return -1;
+    }
     const int count = static_cast<int>(m_player.player.size());
     if (from < 0 || from >= count || insertIndex < 0 || insertIndex > count) {
         return -1;
@@ -673,6 +848,9 @@ int SoundPadWidget::moveSample(int from, int insertIndex)
 
 void SoundPadWidget::removeSampleAt(int index)
 {
+    if (isLoading()) {
+        return;
+    }
     if (index < 0 || index >= static_cast<int>(m_player.player.size())) {
         return;
     }
@@ -702,7 +880,7 @@ void SoundPadWidget::mouseMoveEvent(QMouseEvent* event)
     if ((event->pos() - m_dragStart).manhattanLength() < QApplication::startDragDistance()) {
         return;
     }
-    if (!isLoaded()) {
+    if (isLoading() || !isLoaded()) {
         return;
     }
     emit padDragStarted(m_padId);
@@ -752,38 +930,6 @@ void SoundPadWidget::chooseFiles()
         loadFiles(paths, true);
         emit padClicked(m_padId);
     }
-}
-
-bool SoundPadWidget::loadSingleSound(const QString& path, bool clearExisting)
-{
-    OpenALSoundPlayer probe;
-    if (!probe.load(path.toStdString(), m_stream)) {
-        return false;
-    }
-    probe.unload();
-
-    if (clearExisting) {
-        m_player.stop();
-        m_player.close();
-        m_soundPaths.clear();
-    }
-
-    auto* sample = new AudioSample();
-    sample->audioPlayer = new OpenALSoundPlayer();
-    int maxId = 0;
-    for (AudioSample* existing : m_player.player) {
-        maxId = std::max(maxId, existing->id);
-    }
-    sample->id = m_player.player.empty() ? 0 : maxId + 1;
-    if (!sample->audioPlayer->load(path.toStdString(), m_stream)) {
-        delete sample;
-        return false;
-    }
-    sample->sample_path = path.toStdString();
-    m_player.player.push_back(sample);
-    setupLoadedSound(path);
-    m_player.recalculateDelay(static_cast<int>(m_player.player.size()) - 1);
-    return true;
 }
 
 void SoundPadWidget::setupLoadedSound(const QString& path)

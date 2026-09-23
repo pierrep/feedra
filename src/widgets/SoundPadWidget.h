@@ -6,7 +6,10 @@
 #include <QJsonObject>
 #include <QPoint>
 #include <QWidget>
+#include <atomic>
 #include <functional>
+#include <map>
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -14,6 +17,7 @@ class AppConfig;
 class QLabel;
 class QLineEdit;
 class QSlider;
+class SampleLoadQueue;
 
 class GlyphButton : public QAbstractButton
 {
@@ -64,6 +68,7 @@ public:
     static constexpr int kDesignHeight = 142;
 
     SoundPadWidget(AppConfig* config, int sceneId, int padId, QWidget* parent = nullptr);
+    ~SoundPadWidget() override;
 
     int padId() const { return m_padId; }
     int sceneId() const { return m_sceneId; }
@@ -86,6 +91,9 @@ public:
     void setSelected(bool selected);
     void setInteractive(bool enabled);
     void setFadeVolume(float fade);
+    void setLoadQueue(SampleLoadQueue* queue);
+    bool isLoading() const;
+    void submitDecoded(int index, int generation, DecodedAudio audio);
     void loadFromJson(const QJsonObject& sceneObj);
     void saveToJson(QJsonObject& sceneObj) const;
     void loadFiles(const QStringList& paths, bool clearExisting);
@@ -103,6 +111,8 @@ signals:
     void padDropped(int fromPadId, int toPadId);
     void filesDropped();
     void requestEdit();
+    void loadStateChanged();
+    void loadingFinished();
 
 protected:
     void paintEvent(QPaintEvent* event) override;
@@ -113,8 +123,21 @@ protected:
     void dropEvent(QDropEvent* event) override;
 
 private:
+    struct LoadSlot {
+        QString path;
+        float pitch = 1.0f;
+        float gain = 1.0f;
+        float pan = 0.0f;
+        bool panRandom = false;
+        bool failed = false;
+    };
+
     void chooseFiles();
-    bool loadSingleSound(const QString& path, bool clearExisting);
+    void cancelLoading();
+    void enqueueSample(const QString& path, float pitch, float gain, float pan, bool panRandom);
+    bool commitDecoded(int slotIndex, DecodedAudio audio);
+    void flushIncoming();
+    std::vector<LoadSlot> sampleSpecs() const;
     void setupLoadedSound(const QString& path);
     void applyVolume();
     void updateVolumeLabel();
@@ -124,7 +147,16 @@ private:
     void layoutContents();
 
     AppConfig* m_config = nullptr;
+    SampleLoadQueue* m_queue = nullptr;
     SoundPlayer m_player;
+    std::shared_ptr<std::atomic<int>> m_loadGeneration = std::make_shared<std::atomic<int>>(0);
+    std::vector<LoadSlot> m_slots;
+    std::map<int, DecodedAudio> m_incoming;
+    int m_loadTotal = 0;
+    int m_nextCommit = 0;
+    bool m_finishSent = false;
+    bool m_notifyWhenDone = false;
+    float m_reverb = 0.0f;
     int m_sceneId = 0;
     int m_padId = 0;
     bool m_stream = true;

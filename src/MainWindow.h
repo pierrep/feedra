@@ -8,6 +8,9 @@
 class Scene;
 class SoundPadWidget;
 class SampleRowWidget;
+class SampleLoadQueue;
+class QAction;
+class QProgressBar;
 class QCheckBox;
 class QComboBox;
 class QJsonObject;
@@ -42,6 +45,11 @@ private:
     void syncSettingsPage();
     void refreshThemeSwatches();
     void applyAppSettings(const QJsonObject& global);
+    void connectScene(Scene* scene);
+    void drainLoads(int budgetMs);
+    void refreshLoadUi();
+    void waitForLoads();
+    SoundPadWidget* findPad(int sceneId, int padId) const;
     void createDefaultScenes();
     void addNewScene();
     void deleteActiveScene();
@@ -131,4 +139,10 @@ private:
 
     QString m_curDevice;
     bool m_updatingControls = false;
+
+    SampleLoadQueue* m_loads = nullptr;
+    QProgressBar* m_loadBar = nullptr;
+    QLabel* m_loadLabel = nullptr;
+    QAction* m_saveAction = nullptr;
+    QAction* m_saveAsAction = nullptr;
 };

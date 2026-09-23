@@ -1,5 +1,5 @@
 #include "OpenALSoundPlayer.h"
-#include "Log.h"
+#include <QDebug>
 #include <sndfile.h>
 #include <algorithm>
 #include <cmath>
@@ -26,6 +26,7 @@ using namespace std;
 
 static ALCdevice * alDevice = nullptr;
 static ALCcontext * alContext = nullptr;
+static std::atomic<bool> g_alFloat32{false};
 
 static bool bUseEffects = false;
 static ALuint effects[2] = { 0, 0 };
@@ -899,6 +900,12 @@ void OpenALSoundPlayer::printExtensions (const char *header, char separator, con
 //---------------------------------------
 // this should only be called once
 void OpenALSoundPlayer::initialize(){
+    if (alDevice) {
+        if (alContext) {
+            g_alFloat32.store(alIsExtensionPresent("AL_EXT_FLOAT32") == AL_TRUE);
+        }
+        return;
+    }
 
 	if( !alDevice ){
 
@@ -994,6 +1001,7 @@ void OpenALSoundPlayer::initialize(){
 			return;
 		};
 		alListener3f( AL_POSITION, 0,0,0 );
+        g_alFloat32.store(alIsExtensionPresent("AL_EXT_FLOAT32") == AL_TRUE);
 #ifdef FEEDRA_USING_MPG123
 		mpg123_init();
 #endif
@@ -1115,7 +1123,7 @@ bool OpenALSoundPlayer::sfReadFile(const std::filesystem::path& path){
 	SF_INFO sfInfo;
 	SNDFILE* f = sf_open(path.string().c_str(),SFM_READ,&sfInfo);
 	if(!f){
-		qCritical() << "OpenALSoundPlayer" << "sfReadFile(): couldn't read \"" << path << "\"";
+		qCritical() << "OpenALSoundPlayer" << "sfReadFile(): couldn't read \"" << path.string() << "\"";
 		return false;
 	}
 
@@ -1134,7 +1142,7 @@ bool OpenALSoundPlayer::sfReadFile(const std::filesystem::path& path){
         sf_count_t samples_read = sf_read_float (f, &buffer_float[0], buffer_float.size());
         if(samples_read<(int)buffer_float.size()){
 			qWarning() << "OpenALSoundPlayer" << "sfReadFile(): read " << samples_read << " float samples, expected "
-            << buffer_float.size() << " for \"" << path << "\"";
+            << buffer_float.size() << " for \"" << path.string() << "\"";
 		}
         for (int i = 0 ; i < int(buffer_float.size()) ; i++){
             //buffer_float[i] *= scale ;
@@ -1144,14 +1152,14 @@ bool OpenALSoundPlayer::sfReadFile(const std::filesystem::path& path){
         sf_count_t frames_read = sf_readf_short(f,&buffer_short[0],sfInfo.frames);
 		if(frames_read<sfInfo.frames){
 			qCritical() << "OpenALSoundPlayer" << "sfReadFile(): read " << frames_read << " frames from buffer, expected "
-			<< sfInfo.frames << " for \"" << path << "\"";
+			<< sfInfo.frames << " for \"" << path.string() << "\"";
 			return false;
 		}
 		sf_seek(f,0,SEEK_SET);
         frames_read = sf_readf_float(f,&buffer_float[0],sfInfo.frames);
 		if(frames_read<sfInfo.frames){
 			qCritical() << "OpenALSoundPlayer" << "sfReadFile(): read " << frames_read << " frames from fft buffer, expected "
-			<< sfInfo.frames << " for \"" << path << "\"";
+			<< sfInfo.frames << " for \"" << path.string() << "\"";
 			return false;
 		}
 	}
@@ -1169,7 +1177,7 @@ bool OpenALSoundPlayer::mpg123ReadFile(const std::filesystem::path& path){
 	int err = MPG123_OK;
 	mpg123_handle * f = mpg123_new(nullptr,&err);
 	if(mpg123_open(f,path.string().c_str())!=MPG123_OK){
-		qCritical() << "OpenALSoundPlayer" << "mpg123ReadFile(): couldn't read \"" << path << "\"";
+		qCritical() << "OpenALSoundPlayer" << "mpg123ReadFile(): couldn't read \"" << path.string() << "\"";
 		return false;
 	}
 
@@ -1179,7 +1187,7 @@ bool OpenALSoundPlayer::mpg123ReadFile(const std::filesystem::path& path){
     subformat_string = getMpg123EncodingString(encoding);
 	if(encoding!=MPG123_ENC_SIGNED_16){
 		qCritical() << "OpenALSoundPlayer" << "mpg123ReadFile(): " << getMpg123EncodingString(encoding)
-			<< " encoding for \"" << path << "\"" << " unsupported, expecting MPG123_ENC_SIGNED_16";
+			<< " encoding for \"" << path.string() << "\"" << " unsupported, expecting MPG123_ENC_SIGNED_16";
 		return false;
 	}
 	samplerate = rate;
@@ -1209,7 +1217,7 @@ bool OpenALSoundPlayer::sfStream(const std::filesystem::path& path){
 		SF_INFO sfInfo;
 		streamf = sf_open(path.string().c_str(),SFM_READ,&sfInfo);
 		if(!streamf){
-            qCritical() << "OpenALSoundPlayer" << "sfStream(): couldn't read " << path;
+            qCritical() << "OpenALSoundPlayer" << "sfStream(): couldn't read " << path.string();
 			return false;
 		}
 
@@ -1290,7 +1298,7 @@ bool OpenALSoundPlayer::mpg123Stream(const std::filesystem::path& path){
 			mpg123_close(mp3streamf);
 			mpg123_delete(mp3streamf);
             mp3streamf = 0;
-            qCritical() << "OpenALSoundPlayer" << "mpg123Stream(): couldn't read " << path;
+            qCritical() << "OpenALSoundPlayer" << "mpg123Stream(): couldn't read " << path.string();
 			return false;
 		}
 
@@ -1299,7 +1307,7 @@ bool OpenALSoundPlayer::mpg123Stream(const std::filesystem::path& path){
         subformat_string = getMpg123EncodingString(stream_encoding);
 		if(stream_encoding!=MPG123_ENC_SIGNED_16){
 			qCritical() << "OpenALSoundPlayer" << "mpg123Stream(): " << getMpg123EncodingString(stream_encoding)
-			<< " encoding for \"" << path << "\"" << " unsupported, expecting MPG123_ENC_SIGNED_16";
+			<< " encoding for \"" << path.string() << "\"" << " unsupported, expecting MPG123_ENC_SIGNED_16";
 			return false;
 		}
 		samplerate = rate;
@@ -1398,296 +1406,601 @@ void OpenALSoundPlayer::setSpatialisedStereo(bool val)
 }
 
 //------------------------------------------------------------
-bool OpenALSoundPlayer::load(const std::filesystem::path& _fileName, bool is_stream) {
+namespace {
 
-    fileName = _fileName;
-    bMultiPlay = false;
-    isStreaming = is_stream;
-    int err = AL_NO_ERROR;
+struct DecodeStream {
+    bool mp3 = false;
+    SNDFILE* snd = nullptr;
+    SF_INFO info{};
+#ifdef FEEDRA_USING_MPG123
+    mpg123_handle* mpg = nullptr;
+    int mp3BufferSize = 0;
+#endif
+    int channels = 0;
+    int sampleRate = 0;
+    float duration = 0.0f;
+    double scale = 1.0;
+    FormatType sampleFormat = Int16;
+    int fileFormat = 0;
+    std::string subformat;
+    size_t samplesRead = 0;
+    bool ended = false;
 
-    // [1] init sound systems, if necessary
+    ~DecodeStream() { close(); }
+
+    void close()
+    {
+        if (snd) {
+            sf_close(snd);
+            snd = nullptr;
+        }
+#ifdef FEEDRA_USING_MPG123
+        if (mpg) {
+            mpg123_close(mpg);
+            mpg123_delete(mpg);
+            mpg = nullptr;
+        }
+#endif
+    }
+
+    bool open(const std::filesystem::path& path, const std::string& ext, bool allowFloat)
+    {
+        if (ext == ".mp3") {
+#ifndef FEEDRA_USING_MPG123
+            qCritical() << "OpenALSoundPlayer" << "decodeFile(): mp3 support is not built";
+            return false;
+#else
+            mp3 = true;
+            fileFormat = 0x230000;
+            int err = MPG123_OK;
+            mpg = mpg123_new(nullptr, &err);
+            if (!mpg || mpg123_open(mpg, path.string().c_str()) != MPG123_OK) {
+                close();
+                return false;
+            }
+            long rate = 0;
+            int encoding = 0;
+            if (mpg123_getformat(mpg, &rate, &channels, &encoding) != MPG123_OK) {
+                close();
+                return false;
+            }
+            subformat = getMpg123EncodingString(encoding);
+            if (encoding != MPG123_ENC_SIGNED_16) {
+                qCritical() << "OpenALSoundPlayer" << "decodeFile():" << subformat.c_str()
+                            << "encoding for" << path.string().c_str() << "unsupported";
+                close();
+                return false;
+            }
+            sampleRate = static_cast<int>(rate);
+            mp3BufferSize = mpg123_outblock(mpg);
+            mpg123_seek(mpg, 0, SEEK_END);
+            const off_t samples = mpg123_tell(mpg);
+            duration = sampleRate > 0 ? float(samples) / float(sampleRate) : 0.0f;
+            mpg123_seek(mpg, 0, SEEK_SET);
+            return channels > 0 && sampleRate > 0;
+#endif
+        }
+
+        memset(&info, 0, sizeof(info));
+        snd = sf_open(path.string().c_str(), SFM_READ, &info);
+        if (!snd) {
+            return false;
+        }
+        fileFormat = info.format;
+        channels = info.channels;
+        sampleRate = info.samplerate;
+        duration = info.samplerate > 0 ? float(info.frames) / float(info.samplerate) : 0.0f;
+        const int sub = info.format & SF_FORMAT_SUBMASK;
+        if (sub == SF_FORMAT_FLOAT || sub == SF_FORMAT_DOUBLE) {
+            sf_command(snd, SFC_CALC_SIGNAL_MAX, &scale, sizeof(scale));
+            if (scale < 1e-10) {
+                scale = 1.0;
+            } else {
+                scale = 32700.0 / scale;
+            }
+        }
+        switch (sub) {
+        case SF_FORMAT_PCM_24:
+        case SF_FORMAT_PCM_32:
+        case SF_FORMAT_FLOAT:
+        case SF_FORMAT_DOUBLE:
+        case SF_FORMAT_VORBIS:
+        case SF_FORMAT_OPUS:
+        case SF_FORMAT_ALAC_20:
+        case SF_FORMAT_ALAC_24:
+        case SF_FORMAT_ALAC_32:
+        case 0x0080:
+        case 0x0081:
+        case 0x0082:
+            if (allowFloat) {
+                sampleFormat = Float;
+            }
+            break;
+        default:
+            break;
+        }
+        return channels > 0 && sampleRate > 0;
+    }
+
+    bool readChunk(std::vector<short>& shorts, std::vector<float>& floats)
+    {
+        ended = false;
+#ifdef FEEDRA_USING_MPG123
+        if (mp3) {
+            int curr = mp3BufferSize;
+            if (curr <= 0) {
+                return false;
+            }
+            shorts.resize(static_cast<size_t>(curr));
+            floats.resize(shorts.size());
+            size_t done = 0;
+            const int code = mpg123_read(mpg, reinterpret_cast<unsigned char*>(shorts.data()), static_cast<size_t>(curr) * 2, &done);
+            if (code == MPG123_DONE) {
+                mpg123_seek(mpg, 0, SEEK_SET);
+                shorts.resize(done / 2);
+                floats.resize(done / 2);
+                ended = true;
+                samplesRead = 0;
+            }
+            for (int i = 0; i < static_cast<int>(shorts.size()); ++i) {
+                floats[static_cast<size_t>(i)] = float(shorts[static_cast<size_t>(i)]) / 32565.f;
+            }
+            return !shorts.empty();
+        }
+#endif
+        if (!snd || channels <= 0) {
+            return false;
+        }
+        const int curr = BUFFER_STREAM_SIZE * channels;
+        shorts.resize(static_cast<size_t>(curr));
+        floats.resize(shorts.size());
+        if (sampleFormat == Float) {
+            const sf_count_t n = sf_read_float(snd, floats.data(), static_cast<sf_count_t>(floats.size()));
+            samplesRead += static_cast<size_t>(n);
+            if (n < static_cast<sf_count_t>(floats.size())) {
+                floats.resize(static_cast<size_t>(n));
+                shorts.resize(static_cast<size_t>(n));
+                sf_seek(snd, 0, SEEK_SET);
+                samplesRead = 0;
+                ended = true;
+            }
+            for (int i = 0; i < static_cast<int>(floats.size()); ++i) {
+                shorts[static_cast<size_t>(i)] = static_cast<short>(32565.0 * floats[static_cast<size_t>(i)] * scale);
+            }
+        } else {
+            const sf_count_t frames = sf_readf_short(snd, shorts.data(), curr / channels);
+            samplesRead += static_cast<size_t>(frames * channels);
+            if (frames < curr / channels) {
+                shorts.resize(static_cast<size_t>(frames * channels));
+                floats.resize(shorts.size());
+                sf_seek(snd, 0, SEEK_SET);
+                samplesRead = 0;
+                ended = true;
+            }
+            for (int i = 0; i < static_cast<int>(shorts.size()); ++i) {
+                floats[static_cast<size_t>(i)] = float(shorts[static_cast<size_t>(i)]) / 32565.0f;
+            }
+        }
+        return !shorts.empty();
+    }
+
+    bool readAll(std::vector<short>& shorts, std::vector<float>& floats)
+    {
+#ifdef FEEDRA_USING_MPG123
+        if (mp3) {
+            size_t done = 0;
+            size_t bufferSize = static_cast<size_t>(mpg123_outblock(mpg));
+            shorts.resize(bufferSize / 2);
+            while (mpg123_read(mpg, reinterpret_cast<unsigned char*>(&shorts[shorts.size() - bufferSize / 2]), bufferSize, &done) != MPG123_DONE) {
+                shorts.resize(shorts.size() + bufferSize / 2);
+            }
+            shorts.resize(shorts.size() - (bufferSize / 2 - done / 2));
+            floats.resize(shorts.size());
+            for (int i = 0; i < static_cast<int>(shorts.size()); ++i) {
+                floats[static_cast<size_t>(i)] = float(shorts[static_cast<size_t>(i)]) / 32565.f;
+            }
+            if (channels > 0 && sampleRate > 0) {
+                duration = float(shorts.size() / static_cast<size_t>(channels)) / float(sampleRate);
+            }
+            return !shorts.empty();
+        }
+#endif
+        if (!snd) {
+            return false;
+        }
+        shorts.resize(static_cast<size_t>(info.frames * info.channels));
+        floats.resize(shorts.size());
+        if (shorts.empty()) {
+            return false;
+        }
+        const int sub = info.format & SF_FORMAT_SUBMASK;
+        if (sub == SF_FORMAT_FLOAT || sub == SF_FORMAT_DOUBLE) {
+            const sf_count_t samplesReadNow = sf_read_float(snd, floats.data(), static_cast<sf_count_t>(floats.size()));
+            if (samplesReadNow < static_cast<sf_count_t>(floats.size())) {
+                floats.resize(static_cast<size_t>(samplesReadNow));
+                shorts.resize(floats.size());
+            }
+            for (int i = 0; i < static_cast<int>(floats.size()); ++i) {
+                shorts[static_cast<size_t>(i)] = static_cast<short>(32565.0 * floats[static_cast<size_t>(i)] * scale);
+            }
+        } else {
+            const sf_count_t framesRead = sf_readf_short(snd, shorts.data(), info.frames);
+            if (framesRead < info.frames) {
+                return false;
+            }
+            sf_seek(snd, 0, SEEK_SET);
+            const sf_count_t floatFrames = sf_readf_float(snd, floats.data(), info.frames);
+            if (floatFrames < info.frames) {
+                return false;
+            }
+        }
+        return !shorts.empty();
+    }
+
+    int64_t framePosition() const
+    {
+#ifdef FEEDRA_USING_MPG123
+        if (mp3 && mpg) {
+            return static_cast<int64_t>(mpg123_tell(mpg));
+        }
+#endif
+        if (snd) {
+            return static_cast<int64_t>(sf_seek(snd, 0, SEEK_CUR));
+        }
+        return 0;
+    }
+};
+
+bool uploadPcm(ALuint buffer, ALenum format, int rate, const std::vector<short>& shorts, const std::vector<float>& floats)
+{
+    alGetError();
+    if (format == AL_FORMAT_MONO16 || format == AL_FORMAT_STEREO16) {
+        if (shorts.empty()) {
+            return false;
+        }
+        alBufferData(buffer, format, shorts.data(), static_cast<ALsizei>(shorts.size() * 2), rate);
+    } else if (format == AL_FORMAT_MONO_FLOAT32 || format == AL_FORMAT_STEREO_FLOAT32) {
+        if (floats.empty()) {
+            return false;
+        }
+        alBufferData(buffer, format, floats.data(), static_cast<ALsizei>(floats.size() * 4), rate);
+    } else {
+        return false;
+    }
+    return alGetError() == AL_NO_ERROR;
+}
+
+} // namespace
+
+DecodedAudio OpenALSoundPlayer::decodeFile(const std::filesystem::path& fileName, bool isStream)
+{
+    DecodedAudio out;
+    out.path = fileName;
+    out.streaming = isStream;
+    out.fileExtension = fileName.extension().string();
+    for (char& c : out.fileExtension) {
+        c = static_cast<char>(tolower(static_cast<unsigned char>(c)));
+    }
+
+    DecodeStream stream;
+    if (!stream.open(fileName, out.fileExtension, g_alFloat32.load())) {
+        qCritical() << "OpenALSoundPlayer" << "decodeFile(): couldn't read" << fileName.string().c_str();
+        return out;
+    }
+
+    out.mp3 = stream.mp3;
+    out.channels = stream.channels;
+    out.sampleRate = stream.sampleRate;
+    out.duration = stream.duration;
+    out.sampleFormat = stream.sampleFormat;
+    out.fileFormat = stream.fileFormat;
+    out.streamScale = stream.scale;
+    out.mp3BufferSize = stream.mp3BufferSize;
+    out.formatString = getSoundFileFormatString(out.fileFormat);
+    out.subformatString = stream.mp3 ? stream.subformat : getSoundFileSubFormatString(out.fileFormat);
+
+    if (!isStream) {
+        if (!stream.readAll(out.pcmShort, out.pcmFloat)) {
+            qCritical() << "Sound file load failed - wrong file type or empty file";
+            return out;
+        }
+        out.duration = stream.duration;
+        out.ok = true;
+        return out;
+    }
+
+    std::vector<short> discardedShort;
+    std::vector<float> discardedFloat;
+    if (!stream.readChunk(discardedShort, discardedFloat)) {
+        qCritical() << "Sound file load failed - wrong file type or empty file";
+        return out;
+    }
+    out.initialChunks.resize(2);
+    for (DecodedChunk& chunk : out.initialChunks) {
+        stream.readChunk(chunk.pcmShort, chunk.pcmFloat);
+    }
+    out.streamEnded = stream.ended;
+    out.streamSamplesRead = static_cast<int64_t>(stream.samplesRead);
+    out.resumeFrames = stream.framePosition();
+    out.duration = stream.duration;
+    out.ok = true;
+    return out;
+}
+
+bool OpenALSoundPlayer::attachDecodedStream(const DecodedAudio& decoded)
+{
+#ifdef FEEDRA_USING_MPG123
+    if (decoded.mp3) {
+        int err = MPG123_OK;
+        mp3streamf = mpg123_new(nullptr, &err);
+        if (!mp3streamf || mpg123_open(mp3streamf, decoded.path.string().c_str()) != MPG123_OK) {
+            qCritical() << "OpenALSoundPlayer" << "attachDecodedStream(): couldn't read" << decoded.path.string().c_str();
+            if (mp3streamf) {
+                mpg123_close(mp3streamf);
+                mpg123_delete(mp3streamf);
+                mp3streamf = nullptr;
+            }
+            return false;
+        }
+        mpg123_seek(mp3streamf, static_cast<off_t>(decoded.resumeFrames), SEEK_SET);
+        stream_end = decoded.streamEnded;
+        return true;
+    }
+#endif
+    SF_INFO sfInfo;
+    memset(&sfInfo, 0, sizeof(sfInfo));
+    streamf = sf_open(decoded.path.string().c_str(), SFM_READ, &sfInfo);
+    if (!streamf) {
+        qCritical() << "OpenALSoundPlayer" << "attachDecodedStream(): couldn't read" << decoded.path.string().c_str();
+        return false;
+    }
+    if (decoded.resumeFrames > 0) {
+        sf_seek(streamf, static_cast<sf_count_t>(decoded.resumeFrames), SEEK_SET);
+    }
+    stream_samples_read = static_cast<size_t>(decoded.streamSamplesRead);
+    stream_end = decoded.streamEnded;
+    return true;
+}
+
+void OpenALSoundPlayer::rebuildFftBuffers()
+{
+    if (channels <= 0 || buffer_float.empty()) {
+        return;
+    }
+    const int numFrames = static_cast<int>(buffer_float.size()) / channels;
+    fftBuffers.resize(static_cast<size_t>(channels));
+    for (int i = 0; i < channels; ++i) {
+        fftBuffers[static_cast<size_t>(i)].resize(static_cast<size_t>(numFrames));
+        for (int j = 0; j < numFrames; ++j) {
+            fftBuffers[static_cast<size_t>(i)][static_cast<size_t>(j)] = buffer_float[static_cast<size_t>(j * channels + i)];
+        }
+    }
+}
+
+bool OpenALSoundPlayer::load(const std::filesystem::path& fileName, bool isStream)
+{
     initialize();
+    DecodedAudio decoded = decodeFile(fileName, isStream);
+    if (!decoded.ok) {
+        return false;
+    }
+    return uploadDecoded(std::move(decoded));
+}
 
-    // [2] try to unload any previously loaded sounds
-    // & prevent user-created memory leaks
-    // if they call "loadSound" repeatedly, for example
-    if (bLoadedOk) {
+bool OpenALSoundPlayer::uploadDecoded(DecodedAudio decoded)
+{
+    if (!decoded.ok) {
+        return false;
+    }
+    initialize();
+    if (!sources.empty()) {
+        bLoadedOk = true;
+    }
+    if (bLoadedOk || streamf
+#ifdef FEEDRA_USING_MPG123
+        || mp3streamf
+#endif
+    ) {
         unload();
     }
     bLoadedOk = false;
 
-    // Get Format
-    SF_INFO sfInfo;
+    fileName = decoded.path;
+    bMultiPlay = false;
+    isStreaming = decoded.streaming;
+    file_extension = decoded.fileExtension;
+    fileformat = decoded.fileFormat;
+    format_string = decoded.formatString;
+    subformat_string = decoded.subformatString;
+    sample_format = decoded.sampleFormat;
+    channels = decoded.channels;
+    samplerate = decoded.sampleRate;
+    duration = decoded.duration;
+    stream_scale = decoded.streamScale;
+    mp3_buffer_size = decoded.mp3BufferSize;
+    stream_end = false;
 
-    file_extension = fileName.extension().string();
-
-    for(auto& c : file_extension)
-    {
-       c = tolower(c);
-    }
-
-    if(file_extension==".mp3"){
-        fileformat = 0x230000;
-    } else {
-        SNDFILE* f = sf_open(_fileName.string().c_str(),SFM_READ,&sfInfo);
-        fileformat = sfInfo.format;
-        /* Detect a suitable format to load. Formats like Vorbis and Opus use float
-         * natively, so load as float to avoid clipping when possible. Formats
-         * larger than 16-bit can also use float to preserve a bit more precision.
-         */
-        switch((sfInfo.format&SF_FORMAT_SUBMASK))
-        {
-            case SF_FORMAT_PCM_24:
-            case SF_FORMAT_PCM_32:
-            case SF_FORMAT_FLOAT:
-            case SF_FORMAT_DOUBLE:
-            case SF_FORMAT_VORBIS:
-            case SF_FORMAT_OPUS:
-            case SF_FORMAT_ALAC_20:
-            case SF_FORMAT_ALAC_24:
-            case SF_FORMAT_ALAC_32:
-            case 0x0080/*SF_FORMAT_MPEG_LAYER_I*/:
-            case 0x0081/*SF_FORMAT_MPEG_LAYER_II*/:
-            case 0x0082/*SF_FORMAT_MPEG_LAYER_III*/:
-                if(alIsExtensionPresent("AL_EXT_FLOAT32"))
-                    sample_format = Float;
-                break;
-        }
-        sf_close(f);
-    }
-    format_string = getSoundFileFormatString(fileformat);
-    subformat_string = getSoundFileSubFormatString(fileformat);
-
-    int numFrames = 0;
-	if(!isStreaming){
-        numFrames = readFile(fileName);
-	}else{
-        //read stream to get buffer size
-        numFrames = stream(fileName);
-	}
-
-    if(numFrames == 0)
-    {
+    if (channels <= 0 || samplerate <= 0) {
         qCritical() << "Sound file load failed - wrong file type or empty file";
         return false;
     }
 
-    /* Figure out the OpenAL format from the file and desired sample type. */
-    openALformat = AL_NONE;
-    if(channels == 1)
-    {
-        spatialisedStereo = false;
-        if(sample_format == Int16)
-            openALformat = AL_FORMAT_MONO16;
-        else if(sample_format == Float)
-            openALformat = AL_FORMAT_MONO_FLOAT32;
+    if (isStreaming) {
+        if (!attachDecodedStream(decoded)) {
+            return false;
+        }
+        if (!decoded.initialChunks.empty()) {
+            buffer_short = decoded.initialChunks.back().pcmShort;
+            buffer_float = decoded.initialChunks.back().pcmFloat;
+        }
+    } else {
+        buffer_short = std::move(decoded.pcmShort);
+        buffer_float = std::move(decoded.pcmFloat);
+        if (buffer_short.empty()) {
+            qCritical() << "Sound file load failed - wrong file type or empty file";
+            return false;
+        }
     }
-    else if(channels == 2)
-    {
-        if(sample_format == Int16) {
-            if(spatialisedStereo ) {
-                openALformat = AL_FORMAT_MONO16;
-            } else {
-                openALformat = AL_FORMAT_STEREO16;
-            }
-        }
-        else if(sample_format == Float) {
-            if(spatialisedStereo ) {
-                openALformat = AL_FORMAT_MONO_FLOAT32;
-            } else {
-                openALformat = AL_FORMAT_STEREO_FLOAT32;
-            }
-        }
-    }   
+    rebuildFftBuffers();
 
-    if(spatialisedStereo) {
-        sources.resize(channels);
+    openALformat = AL_NONE;
+    if (channels == 1) {
+        spatialisedStereo = false;
+        if (sample_format == Int16) {
+            openALformat = AL_FORMAT_MONO16;
+        } else if (sample_format == Float) {
+            openALformat = AL_FORMAT_MONO_FLOAT32;
+        }
+    } else if (channels == 2) {
+        if (sample_format == Int16) {
+            openALformat = spatialisedStereo ? AL_FORMAT_MONO16 : AL_FORMAT_STEREO16;
+        } else if (sample_format == Float) {
+            openALformat = spatialisedStereo ? AL_FORMAT_MONO_FLOAT32 : AL_FORMAT_STEREO_FLOAT32;
+        }
+    }
+    if (openALformat == AL_NONE) {
+        qCritical() << "OpenALSoundPlayer" << "uploadDecoded(): unsupported channel layout for" << fileName.string().c_str();
+        return false;
+    }
+
+    if (spatialisedStereo) {
+        sources.resize(static_cast<size_t>(channels));
     } else {
         sources.resize(1);
     }
 
-    alGetError(); // Clear error.
-    alGenSources((ALsizei) sources.size(), &sources[0]);
-    err = alGetError();
-    if (err != AL_NO_ERROR){
-        qCritical() << "OpenALSoundPlayer" << "loadSound(): couldn't generate sources for " << fileName << ": "
-        << (int) err << " " << getALErrorString(err);
+    alGetError();
+    alGenSources(static_cast<ALsizei>(sources.size()), &sources[0]);
+    ALenum err = alGetError();
+    if (err != AL_NO_ERROR) {
+        qCritical() << "OpenALSoundPlayer" << "loadSound(): couldn't generate sources for " << fileName.string().c_str() << ":"
+                    << static_cast<int>(err) << getALErrorString(err).c_str();
+        sources.clear();
         return false;
     }
 
-	if(isStreaming){
-        buffers.resize(sources.size()*2);
-	}else{
+    if (isStreaming) {
+        buffers.resize(sources.size() * 2);
+    } else {
         buffers.resize(sources.size());
-	}
-	alGenBuffers((ALsizei)buffers.size(), &buffers[0]);
-    //qInfo() << "sound load " << _fileName <<" channels: "<< channels << " buffers.size: " << buffers.size() << " buffer_short.size(): " << buffer_short.size() << " duration: " << duration;
+    }
+    alGenBuffers(static_cast<ALsizei>(buffers.size()), &buffers[0]);
 
-    if(sources.size() == 1){
-
-        if(isStreaming){
-            //reset back to zero
-            setPosition(0);
-        }
-
-		for(int i=0; i<(int)buffers.size(); i++){
-            if(isStreaming){
-                stream(fileName);
+    if (sources.size() == 1) {
+        const int count = static_cast<int>(buffers.size());
+        for (int i = 0; i < count; ++i) {
+            const std::vector<short>* shorts = &buffer_short;
+            const std::vector<float>* floats = &buffer_float;
+            if (isStreaming) {
+                if (i >= static_cast<int>(decoded.initialChunks.size())) {
+                    break;
+                }
+                shorts = &decoded.initialChunks[static_cast<size_t>(i)].pcmShort;
+                floats = &decoded.initialChunks[static_cast<size_t>(i)].pcmFloat;
             }
-
-			alGetError(); // Clear error.
-            if((openALformat == AL_FORMAT_MONO16) || (openALformat == AL_FORMAT_STEREO16)) {
-                alBufferData(buffers[i],openALformat,&buffer_short[0],buffer_short.size()*2,samplerate);
-            } else if((openALformat == AL_FORMAT_MONO_FLOAT32) || (openALformat == AL_FORMAT_STEREO_FLOAT32)) {
-                alBufferData(buffers[i],openALformat,&buffer_float[0],buffer_float.size()*4,samplerate);
-            }
-			err = alGetError();
-			if (err != AL_NO_ERROR){
-                qCritical() << "OpenALSoundPlayer:" << "loadSound(): couldn't create buffer for " << fileName << ": "
-				<< (int) err << " " << getALErrorString(err);
-				return false;
-			}
-		}
-		if(isStreaming){
-            alSourceQueueBuffers(sources[0],buffers.size(),&buffers[0]);
-		}else{
-            alSourcei (sources[0], AL_BUFFER, buffers[0]);
-            err = alGetError();
-            if (err != AL_NO_ERROR){
-                qCritical() << "OpenALSoundPlayer:" << "loadSound(): couldn't source for \"" << fileName << "\": "
-                << (int) err << " " << getALErrorString(err);
+            if (!uploadPcm(buffers[static_cast<size_t>(i)], openALformat, samplerate, *shorts, *floats)) {
+                qCritical() << "OpenALSoundPlayer:" << "loadSound(): couldn't create buffer for " << fileName.string().c_str();
                 return false;
             }
-		}
-
-        alSourcef (sources[0], AL_PITCH,    1.0f);
-        alSourcef (sources[0], AL_GAIN,     1.0f);
-        alSourcef (sources[0], AL_ROLLOFF_FACTOR,  0.0);
-        alSourcei (sources[0], AL_SOURCE_RELATIVE, AL_TRUE);
-    } else // multiple sources, e.g. stereo
-    {
-        vector<vector<short> > multibuffer_short;
-        vector<vector<float> > multibuffer_float;
-
-        if(openALformat == AL_FORMAT_MONO16) {
-            multibuffer_short.resize(channels);
-        } else if(openALformat == AL_FORMAT_MONO_FLOAT32) {
-            multibuffer_float.resize(channels);
+        }
+        if (isStreaming) {
+            alSourceQueueBuffers(sources[0], static_cast<ALsizei>(buffers.size()), &buffers[0]);
         } else {
-            qCritical() << "OpenALSoundPlayer:" << "Unknown multiple source format, aborting!";
-            return false;
+            alSourcei(sources[0], AL_BUFFER, buffers[0]);
+            err = alGetError();
+            if (err != AL_NO_ERROR) {
+                qCritical() << "OpenALSoundPlayer:" << "loadSound(): couldn't source for" << fileName.string().c_str()
+                            << static_cast<int>(err) << getALErrorString(err).c_str();
+                return false;
+            }
         }
-
-        if(isStreaming){
-            //reset back to zero
-            setPosition(0);
-        }
-
-		if(isStreaming){
-            for(int s=0; s < 2;s++)
-            {
-                stream(fileName);
-                for(int i=0;i<channels;i++){
-
-                    if(openALformat == AL_FORMAT_MONO16) {
-                        multibuffer_short[i].resize(buffer_short.size()/channels);
-                        for(int j=0;j<numFrames;j++){
-                            multibuffer_short[i][j] = buffer_short[j*channels+i];
-                        }
-                    } else if(openALformat == AL_FORMAT_MONO_FLOAT32) {
-                        multibuffer_float[i].resize(buffer_float.size()/channels);
-                        for(int j=0;j<numFrames;j++){
-                            multibuffer_float[i][j] = buffer_float[j*channels+i];
+        alSourcef(sources[0], AL_PITCH, 1.0f);
+        alSourcef(sources[0], AL_GAIN, 1.0f);
+        alSourcef(sources[0], AL_ROLLOFF_FACTOR, 0.0f);
+        alSourcei(sources[0], AL_SOURCE_RELATIVE, AL_TRUE);
+    } else {
+        if (isStreaming) {
+            for (int s = 0; s < 2; ++s) {
+                if (s >= static_cast<int>(decoded.initialChunks.size())) {
+                    break;
+                }
+                const DecodedChunk& chunk = decoded.initialChunks[static_cast<size_t>(s)];
+                const int frames = channels > 0 ? static_cast<int>(chunk.pcmShort.size()) / channels : 0;
+                for (int i = 0; i < channels; ++i) {
+                    std::vector<short> channelShort(static_cast<size_t>(frames));
+                    std::vector<float> channelFloat(static_cast<size_t>(frames));
+                    for (int j = 0; j < frames; ++j) {
+                        const size_t src = static_cast<size_t>(j * channels + i);
+                        if (openALformat == AL_FORMAT_MONO16 && src < chunk.pcmShort.size()) {
+                            channelShort[static_cast<size_t>(j)] = chunk.pcmShort[src];
+                        } else if (openALformat == AL_FORMAT_MONO_FLOAT32 && src < chunk.pcmFloat.size()) {
+                            channelFloat[static_cast<size_t>(j)] = chunk.pcmFloat[src];
                         }
                     }
-
-                    alGetError(); // Clear error.
-                    if(openALformat == AL_FORMAT_MONO16) {
-                        alBufferData(buffers[s*2+i],openALformat,&multibuffer_short[i][0],buffer_short.size()/channels*2,samplerate);
-                    } else if(openALformat == AL_FORMAT_MONO_FLOAT32) {
-                        alBufferData(buffers[s*2+i],openALformat,&multibuffer_float[i][0],buffer_float.size()/channels*4,samplerate);
-                    }
-                    err = alGetError();
-                    if ( err != AL_NO_ERROR){
-                        qCritical() << "OpenALSoundPlayer" << "loadSound(): couldn't create stereo buffers for \"" << fileName << "\": " << (int) err << " " << getALErrorString(err);
-                        sources.clear();
-                        multibuffer_short.clear();
+                    const size_t bufferIndex = static_cast<size_t>(s * channels + i);
+                    if (bufferIndex >= buffers.size()) {
+                        qCritical() << "OpenALSoundPlayer" << "loadSound(): stereo buffer index out of range";
                         return false;
                     }
-                    alSourceQueueBuffers(sources[i],1,&buffers[s*2+i]);
+                    if (!uploadPcm(buffers[bufferIndex], openALformat, samplerate, channelShort, channelFloat)) {
+                        qCritical() << "OpenALSoundPlayer" << "loadSound(): couldn't create stereo buffers for" << fileName.string().c_str();
+                        return false;
+                    }
+                    alSourceQueueBuffers(sources[static_cast<size_t>(i)], 1, &buffers[bufferIndex]);
                 }
             }
-		}else{
-			for(int i=0;i<channels;i++){
-                if(openALformat == AL_FORMAT_MONO16) {
-                    multibuffer_short[i].resize(buffer_short.size()/channels);
-                    for(int j=0;j<numFrames;j++){
-                        multibuffer_short[i][j] = buffer_short[j*channels+i];
-                    }
-                } else if(openALformat == AL_FORMAT_MONO_FLOAT32) {
-                    multibuffer_float[i].resize(buffer_float.size()/channels);
-                    for(int j=0;j<numFrames;j++){
-                        multibuffer_float[i][j] = buffer_float[j*channels+i];
+        } else {
+            const int frames = static_cast<int>(buffer_short.size()) / channels;
+            for (int i = 0; i < channels; ++i) {
+                std::vector<short> channelShort(static_cast<size_t>(frames));
+                std::vector<float> channelFloat(static_cast<size_t>(frames));
+                for (int j = 0; j < frames; ++j) {
+                    const size_t src = static_cast<size_t>(j * channels + i);
+                    if (openALformat == AL_FORMAT_MONO16 && src < buffer_short.size()) {
+                        channelShort[static_cast<size_t>(j)] = buffer_short[src];
+                    } else if (openALformat == AL_FORMAT_MONO_FLOAT32 && src < buffer_float.size()) {
+                        channelFloat[static_cast<size_t>(j)] = buffer_float[src];
                     }
                 }
-				alGetError(); // Clear error.
-                if(openALformat == AL_FORMAT_MONO16) {
-                    alBufferData(buffers[i],openALformat,&multibuffer_short[i][0],buffer_short.size()/channels*2,samplerate);
-                } else if(openALformat == AL_FORMAT_MONO_FLOAT32) {
-                    alBufferData(buffers[i],openALformat,&multibuffer_float[i][0],buffer_float.size()/channels*4,samplerate);
+                if (!uploadPcm(buffers[static_cast<size_t>(i)], openALformat, samplerate, channelShort, channelFloat)) {
+                    qCritical() << "OpenALSoundPlayer" << "loadSound(): couldn't create stereo buffers for" << fileName.string().c_str();
+                    return false;
                 }
-				err = alGetError();
-				if (err != AL_NO_ERROR){
-					qCritical() << "OpenALSoundPlayer" << "loadSound(): couldn't create stereo buffers for \"" << fileName << "\": "
-					<< (int) err << " " << getALErrorString(err);
-					return false;
-				}
-				alSourcei (sources[i], AL_BUFFER,   buffers[i]   );
-			}
-		}
+                alSourcei(sources[static_cast<size_t>(i)], AL_BUFFER, buffers[static_cast<size_t>(i)]);
+            }
+        }
 
-
-        for(int i=0;i<channels;i++){
+        for (int i = 0; i < channels; ++i) {
             err = alGetError();
-            if (err != AL_NO_ERROR){
-                qCritical() << "OpenALSoundPlayer" << "loadSound(): couldn't create stereo sources for \"" << fileName << "\": "
-                << (int) err << " " << getALErrorString(err);
+            if (err != AL_NO_ERROR) {
+                qCritical() << "OpenALSoundPlayer" << "loadSound(): couldn't create stereo sources for" << fileName.string().c_str()
+                            << static_cast<int>(err) << getALErrorString(err).c_str();
                 return false;
             }
-
-            // only stereo panning
-            if(i==0){
-                float pos[3] = {-1,0,0};
-                alSourcefv(sources[i],AL_POSITION,pos);
-            }else{
-                float pos[3] = {1,0,0};
-                alSourcefv(sources[i],AL_POSITION,pos);
-            }
-            alSourcef (sources[i], AL_ROLLOFF_FACTOR,  0.0);
-            alSourcei (sources[i], AL_SOURCE_RELATIVE, AL_TRUE);
+            const float pos[3] = { i == 0 ? -1.0f : 1.0f, 0.0f, 0.0f };
+            alSourcefv(sources[static_cast<size_t>(i)], AL_POSITION, pos);
+            alSourcef(sources[static_cast<size_t>(i)], AL_ROLLOFF_FACTOR, 0.0f);
+            alSourcei(sources[static_cast<size_t>(i)], AL_SOURCE_RELATIVE, AL_TRUE);
         }
-    } // end multiple sources
+    }
 
     if (bUseEffects) {
         reverbSend = 0.0f;
         alGenFilters(1, &filter);
         alFilteri(filter, AL_FILTER_TYPE, AL_FILTER_LOWPASS);
-
         alFilterf(filter, AL_LOWPASS_GAIN, reverbSend);
-        alSource3i(sources[0], AL_AUXILIARY_SEND_FILTER, (ALint)effectSlots[1], 0, filter);
-
+        alSource3i(sources[0], AL_AUXILIARY_SEND_FILTER, static_cast<ALint>(effectSlots[1]), 0, filter);
         err = alGetError();
         if (err != AL_NO_ERROR) {
             qCritical() << "OpenALSoundPlayer:" << "attaching FX sends failed..."
-                << (int)err << " " << getALErrorString(err);
+                        << static_cast<int>(err) << getALErrorString(err).c_str();
             return false;
         }
         bUseFilter = true;
     }
 
-	bLoadedOk = true;
-	return bLoadedOk;
-
+    bLoadedOk = true;
+    return bLoadedOk;
 }
 
 //------------------------------------------------------------

@@ -507,6 +507,8 @@ QString Theme::styleSheet() const
         "QFrame#SampleDropIndicator { background: %2; border: none; }\n"
         "QWidget#SampleRow QProgressBar { background: %3; border: none; border-radius: 3px; }\n"
         "QWidget#SampleRow QProgressBar::chunk { background: %4; border-radius: 3px; }\n"
+        "QProgressBar#LoadProgress { background: %3; border: none; border-radius: 3px; }\n"
+        "QProgressBar#LoadProgress::chunk { background: %4; border-radius: 3px; }\n"
         "QWidget#SampleRow[selected=\"true\"] { border: 2px solid %5; }\n")
         .arg(hex(p.sampleGrip), hex(p.dropIndicator), hex(p.progressTrack),
             hex(p.progressChunk), hex(p.sampleSelected));
@@ -549,6 +551,7 @@ QString Theme::styleSheet() const
         "    background-color: %1;\n"
         "    border-top: 1px solid %4;\n"
         "}\n"
+        "QLabel#LoadProgressLabel { color: %3; }\n"
         "QLabel#SettingsTitle { font-size: 18px; }\n"
         "QLabel#ThemeSection { font-size: 15px; margin-top: 10px; }\n"
         "QPushButton#BottomTab {\n"

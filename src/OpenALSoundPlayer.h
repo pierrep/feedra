@@ -9,8 +9,9 @@
 #include <functional>
 #include <map>
 #include <set>
+#include <cstdint>
 
-#if defined(__APPLE__)
+#if defined(__APPLE__) && !defined(FEEDRA_OPENAL_SOFT)
 #include <OpenAL/al.h>
 #include <OpenAL/alc.h>
 #else
@@ -38,6 +39,34 @@ enum FormatType {
     MSADPCM
 };
 
+struct DecodedChunk {
+    std::vector<short> pcmShort;
+    std::vector<float> pcmFloat;
+};
+
+struct DecodedAudio {
+    bool ok = false;
+    bool streaming = false;
+    bool mp3 = false;
+    bool streamEnded = false;
+    std::filesystem::path path;
+    std::string fileExtension;
+    int fileFormat = 0;
+    std::string formatString;
+    std::string subformatString;
+    FormatType sampleFormat = Int16;
+    int channels = 0;
+    int sampleRate = 0;
+    float duration = 0.0f;
+    double streamScale = 1.0;
+    std::vector<short> pcmShort;
+    std::vector<float> pcmFloat;
+    std::vector<DecodedChunk> initialChunks;
+    int64_t resumeFrames = 0;
+    int64_t streamSamplesRead = 0;
+    int mp3BufferSize = 0;
+};
+
 void OpenALSoundUpdate();
 
 class OpenALSoundPlayer {
@@ -54,6 +83,8 @@ public:
     static void printExtensions(const char *header, char separator, const char *extensions);
 
     bool load(const std::filesystem::path& fileName, bool stream = false);
+    static DecodedAudio decodeFile(const std::filesystem::path& fileName, bool stream);
+    bool uploadDecoded(DecodedAudio decoded);
     void unload();
     void play();
     void stop();
@@ -128,6 +159,9 @@ private:
     static void runWindow(std::vector<float> & signal);
     static void initSystemFFT(int bands);
     static void notifyPlaybackEnded(OpenALSoundPlayer* player);
+
+    bool attachDecodedStream(const DecodedAudio& decoded);
+    void rebuildFftBuffers();
 
     bool sfReadFile(const std::filesystem::path& path);
     bool sfStream(const std::filesystem::path& path);

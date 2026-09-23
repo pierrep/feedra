@@ -1,5 +1,6 @@
 #include "MainWindow.h"
 #include "OpenALSoundPlayer.h"
+#include "SampleLoadQueue.h"
 #include "Scene.h"
 #include "Theme.h"
 #include "widgets/SampleRowWidget.h"
@@ -27,7 +28,9 @@
 #include <QMenu>
 #include <QMenuBar>
 #include <QMessageBox>
+#include <QProgressBar>
 #include <QPushButton>
+#include <QThread>
 #include <QSaveFile>
 #include <QScrollArea>
 #include <QShortcut>
@@ -48,6 +51,7 @@ MainWindow::MainWindow(QWidget* parent)
     setWindowTitle(QStringLiteral("Feedra"));
     resize(1150, 800);
     m_config.setup();
+    m_loads = new SampleLoadQueue(this);
     OpenALSoundPlayer::initialize();
     m_curDevice = QString::fromStdString(OpenALSoundPlayer::getDefaultDeviceString());
 
@@ -81,7 +85,11 @@ MainWindow::MainWindow(QWidget* parent)
 
 MainWindow::~MainWindow()
 {
+    waitForLoads();
     saveConfigTo(m_config.defaultSettingsPath(), false);
+    if (m_loads) {
+        m_loads->shutdown();
+    }
     qDeleteAll(m_scenes);
     m_scenes.clear();
 }
@@ -93,13 +101,13 @@ void MainWindow::buildMenus()
     openAct->setShortcut(QKeySequence::Open);
     connect(openAct, &QAction::triggered, this, [this]() { loadConfig(); });
 
-    auto* saveAct = fileMenu->addAction(tr("&Save"));
-    saveAct->setShortcut(QKeySequence::Save);
-    connect(saveAct, &QAction::triggered, this, [this]() { saveConfig(); });
+    m_saveAction = fileMenu->addAction(tr("&Save"));
+    m_saveAction->setShortcut(QKeySequence::Save);
+    connect(m_saveAction, &QAction::triggered, this, [this]() { saveConfig(); });
 
-    auto* saveAsAct = fileMenu->addAction(tr("Save &As..."));
-    saveAsAct->setShortcut(QKeySequence::SaveAs);
-    connect(saveAsAct, &QAction::triggered, this, [this]() { saveConfigAs(); });
+    m_saveAsAction = fileMenu->addAction(tr("Save &As..."));
+    m_saveAsAction->setShortcut(QKeySequence::SaveAs);
+    connect(m_saveAsAction, &QAction::triggered, this, [this]() { saveConfigAs(); });
 
     fileMenu->addSeparator();
     auto* quitAct = fileMenu->addAction(tr("E&xit"));
@@ -145,6 +153,19 @@ void MainWindow::buildUi()
     auto* volumeRow = new QHBoxLayout();
     volumeRow->addWidget(new QLabel(tr("Main Volume"), m_mainPage));
     volumeRow->addWidget(m_mainVolume);
+    m_loadBar = new QProgressBar(m_mainPage);
+    m_loadBar->setObjectName(QStringLiteral("LoadProgress"));
+    m_loadBar->setTextVisible(false);
+    m_loadBar->setFixedWidth(180);
+    m_loadBar->setFixedHeight(14);
+    m_loadBar->setRange(0, 1);
+    m_loadBar->hide();
+    m_loadLabel = new QLabel(m_mainPage);
+    m_loadLabel->setObjectName(QStringLiteral("LoadProgressLabel"));
+    m_loadLabel->hide();
+    volumeRow->addSpacing(16);
+    volumeRow->addWidget(m_loadBar);
+    volumeRow->addWidget(m_loadLabel);
     volumeRow->addStretch();
     mainLayout->addLayout(volumeRow);
 
@@ -511,6 +532,34 @@ void MainWindow::buildUi()
     setSidebarView(SidebarView::Scenes);
 }
 
+void MainWindow::connectScene(Scene* scene)
+{
+    connect(scene, &Scene::padSelected, this, &MainWindow::onPadClicked);
+    connect(scene->row(), &SceneRowWidget::deleteRequested, this, [this]() { deleteActiveScene(); });
+    for (SoundPadWidget* pad : scene->pads) {
+        pad->setLoadQueue(m_loads);
+        connect(pad, &SoundPadWidget::padDropped, this, [this](int from, int to) { copyPad(from, to); });
+        connect(pad, &SoundPadWidget::filesDropped, this, [this]() { updateMainControls(); });
+        connect(pad, &SoundPadWidget::loadStateChanged, this, [this, pad]() {
+            refreshLoadUi();
+            if (pad == activePad() && m_sidebar == SidebarView::Editor) {
+                rebuildEditSamples();
+            }
+        });
+        connect(pad, &SoundPadWidget::loadingFinished, this, [this, pad]() {
+            for (Scene* scene : m_scenes) {
+                if (scene->id == pad->sceneId() && scene->isPlaying && pad->isLoaded() && !pad->isLoading()) {
+                    pad->soundPlayer().setPaused(false);
+                }
+            }
+            updateMainControls();
+            if (pad == activePad() && m_sidebar == SidebarView::Editor) {
+                rebuildEditSamples();
+            }
+        });
+    }
+}
+
 void MainWindow::createDefaultScenes()
 {
     for (int i = 0; i < 4; ++i) {
@@ -518,12 +567,7 @@ void MainWindow::createDefaultScenes()
         m_scenes.push_back(scene);
         m_padStack->addWidget(scene->grid());
         m_sceneListLayout->insertWidget(m_sceneListLayout->count() - 1, scene->row());
-        connect(scene, &Scene::padSelected, this, &MainWindow::onPadClicked);
-        connect(scene->row(), &SceneRowWidget::deleteRequested, this, [this]() { deleteActiveScene(); });
-        for (SoundPadWidget* pad : scene->pads) {
-            connect(pad, &SoundPadWidget::padDropped, this, [this](int from, int to) { copyPad(from, to); });
-            connect(pad, &SoundPadWidget::filesDropped, this, [this]() { updateMainControls(); });
-        }
+        connectScene(scene);
     }
     m_config.activeSceneIdx = 0;
     m_config.activeSceneId = 0;
@@ -554,12 +598,7 @@ void MainWindow::addNewScene()
     m_scenes.push_back(scene);
     m_padStack->addWidget(scene->grid());
     m_sceneListLayout->insertWidget(m_sceneListLayout->count() - 1, scene->row());
-    connect(scene, &Scene::padSelected, this, &MainWindow::onPadClicked);
-    connect(scene->row(), &SceneRowWidget::deleteRequested, this, [this]() { deleteActiveScene(); });
-    for (SoundPadWidget* pad : scene->pads) {
-        connect(pad, &SoundPadWidget::padDropped, this, [this](int from, int to) { copyPad(from, to); });
-        connect(pad, &SoundPadWidget::filesDropped, this, [this]() { updateMainControls(); });
-    }
+    connectScene(scene);
     m_addScene->setEnabled(static_cast<unsigned int>(m_scenes.size()) < m_config.maxScenes);
     enableScene(m_scenes.size() - 1);
 }
@@ -1118,7 +1157,7 @@ void MainWindow::saveConfigAs()
 
 bool MainWindow::saveConfigTo(const QString& path, bool copyFiles)
 {
-    if (path.isEmpty()) {
+    if (path.isEmpty() || (m_loads && m_loads->isBusy())) {
         return false;
     }
     QString savePath = path;
@@ -1248,13 +1287,10 @@ void MainWindow::loadConfigFrom(const QString& path)
         const QString name = sceneObj.value(QStringLiteral("name")).toString();
         auto* scene = new Scene(&m_config, id, name, m_padStack, m_sceneListHost, this);
         scene->activeSoundIdx = sceneObj.value(QStringLiteral("activesound")).toInt(0);
+        connectScene(scene);
         for (SoundPadWidget* pad : scene->pads) {
             pad->loadFromJson(sceneObj);
-            connect(pad, &SoundPadWidget::padDropped, this, [this](int from, int to) { copyPad(from, to); });
-            connect(pad, &SoundPadWidget::filesDropped, this, [this]() { updateMainControls(); });
         }
-        connect(scene, &Scene::padSelected, this, &MainWindow::onPadClicked);
-        connect(scene->row(), &SceneRowWidget::deleteRequested, this, [this]() { deleteActiveScene(); });
         m_scenes.push_back(scene);
         m_padStack->addWidget(scene->grid());
         m_sceneListLayout->insertWidget(m_sceneListLayout->count() - 1, scene->row());
@@ -1354,8 +1390,79 @@ void MainWindow::clearActiveSample()
     }
 }
 
+void MainWindow::drainLoads(int budgetMs)
+{
+    if (!m_loads) {
+        return;
+    }
+    m_loads->drain(budgetMs, [this](SampleLoadResult result) {
+        if (SoundPadWidget* pad = findPad(result.job.sceneId, result.job.padId)) {
+            pad->submitDecoded(result.job.sampleIndex, result.job.generation, std::move(result.audio));
+        }
+    });
+}
+
+void MainWindow::refreshLoadUi()
+{
+    const bool busy = m_loads && m_loads->isBusy();
+    if (m_saveAction) {
+        m_saveAction->setEnabled(!busy);
+    }
+    if (m_saveAsAction) {
+        m_saveAsAction->setEnabled(!busy);
+    }
+    if (!m_loadBar || !m_loadLabel) {
+        return;
+    }
+    if (!busy) {
+        m_loadBar->hide();
+        m_loadLabel->hide();
+        if (windowTitle() != QStringLiteral("Feedra")) {
+            setWindowTitle(QStringLiteral("Feedra"));
+        }
+        return;
+    }
+    const int total = std::max(1, m_loads->total());
+    m_loadBar->setRange(0, total);
+    m_loadBar->setValue(std::clamp(m_loads->settled(), 0, total));
+    m_loadBar->show();
+    QString label = tr("Loading %1 / %2").arg(m_loads->settled()).arg(m_loads->total());
+    const QString file = m_loads->activeFile();
+    if (!file.isEmpty()) {
+        label += QStringLiteral(" · ") + file;
+    }
+    m_loadLabel->setText(label);
+    m_loadLabel->show();
+    setWindowTitle(tr("Feedra — Loading"));
+}
+
+void MainWindow::waitForLoads()
+{
+    while (m_loads && m_loads->isBusy()) {
+        const int before = m_loads->settled();
+        drainLoads(30);
+        refreshLoadUi();
+        if (m_loads->isBusy() && m_loads->settled() == before) {
+            QThread::msleep(2);
+        }
+    }
+    refreshLoadUi();
+}
+
+SoundPadWidget* MainWindow::findPad(int sceneId, int padId) const
+{
+    for (Scene* scene : m_scenes) {
+        if (scene->id == sceneId) {
+            return scene->padAt(padId);
+        }
+    }
+    return nullptr;
+}
+
 void MainWindow::tick()
 {
+    drainLoads(8);
+    refreshLoadUi();
     OpenALSoundPlayer::updateAll();
     for (Scene* scene : m_scenes) {
         if (scene->selectRequested) {
@@ -1430,6 +1537,7 @@ Scene* MainWindow::activeScene() const
 
 void MainWindow::closeEvent(QCloseEvent* event)
 {
+    waitForLoads();
     saveConfig();
     QMainWindow::closeEvent(event);
 }
