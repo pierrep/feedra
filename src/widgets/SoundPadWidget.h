@@ -97,6 +97,8 @@ public:
     void loadFromJson(const QJsonObject& sceneObj);
     void saveToJson(QJsonObject& sceneObj) const;
     void loadFiles(const QStringList& paths, bool clearExisting);
+    void setReverbSend(float send);
+    void setReverbSend2(float send);
     void clearPad();
     void copyFrom(SoundPadWidget& other);
     void removeSampleAt(int index);
@@ -157,6 +159,7 @@ private:
     bool m_finishSent = false;
     bool m_notifyWhenDone = false;
     float m_reverb = 0.0f;
+    float m_reverb2 = 0.0f;
     int m_sceneId = 0;
     int m_padId = 0;
     bool m_stream = true;

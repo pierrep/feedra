@@ -54,6 +54,8 @@ public:
     float getTotalDelay() const;
     float getReverbSend() const;
     void setReverbSend(float send);
+    float getReverbSend2() const;
+    void setReverbSend2(float send);
     void recalculateDelay(int id);
 
     void setRandomPlayback(bool val) { bRandomPlayback = val; }

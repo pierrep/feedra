@@ -1,12 +1,17 @@
 #include "SceneRowWidget.h"
 #include "Theme.h"
 
+#include <QAbstractButton>
+#include <QApplication>
+#include <QDrag>
 #include <QHBoxLayout>
 #include <QEvent>
 #include <QLineEdit>
+#include <QMimeData>
 #include <QMouseEvent>
 #include <QPainter>
 #include <QPaintEvent>
+#include <QPolygonF>
 #include <QPushButton>
 #include <QStyle>
 
@@ -17,6 +22,59 @@ void restyle(QWidget* widget)
     widget->style()->polish(widget);
     widget->update();
 }
+
+class ScenePlayButton : public QAbstractButton
+{
+public:
+    explicit ScenePlayButton(QWidget* parent = nullptr)
+        : QAbstractButton(parent)
+    {
+        setObjectName(QStringLiteral("ScenePlay"));
+        setFixedSize(22, 22);
+        setFocusPolicy(Qt::NoFocus);
+        setCursor(Qt::PointingHandCursor);
+    }
+
+    void setPlaying(bool playing)
+    {
+        if (m_playing == playing) {
+            return;
+        }
+        m_playing = playing;
+        update();
+    }
+
+protected:
+    void paintEvent(QPaintEvent*) override
+    {
+        QPainter p(this);
+        p.setRenderHint(QPainter::Antialiasing, true);
+        const Theme::Palette& theme = Theme::instance().palette();
+        p.setPen(Qt::NoPen);
+        p.setBrush(theme.sceneFill);
+        p.drawRect(rect());
+
+        p.setBrush(theme.sceneText);
+        const QRectF r = QRectF(rect()).adjusted(6, 5, -6, -5);
+        if (m_playing) {
+            const qreal barW = qMax(2.0, r.width() / 3.5);
+            p.drawRect(QRectF(r.left(), r.top(), barW, r.height()));
+            p.drawRect(QRectF(r.right() - barW, r.top(), barW, r.height()));
+        } else {
+            QPolygonF tri;
+            tri << r.topLeft() << r.bottomLeft() << QPointF(r.right(), r.center().y());
+            p.drawPolygon(tri);
+        }
+    }
+
+private:
+    bool m_playing = false;
+};
+}
+
+QString SceneRowWidget::dragMimeType()
+{
+    return QStringLiteral("application/x-feedra-scene");
 }
 
 SceneRowWidget::SceneRowWidget(int sceneId, const QString& name, QWidget* parent)
@@ -37,11 +95,7 @@ SceneRowWidget::SceneRowWidget(int sceneId, const QString& name, QWidget* parent
     m_name->setReadOnly(true);
     m_name->setFocusPolicy(Qt::NoFocus);
     m_name->installEventFilter(this);
-    m_play = new QPushButton(this);
-    m_play->setObjectName("ScenePlay");
-    m_play->setFixedSize(22, 22);
-    m_play->setCheckable(true);
-    m_play->setText(QStringLiteral("\u25B6"));
+    m_play = new ScenePlayButton(this);
 
     m_stop = new QPushButton(this);
     m_stop->setObjectName("SceneStop");
@@ -58,7 +112,7 @@ SceneRowWidget::SceneRowWidget(int sceneId, const QString& name, QWidget* parent
     layout->addWidget(m_stop);
     layout->addWidget(m_remove);
 
-    connect(m_play, &QPushButton::clicked, this, [this]() {
+    connect(m_play, &QAbstractButton::clicked, this, [this]() {
         emit playPauseRequested(m_id);
     });
     connect(m_stop, &QPushButton::clicked, this, [this]() {
@@ -68,7 +122,12 @@ SceneRowWidget::SceneRowWidget(int sceneId, const QString& name, QWidget* parent
         emit deleteRequested(m_id);
     });
     connect(m_name, &QLineEdit::editingFinished, this, &SceneRowWidget::finishEditing);
-    connect(&Theme::instance(), &Theme::changed, this, [this]() { update(); });
+    connect(&Theme::instance(), &Theme::changed, this, [this]() {
+        update();
+        if (m_play) {
+            m_play->update();
+        }
+    });
 }
 
 QString SceneRowWidget::sceneName() const
@@ -99,15 +158,29 @@ void SceneRowWidget::paintEvent(QPaintEvent*)
     QPainter painter(this);
     painter.setRenderHint(QPainter::Antialiasing, true);
     const Theme::Palette& theme = Theme::instance().palette();
-    painter.setPen(QPen(active ? theme.sceneActiveBorder : theme.sceneBorder, stroke));
-    painter.setBrush(active ? theme.sceneActiveFill : theme.sceneFill);
+    QColor fill = theme.sceneFill;
+    QColor border = theme.sceneBorder;
+    if (m_playing) {
+        fill = theme.padSelected;
+        border = active ? theme.sceneActiveBorder : theme.padSelected;
+    } else if (active) {
+        fill = theme.sceneActiveFill;
+        border = theme.sceneActiveBorder;
+    }
+    painter.setPen(QPen(border, stroke));
+    painter.setBrush(fill);
     painter.drawRoundedRect(box, 5, 5);
 }
 
 void SceneRowWidget::setPlaying(bool playing)
 {
-    m_play->setChecked(playing);
-    m_play->setText(playing ? QStringLiteral("\u23F8") : QStringLiteral("\u25B6"));
+    if (m_playing != playing) {
+        m_playing = playing;
+        setProperty("playing", playing);
+        restyle(this);
+        restyle(m_name);
+    }
+    static_cast<ScenePlayButton*>(m_play)->setPlaying(playing);
 }
 
 void SceneRowWidget::setInteractive(bool enabled)
@@ -159,7 +232,14 @@ bool SceneRowWidget::eventFilter(QObject* watched, QEvent* event)
         } else if (event->type() == QEvent::MouseButtonPress) {
             const auto* mouse = static_cast<QMouseEvent*>(event);
             if (mouse->button() == Qt::LeftButton && m_name->isReadOnly()) {
+                m_pressPos = m_name->mapTo(this, mouse->position().toPoint());
                 emit selected(m_id);
+            }
+        } else if (event->type() == QEvent::MouseMove) {
+            const auto* mouse = static_cast<QMouseEvent*>(event);
+            if ((mouse->buttons() & Qt::LeftButton) && m_name->isReadOnly()) {
+                startDragIfMoved(m_name->mapTo(this, mouse->position().toPoint()));
+                return true;
             }
         }
     }
@@ -169,7 +249,31 @@ bool SceneRowWidget::eventFilter(QObject* watched, QEvent* event)
 void SceneRowWidget::mousePressEvent(QMouseEvent* event)
 {
     if (event->button() == Qt::LeftButton) {
+        m_pressPos = event->pos();
         emit selected(m_id);
     }
     QWidget::mousePressEvent(event);
+}
+
+void SceneRowWidget::mouseMoveEvent(QMouseEvent* event)
+{
+    if (event->buttons() & Qt::LeftButton) {
+        startDragIfMoved(event->pos());
+        return;
+    }
+    QWidget::mouseMoveEvent(event);
+}
+
+void SceneRowWidget::startDragIfMoved(const QPoint& pos)
+{
+    if ((pos - m_pressPos).manhattanLength() < QApplication::startDragDistance()) {
+        return;
+    }
+    auto* drag = new QDrag(this);
+    auto* mime = new QMimeData();
+    mime->setData(dragMimeType(), QByteArray::number(m_id));
+    drag->setMimeData(mime);
+    drag->setPixmap(grab());
+    drag->setHotSpot(m_pressPos);
+    drag->exec(Qt::MoveAction);
 }

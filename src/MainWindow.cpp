@@ -3,10 +3,12 @@
 #include "SampleLoadQueue.h"
 #include "Scene.h"
 #include "Theme.h"
+#include "widgets/ReorderListHost.h"
 #include "widgets/SampleRowWidget.h"
 #include "widgets/SoundPadWidget.h"
 
 #include <QAction>
+#include <QApplication>
 #include <QCheckBox>
 #include <QCloseEvent>
 #include <QColorDialog>
@@ -45,6 +47,28 @@
 #include <cmath>
 #include <filesystem>
 
+namespace {
+
+QString defaultImpulsePath(const AppConfig& config)
+{
+    return QDir(config.dataDir()).filePath(QStringLiteral("ir/impulse.wav"));
+}
+
+std::filesystem::path toImpulsePath(const QString& path)
+{
+    return std::filesystem::path(path.toStdWString());
+}
+
+QString fromImpulsePath(const std::filesystem::path& path)
+{
+    if (path.empty()) {
+        return {};
+    }
+    return QString::fromStdWString(path.wstring());
+}
+
+}
+
 MainWindow::MainWindow(QWidget* parent)
     : QMainWindow(parent)
 {
@@ -53,6 +77,10 @@ MainWindow::MainWindow(QWidget* parent)
     m_config.setup();
     m_loads = new SampleLoadQueue(this);
     OpenALSoundPlayer::initialize();
+    OpenALSoundPlayer::setConvolutionGain(OpenALSoundPlayer::defaultConvolutionGain());
+    if (!OpenALSoundPlayer::setConvolutionImpulse(toImpulsePath(defaultImpulsePath(m_config)))) {
+        qWarning() << "Convolution impulse not loaded" << defaultImpulsePath(m_config);
+    }
     m_curDevice = QString::fromStdString(OpenALSoundPlayer::getDefaultDeviceString());
 
     buildMenus();
@@ -81,6 +109,9 @@ MainWindow::MainWindow(QWidget* parent)
     auto* deviceTimer = new QTimer(this);
     connect(deviceTimer, &QTimer::timeout, this, &MainWindow::checkAudioDevice);
     deviceTimer->start(1000);
+
+    // Arrow keys are otherwise consumed by the focused scroll area, slider or button before reaching this window.
+    qApp->installEventFilter(this);
 }
 
 MainWindow::~MainWindow()
@@ -208,13 +239,21 @@ void MainWindow::buildUi()
     sceneScroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
     sceneScroll->setVerticalScrollBarPolicy(Qt::ScrollBarAsNeeded);
     sceneScroll->viewport()->setAutoFillBackground(true);
-    m_sceneListHost = new QWidget(sceneScroll);
-    m_sceneListHost->setObjectName(QStringLiteral("SceneListHost"));
-    m_sceneListHost->setAttribute(Qt::WA_StyledBackground, true);
+    auto* sceneHost = new ReorderListHost(SceneRowWidget::dragMimeType(), sceneScroll);
+    sceneHost->setObjectName(QStringLiteral("SceneListHost"));
+    m_sceneListHost = sceneHost;
     m_sceneListLayout = new QVBoxLayout(m_sceneListHost);
     m_sceneListLayout->setContentsMargins(0, 0, 8, 0);
     m_sceneListLayout->addStretch();
     sceneScroll->setWidget(m_sceneListHost);
+    connect(sceneHost, &ReorderListHost::itemReordered, this, [this](int sceneId, int insertIndex) {
+        for (int i = 0; i < m_scenes.size(); ++i) {
+            if (m_scenes[i]->id == sceneId) {
+                moveScene(i, insertIndex);
+                return;
+            }
+        }
+    }, Qt::QueuedConnection); // after QDrag::exec returns, so the source row is still alive
     m_addScene = new QPushButton(QStringLiteral("+"), m_scenesPage);
     m_addScene->setObjectName(QStringLiteral("AddScene"));
     m_addScene->setFixedSize(44, 44);
@@ -246,14 +285,15 @@ void MainWindow::buildUi()
     sampleScroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
     sampleScroll->setVerticalScrollBarPolicy(Qt::ScrollBarAsNeeded);
     sampleScroll->viewport()->setAutoFillBackground(true);
-    auto* sampleHost = new SampleListHost(sampleScroll);
+    auto* sampleHost = new ReorderListHost(SampleRowWidget::dragMimeType(), sampleScroll);
+    sampleHost->setObjectName(QStringLiteral("SampleListHost"));
     m_sampleListLayout = new QVBoxLayout(sampleHost);
     m_sampleListLayout->setContentsMargins(0, 4, 8, 4);
     m_sampleListLayout->setSpacing(4);
     m_sampleListLayout->addStretch();
     sampleScroll->setWidget(sampleHost);
     editLayout->addWidget(sampleScroll, 1);
-    connect(sampleHost, &SampleListHost::sampleReordered, this, [this](int sampleId, int insertIndex) {
+    connect(sampleHost, &ReorderListHost::itemReordered, this, [this](int sampleId, int insertIndex) {
         auto* pad = activePad();
         if (!pad) {
             return;
@@ -377,6 +417,9 @@ void MainWindow::buildUi()
     m_maxDelay->setMinimumWidth(72);
     m_reverbSend = new QSlider(Qt::Horizontal, padPage);
     m_reverbSend->setRange(0, 1000);
+    m_reverbSend2 = new QSlider(Qt::Horizontal, padPage);
+    m_reverbSend2->setRange(0, 1000);
+    m_reverbSend2->setToolTip(tr("Send into the convolution reverb"));
     m_randomPlayback = new QCheckBox(tr("Random Playback"), padPage);
     m_randomPlayback->hide();
     padGrid->addWidget(new QLabel(tr("Min delay"), padPage), 0, 0);
@@ -385,14 +428,16 @@ void MainWindow::buildUi()
     padGrid->addWidget(m_maxDelay, 0, 3);
     padGrid->addWidget(new QLabel(tr("Reverb send"), padPage), 1, 0);
     padGrid->addWidget(m_reverbSend, 1, 1, 1, 3);
-    padGrid->addWidget(m_randomPlayback, 2, 0, 1, 4);
-    padGrid->setRowStretch(3, 1);
+    padGrid->addWidget(new QLabel(tr("Convolution send"), padPage), 2, 0);
+    padGrid->addWidget(m_reverbSend2, 2, 1, 1, 3);
+    padGrid->addWidget(m_randomPlayback, 3, 0, 1, 4);
+    padGrid->setRowStretch(4, 1);
     padGrid->setColumnStretch(1, 1);
     padGrid->setColumnStretch(3, 1);
 
     m_bottomStack->addWidget(samplePage);
     m_bottomStack->addWidget(padPage);
-    m_bottomPageHeight = std::max(m_infoLabel->minimumHeight() + 16, 108);
+    m_bottomPageHeight = std::max(m_infoLabel->minimumHeight() + 16, 148);
     m_bottomStack->setFixedHeight(m_bottomPageHeight);
 
     bottomLayout->addWidget(tabBar);
@@ -459,7 +504,13 @@ void MainWindow::buildUi()
     connect(m_reverbSend, &QSlider::valueChanged, this, [this](int v) {
         if (m_updatingControls) return;
         if (auto* pad = activePad()) {
-            pad->soundPlayer().setReverbSend(v / 1000.0f);
+            pad->setReverbSend(v / 1000.0f);
+        }
+    });
+    connect(m_reverbSend2, &QSlider::valueChanged, this, [this](int v) {
+        if (m_updatingControls) return;
+        if (auto* pad = activePad()) {
+            pad->setReverbSend2(v / 1000.0f);
         }
     });
     connect(m_randomPlayback, &QCheckBox::toggled, this, [this](bool on) {
@@ -535,7 +586,7 @@ void MainWindow::buildUi()
 void MainWindow::connectScene(Scene* scene)
 {
     connect(scene, &Scene::padSelected, this, &MainWindow::onPadClicked);
-    connect(scene->row(), &SceneRowWidget::deleteRequested, this, [this]() { deleteActiveScene(); });
+    connect(scene->row(), &SceneRowWidget::deleteRequested, this, &MainWindow::deleteScene);
     for (SoundPadWidget* pad : scene->pads) {
         pad->setLoadQueue(m_loads);
         connect(pad, &SoundPadWidget::padDropped, this, [this](int from, int to) { copyPad(from, to); });
@@ -603,24 +654,49 @@ void MainWindow::addNewScene()
     enableScene(m_scenes.size() - 1);
 }
 
-void MainWindow::deleteActiveScene()
+void MainWindow::deleteScene(int sceneId)
 {
-    Scene* scene = activeScene();
+    int idx = -1;
+    for (int i = 0; i < m_scenes.size(); ++i) {
+        if (m_scenes[i]->id == sceneId) {
+            idx = i;
+            break;
+        }
+    }
+    Scene* scene = idx >= 0 ? m_scenes[idx] : nullptr;
     if (!scene || m_scenes.size() == 1) {
         QMessageBox::warning(this, tr("Feedra"), tr("Cannot delete scene - must have at least one scene in project"));
         return;
     }
-    if (QMessageBox::question(this, tr("Delete scene"),
-            tr("Are you sure you want to delete %1?").arg(scene->name))
-        != QMessageBox::Yes) {
+    QString sceneName = scene->row() ? scene->row()->sceneName().trimmed() : scene->name.trimmed();
+    if (sceneName.isEmpty()) {
+        sceneName = scene->name.trimmed();
+    }
+    if (sceneName.isEmpty()) {
+        sceneName = tr("Scene %1").arg(scene->id + 1);
+    }
+    QMessageBox confirm(this);
+    confirm.setIcon(QMessageBox::Question);
+    confirm.setWindowTitle(tr("Delete scene"));
+    confirm.setText(tr("Are you sure you want to delete"));
+    confirm.setInformativeText(sceneName);
+    confirm.setStandardButtons(QMessageBox::Yes | QMessageBox::No);
+    confirm.setDefaultButton(QMessageBox::No);
+    if (confirm.exec() != QMessageBox::Yes) {
         return;
     }
-    const int idx = m_config.activeSceneIdx;
+    const bool deletingActive = (idx == m_config.activeSceneIdx);
     m_padStack->removeWidget(scene->grid());
     m_scenes.removeAt(idx);
     delete scene;
     m_addScene->setEnabled(true);
-    enableScene(0);
+    int nextIdx = m_config.activeSceneIdx;
+    if (deletingActive) {
+        nextIdx = qMin(idx, m_scenes.size() - 1);
+    } else if (idx < m_config.activeSceneIdx) {
+        nextIdx = m_config.activeSceneIdx - 1;
+    }
+    enableScene(nextIdx);
     updateSceneListLayout();
 }
 
@@ -653,6 +729,24 @@ void MainWindow::enableScene(int idx)
     }
 }
 
+void MainWindow::moveScene(int fromIndex, int insertIndex)
+{
+    if (fromIndex < 0 || fromIndex >= m_scenes.size()) {
+        return;
+    }
+    insertIndex = std::clamp(insertIndex, 0, static_cast<int>(m_scenes.size()));
+    const int dest = insertIndex > fromIndex ? insertIndex - 1 : insertIndex;
+    if (dest == fromIndex) {
+        return;
+    }
+    Scene* active = activeScene();
+    m_scenes.move(fromIndex, dest);
+    if (active) {
+        m_config.activeSceneIdx = static_cast<int>(m_scenes.indexOf(active));
+    }
+    updateSceneListLayout();
+}
+
 void MainWindow::updateSceneListLayout()
 {
     for (Scene* scene : m_scenes) {
@@ -671,6 +765,7 @@ void MainWindow::updateMainControls()
         m_minDelay->setValue(pad->soundPlayer().getMinDelay());
         m_maxDelay->setValue(pad->soundPlayer().getMaxDelay());
         m_reverbSend->setValue(static_cast<int>(pad->soundPlayer().getReverbSend() * 1000.0f));
+        m_reverbSend2->setValue(static_cast<int>(pad->soundPlayer().getReverbSend2() * 1000.0f));
         m_randomPlayback->setChecked(pad->soundPlayer().isPlayingRandom());
         m_randomPlayback->setVisible(pad->soundPlayer().player.size() > 1);
         const int cur = pad->soundPlayer().getCurSound();
@@ -695,12 +790,14 @@ void MainWindow::updateMainControls()
         m_minDelay->setEnabled(true);
         m_maxDelay->setEnabled(true);
         m_reverbSend->setEnabled(true);
+        m_reverbSend2->setEnabled(OpenALSoundPlayer::convolutionAvailable());
     } else {
         m_infoLabel->setText(tr("channels: —\nformat: —\nsub-format: —\nsample rate: —\npath: —\nNum sounds: —  Random delay: — secs"));
         m_randomPlayback->hide();
         m_minDelay->setEnabled(false);
         m_maxDelay->setEnabled(false);
         m_reverbSend->setEnabled(false);
+        m_reverbSend2->setEnabled(false);
     }
     m_updatingControls = false;
 
@@ -896,7 +993,26 @@ void MainWindow::buildSettingsPage()
             QString::fromStdString(OpenALSoundPlayer::reverbPresetLabel(i)),
             QString::fromStdString(OpenALSoundPlayer::reverbPresetId(i)));
     }
-    addRow(tr("Reverb"), m_reverbPreset);
+    addRow(tr("Reverb preset"), m_reverbPreset);
+
+    m_convolutionGain = new QSlider(Qt::Horizontal, host);
+    m_convolutionGain->setRange(0, 1000);
+    m_convolutionGain->setToolTip(tr("Output level of the convolution reverb. The bundled impulse is loud, so the default is low."));
+    addRow(tr("Convolution gain"), m_convolutionGain);
+
+    m_impulsePath = new QLineEdit(host);
+    m_impulseBrowse = new QPushButton(tr("Browse..."), host);
+    auto* impulseRow = new QWidget(host);
+    auto* impulseLayout = new QHBoxLayout(impulseRow);
+    impulseLayout->setContentsMargins(0, 0, 0, 0);
+    impulseLayout->addWidget(m_impulsePath, 1);
+    impulseLayout->addWidget(m_impulseBrowse);
+    addRow(tr("Impulse response"), impulseRow);
+
+    const bool convolution = OpenALSoundPlayer::convolutionAvailable();
+    m_convolutionGain->setEnabled(convolution);
+    m_impulsePath->setEnabled(convolution);
+    m_impulseBrowse->setEnabled(convolution);
 
     grid->setColumnStretch(1, 1);
     grid->setRowStretch(row, 1);
@@ -948,6 +1064,29 @@ void MainWindow::buildSettingsPage()
         if (!m_updatingControls) {
             OpenALSoundPlayer::setReverbPreset(index);
         }
+    });
+    connect(m_convolutionGain, &QSlider::valueChanged, this, [this](int value) {
+        if (!m_updatingControls) {
+            OpenALSoundPlayer::setConvolutionGain(value / 1000.0f);
+        }
+    });
+    connect(m_impulsePath, &QLineEdit::editingFinished, this, [this]() {
+        if (m_updatingControls) {
+            return;
+        }
+        applyImpulsePath(m_impulsePath->text().trimmed());
+    });
+    connect(m_impulseBrowse, &QPushButton::clicked, this, [this]() {
+        const QString start = m_impulsePath->text().isEmpty()
+            ? defaultImpulsePath(m_config)
+            : m_impulsePath->text();
+        const QString path = QFileDialog::getOpenFileName(this, tr("Impulse response"), start,
+            tr("Audio (*.wav *.aif *.aiff *.flac *.ogg);;All files (*.*)"));
+        if (path.isEmpty()) {
+            return;
+        }
+        m_impulsePath->setText(path);
+        applyImpulsePath(path);
     });
 }
 
@@ -1035,6 +1174,22 @@ void MainWindow::buildThemePage()
     connect(&Theme::instance(), &Theme::changed, this, &MainWindow::refreshThemeSwatches);
 }
 
+void MainWindow::applyImpulsePath(const QString& path)
+{
+    const QString chosen = path.isEmpty() ? defaultImpulsePath(m_config) : path;
+    if (toImpulsePath(chosen) == OpenALSoundPlayer::convolutionImpulsePath()) {
+        m_impulsePath->setText(chosen);
+        return;
+    }
+    if (!OpenALSoundPlayer::setConvolutionImpulse(toImpulsePath(chosen))) {
+        QMessageBox::warning(this, tr("Feedra"),
+            tr("Could not load the impulse response:\n%1").arg(chosen));
+        m_impulsePath->setText(fromImpulsePath(OpenALSoundPlayer::convolutionImpulsePath()));
+        return;
+    }
+    m_impulsePath->setText(fromImpulsePath(OpenALSoundPlayer::convolutionImpulsePath()));
+}
+
 void MainWindow::syncSettingsPage()
 {
     m_updatingControls = true;
@@ -1044,6 +1199,8 @@ void MainWindow::syncSettingsPage()
     m_gridRows->setValue(m_config.gridHeight);
     m_libraryPath->setText(m_config.defaultLibraryLocation);
     m_reverbPreset->setCurrentIndex(OpenALSoundPlayer::reverbPresetIndex());
+    m_convolutionGain->setValue(static_cast<int>(OpenALSoundPlayer::convolutionGain() * 1000.0f + 0.5f));
+    m_impulsePath->setText(fromImpulsePath(OpenALSoundPlayer::convolutionImpulsePath()));
     m_themePreset->setCurrentIndex(static_cast<int>(Theme::instance().id()));
     m_updatingControls = false;
     refreshThemeSwatches();
@@ -1088,6 +1245,19 @@ void MainWindow::applyAppSettings(const QJsonObject& global)
     const QString reverb = global.value(QStringLiteral("reverb")).toString();
     if (!reverb.isEmpty()) {
         OpenALSoundPlayer::setReverbPresetById(reverb.toStdString());
+    }
+    if (global.contains(QStringLiteral("convolutiongain"))) {
+        OpenALSoundPlayer::setConvolutionGain(static_cast<float>(global.value(QStringLiteral("convolutiongain")).toDouble(
+            OpenALSoundPlayer::defaultConvolutionGain())));
+    }
+    QString impulse = global.value(QStringLiteral("convolutionir")).toString();
+    if (impulse.isEmpty() || !QFile::exists(impulse)) {
+        impulse = defaultImpulsePath(m_config);
+    }
+    if (toImpulsePath(impulse) != OpenALSoundPlayer::convolutionImpulsePath()) {
+        if (!OpenALSoundPlayer::setConvolutionImpulse(toImpulsePath(impulse))) {
+            qWarning() << "Convolution impulse not loaded" << impulse;
+        }
     }
     if (global.contains(QStringLiteral("theme")) || global.contains(QStringLiteral("themecolors"))) {
         Theme::instance().load(global.value(QStringLiteral("theme")).toString(),
@@ -1185,6 +1355,8 @@ bool MainWindow::saveConfigTo(const QString& path, bool copyFiles)
     global.insert(QStringLiteral("library"), m_config.defaultLibraryLocation);
     global.insert(QStringLiteral("reverb"),
         QString::fromStdString(OpenALSoundPlayer::reverbPresetId(OpenALSoundPlayer::reverbPresetIndex())));
+    global.insert(QStringLiteral("convolutiongain"), static_cast<double>(OpenALSoundPlayer::convolutionGain()));
+    global.insert(QStringLiteral("convolutionir"), fromImpulsePath(OpenALSoundPlayer::convolutionImpulsePath()));
     global.insert(QStringLiteral("theme"), Theme::instance().idName());
     global.insert(QStringLiteral("themecolors"), Theme::instance().colorsJson());
     saveWindowLayout(global);
@@ -1542,37 +1714,52 @@ void MainWindow::closeEvent(QCloseEvent* event)
     QMainWindow::closeEvent(event);
 }
 
-void MainWindow::keyPressEvent(QKeyEvent* event)
+bool MainWindow::eventFilter(QObject* watched, QEvent* event)
 {
-    if (event->modifiers() & Qt::ControlModifier) {
-        QMainWindow::keyPressEvent(event);
-        return;
+    if (event->type() == QEvent::KeyPress && watched->isWidgetType()
+        && static_cast<QWidget*>(watched)->window() == this
+        && handleReorderKey(static_cast<QKeyEvent*>(event))) {
+        return true;
     }
-    if (m_page == Page::Main && m_sidebar == SidebarView::Scenes) {
-        if (event->key() == Qt::Key_Up && m_config.activeSceneIdx > 0) {
-            std::swap(m_scenes[m_config.activeSceneIdx], m_scenes[m_config.activeSceneIdx - 1]);
-            m_config.activeSceneIdx--;
-            updateSceneListLayout();
-            return;
-        }
-        if (event->key() == Qt::Key_Down && m_config.activeSceneIdx < m_scenes.size() - 1) {
-            std::swap(m_scenes[m_config.activeSceneIdx], m_scenes[m_config.activeSceneIdx + 1]);
-            m_config.activeSceneIdx++;
-            updateSceneListLayout();
-            return;
-        }
-    } else if (m_page == Page::Main && m_sidebar == SidebarView::Editor) {
-        if (auto* pad = activePad()) {
-            const int count = static_cast<int>(pad->soundPlayer().player.size());
-            if (event->key() == Qt::Key_Up && m_config.activeSampleIdx > 0) {
-                moveEditorSample(m_config.activeSampleIdx, m_config.activeSampleIdx - 1);
-                return;
-            }
-            if (event->key() == Qt::Key_Down && m_config.activeSampleIdx < count - 1) {
-                moveEditorSample(m_config.activeSampleIdx, m_config.activeSampleIdx + 2);
-                return;
-            }
-        }
+    return QMainWindow::eventFilter(watched, event);
+}
+
+bool MainWindow::handleReorderKey(QKeyEvent* event)
+{
+    if (m_page != Page::Main || (event->modifiers() & Qt::ControlModifier)) {
+        return false;
     }
-    QMainWindow::keyPressEvent(event);
+    if (event->key() != Qt::Key_Up && event->key() != Qt::Key_Down) {
+        return false;
+    }
+    QWidget* focus = QApplication::focusWidget();
+    if (auto* edit = qobject_cast<QLineEdit*>(focus); edit && !edit->isReadOnly()) {
+        return false;
+    }
+    if (qobject_cast<QAbstractSpinBox*>(focus) || qobject_cast<QComboBox*>(focus)) {
+        return false;
+    }
+
+    const bool up = event->key() == Qt::Key_Up;
+    if (m_sidebar == SidebarView::Scenes) {
+        const int idx = m_config.activeSceneIdx;
+        if (up && idx > 0) {
+            moveScene(idx, idx - 1);
+        } else if (!up && idx < m_scenes.size() - 1) {
+            moveScene(idx, idx + 2);
+        }
+        return true;
+    }
+    auto* pad = activePad();
+    if (!pad) {
+        return false;
+    }
+    const int idx = m_config.activeSampleIdx;
+    const int count = static_cast<int>(pad->soundPlayer().player.size());
+    if (up && idx > 0) {
+        moveEditorSample(idx, idx - 1);
+    } else if (!up && idx < count - 1) {
+        moveEditorSample(idx, idx + 2);
+    }
+    return true;
 }

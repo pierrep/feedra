@@ -55,6 +55,7 @@ const Role kRoles[] = {
     {"sceneActiveBorder", "Scenes", "Active scene border", &Theme::Palette::sceneActiveBorder},
     {"sceneText", "Scenes", "Scene text", &Theme::Palette::sceneText},
     {"sceneActiveText", "Scenes", "Active scene text", &Theme::Palette::sceneActiveText},
+    {"scenePlayingText", "Scenes", "Playing scene text", &Theme::Palette::scenePlayingText},
     {"sceneEditingBackground", "Scenes", "Scene name edit", &Theme::Palette::sceneEditingBackground},
     {"sceneEditingText", "Scenes", "Scene name text", &Theme::Palette::sceneEditingText},
 
@@ -116,6 +117,7 @@ Theme::Palette parchmentPalette()
     p.sceneActiveBorder = QColor(QStringLiteral("#65aecd"));
     p.sceneText = QColor(QStringLiteral("#f2f2f2"));
     p.sceneActiveText = QColor(QStringLiteral("#f2f2f2"));
+    p.scenePlayingText = QColor(QStringLiteral("#1c1410"));
     p.sceneEditingBackground = QColor(QStringLiteral("#f4ebe3"));
     p.sceneEditingText = QColor(QStringLiteral("#1c1410"));
     p.sampleBackground = QColor(QStringLiteral("#404040"));
@@ -172,6 +174,7 @@ Theme::Palette nightPalette()
     p.sceneActiveBorder = QColor(QStringLiteral("#7ec4d6"));
     p.sceneText = QColor(QStringLiteral("#f2ebe4"));
     p.sceneActiveText = QColor(QStringLiteral("#f3e6d8"));
+    p.scenePlayingText = QColor(QStringLiteral("#1a1614"));
     p.sceneEditingBackground = QColor(QStringLiteral("#3a312b"));
     p.sceneEditingText = QColor(QStringLiteral("#f3e6d8"));
     p.sampleBackground = QColor(QStringLiteral("#2e2a27"));
@@ -228,6 +231,7 @@ Theme::Palette forestPalette()
     p.sceneActiveBorder = QColor(QStringLiteral("#2f7f86"));
     p.sceneText = QColor(QStringLiteral("#f4f7ec"));
     p.sceneActiveText = QColor(QStringLiteral("#172016"));
+    p.scenePlayingText = QColor(QStringLiteral("#172016"));
     p.sceneEditingBackground = QColor(QStringLiteral("#eef3e4"));
     p.sceneEditingText = QColor(QStringLiteral("#172016"));
     p.sampleBackground = QColor(QStringLiteral("#2f3b2a"));
@@ -284,6 +288,7 @@ Theme::Palette inkPalette()
     p.sceneActiveBorder = QColor(QStringLiteral("#2b6cb0"));
     p.sceneText = QColor(QStringLiteral("#f7f4ee"));
     p.sceneActiveText = QColor(QStringLiteral("#1b1e24"));
+    p.scenePlayingText = QColor(QStringLiteral("#1b1e24"));
     p.sceneEditingBackground = QColor(QStringLiteral("#fbf9f4"));
     p.sceneEditingText = QColor(QStringLiteral("#1b1e24"));
     p.sampleBackground = QColor(QStringLiteral("#243044"));
@@ -462,12 +467,23 @@ QString Theme::styleSheet() const
         "    color: %7;\n"
         "}\n"
         "QCheckBox { color: %2; }\n"
-        "QLabel { color: %2; }\n")
+        "QLabel { color: %2; }\n"
+        "QMessageBox {\n"
+        "    background-color: %1;\n"
+        "    color: %2;\n"
+        "}\n"
+        "QMessageBox QLabel { color: %2; }\n")
         .arg(hex(p.background), hex(p.text), hex(p.menuBackground), hex(p.menuText),
             hex(p.panelBorder), hex(p.selection), hex(p.selectionText));
 
     qss += QStringLiteral(
         "QWidget#SoundPad, QWidget#PadCard { background: transparent; border: none; }\n"
+        "QPushButton#ScenePlay, QPushButton#ScenePlay:hover, QPushButton#ScenePlay:pressed,\n"
+        "QPushButton#ScenePlay:checked, QPushButton#ScenePlay:focus {\n"
+        "    background: %7;\n"
+        "    color: %8;\n"
+        "    border: none;\n"
+        "}\n"
         "QPushButton#SceneStop { background: %1; color: %2; border: none; }\n"
         "QLineEdit#PadName { background: transparent; border: none; color: %2; padding: 0; }\n"
         "QLineEdit#PadName:focus { background: %3; border: 1px solid %4; }\n"
@@ -475,21 +491,23 @@ QString Theme::styleSheet() const
         "QSlider#PadVolume::groove:horizontal { height: 6px; background: %5; border-radius: 3px; }\n"
         "QSlider#PadVolume::handle:horizontal { background: %6; width: 12px; margin: -4px 0; border-radius: 6px; }\n")
         .arg(hex(p.stopArmed), hex(p.text), hex(p.fieldBackground), hex(p.focusBorder),
-            hex(p.sliderGroove), hex(p.sliderHandle));
+            hex(p.sliderGroove), hex(p.sliderHandle), hex(p.sceneFill), hex(p.sceneText));
 
     qss += QStringLiteral(
         "QWidget#SceneRow { background: transparent; color: %1; border: none; }\n"
         "QLineEdit#SceneName { background: transparent; border: none; color: %1; padding: 0; }\n"
         "QWidget#SceneRow[active=\"true\"] QLineEdit#SceneName { color: %2; }\n"
+        "QWidget#SceneRow[playing=\"true\"] QLineEdit#SceneName { color: %6; }\n"
         "QLineEdit#SceneName[editing=\"true\"],\n"
-        "QWidget#SceneRow[active=\"true\"] QLineEdit#SceneName[editing=\"true\"] {\n"
-        "    background: %3;\n"
-        "    border: 1px solid %4;\n"
-        "    color: %5;\n"
-        "    padding: 2px 4px;\n"
-        "}\n")
+        "QWidget#SceneRow[active=\"true\"] QLineEdit#SceneName[editing=\"true\"],\n"
+        "QWidget#SceneRow[playing=\"true\"] QLineEdit#SceneName[editing=\"true\"] {\n"
+            "    background: %3;\n"
+            "    border: 1px solid %4;\n"
+            "    color: %5;\n"
+            "    padding: 2px 4px;\n"
+            "}\n")
         .arg(hex(p.sceneText), hex(p.sceneActiveText), hex(p.sceneEditingBackground),
-            hex(p.fieldBorder), hex(p.sceneEditingText));
+            hex(p.fieldBorder), hex(p.sceneEditingText), hex(p.scenePlayingText));
 
     qss += QStringLiteral(
         "QPushButton#AddScene, QPushButton#AddSample, QPushButton#SceneDelete {\n"
@@ -504,7 +522,7 @@ QString Theme::styleSheet() const
             hex(p.sampleBackground), hex(p.sampleBorder), hex(p.sampleText));
     qss += QStringLiteral(
         "QWidget#SampleRow QLabel#SampleGrip { color: %1; font-size: 14px; }\n"
-        "QFrame#SampleDropIndicator { background: %2; border: none; }\n"
+        "QFrame#ListDropIndicator { background: %2; border: none; }\n"
         "QWidget#SampleRow QProgressBar { background: %3; border: none; border-radius: 3px; }\n"
         "QWidget#SampleRow QProgressBar::chunk { background: %4; border-radius: 3px; }\n"
         "QProgressBar#LoadProgress { background: %3; border: none; border-radius: 3px; }\n"

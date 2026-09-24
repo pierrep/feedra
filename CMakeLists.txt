@@ -40,6 +40,7 @@ set(FEEDRA_SOURCES
     src/widgets/SoundPadWidget.cpp
     src/widgets/SceneRowWidget.cpp
     src/widgets/SampleRowWidget.cpp
+    src/widgets/ReorderListHost.cpp
     resources/resources.qrc
 )
 

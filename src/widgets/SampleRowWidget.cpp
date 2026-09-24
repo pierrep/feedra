@@ -2,27 +2,20 @@
 
 #include <QApplication>
 #include <QDrag>
-#include <QDragEnterEvent>
-#include <QDragLeaveEvent>
-#include <QDragMoveEvent>
-#include <QDropEvent>
 #include <QFileInfo>
-#include <QFrame>
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QMimeData>
 #include <QMouseEvent>
 #include <QProgressBar>
 #include <QResizeEvent>
-#include <QScrollArea>
-#include <QScrollBar>
 #include <QSizePolicy>
 #include <QStyle>
-#include <QVBoxLayout>
 #include <algorithm>
 
-namespace {
-const QString kSampleReorderMime = QStringLiteral("application/x-feedra-sample");
+QString SampleRowWidget::dragMimeType()
+{
+    return QStringLiteral("application/x-feedra-sample");
 }
 
 SampleRowWidget::SampleRowWidget(int sampleId, const QString& path, QWidget* parent)
@@ -114,7 +107,7 @@ void SampleRowWidget::mouseMoveEvent(QMouseEvent* event)
     m_dragging = true;
     auto* drag = new QDrag(this);
     auto* mime = new QMimeData();
-    mime->setData(kSampleReorderMime, QByteArray::number(m_id));
+    mime->setData(dragMimeType(), QByteArray::number(m_id));
     drag->setMimeData(mime);
     drag->setPixmap(grab());
     drag->setHotSpot(m_pressPos);
@@ -128,128 +121,4 @@ void SampleRowWidget::mouseReleaseEvent(QMouseEvent* event)
     }
     m_dragging = false;
     QWidget::mouseReleaseEvent(event);
-}
-
-SampleListHost::SampleListHost(QWidget* parent)
-    : QWidget(parent)
-{
-    setObjectName(QStringLiteral("SampleListHost"));
-    setAttribute(Qt::WA_StyledBackground, true);
-    setAcceptDrops(true);
-
-    m_indicator = new QFrame(this);
-    m_indicator->setObjectName(QStringLiteral("SampleDropIndicator"));
-    m_indicator->setAttribute(Qt::WA_StyledBackground, true);
-    m_indicator->setFixedHeight(3);
-    m_indicator->setAttribute(Qt::WA_TransparentForMouseEvents);
-    m_indicator->hide();
-}
-
-int SampleListHost::insertionIndexAt(const QPoint& pos) const
-{
-    const auto* box = qobject_cast<QVBoxLayout*>(layout());
-    if (!box) {
-        return 0;
-    }
-    int index = 0;
-    for (int i = 0; i < box->count(); ++i) {
-        auto* row = qobject_cast<SampleRowWidget*>(box->itemAt(i)->widget());
-        if (!row) {
-            continue;
-        }
-        if (pos.y() < row->geometry().center().y()) {
-            return index;
-        }
-        ++index;
-    }
-    return index;
-}
-
-void SampleListHost::placeIndicator(int insertIndex)
-{
-    const auto* box = qobject_cast<QVBoxLayout*>(layout());
-    if (!box) {
-        return;
-    }
-    const QMargins margins = box->contentsMargins();
-    int y = margins.top();
-    int seen = 0;
-    for (int i = 0; i < box->count(); ++i) {
-        auto* row = qobject_cast<SampleRowWidget*>(box->itemAt(i)->widget());
-        if (!row) {
-            continue;
-        }
-        if (seen == insertIndex) {
-            y = row->geometry().top() - box->spacing() / 2 - m_indicator->height() / 2;
-            break;
-        }
-        ++seen;
-        y = row->geometry().bottom() + box->spacing() / 2 - m_indicator->height() / 2;
-    }
-    m_indicator->setGeometry(margins.left(), y,
-        std::max(0, width() - margins.left() - margins.right()), m_indicator->height());
-    m_indicator->raise();
-    m_indicator->show();
-}
-
-void SampleListHost::hideIndicator()
-{
-    m_indicator->hide();
-}
-
-void SampleListHost::dragEnterEvent(QDragEnterEvent* event)
-{
-    if (!event->mimeData()->hasFormat(kSampleReorderMime)) {
-        event->ignore();
-        return;
-    }
-    event->setDropAction(Qt::MoveAction);
-    event->accept();
-    placeIndicator(insertionIndexAt(event->position().toPoint()));
-}
-
-void SampleListHost::dragMoveEvent(QDragMoveEvent* event)
-{
-    if (!event->mimeData()->hasFormat(kSampleReorderMime)) {
-        event->ignore();
-        return;
-    }
-    event->setDropAction(Qt::MoveAction);
-    event->accept();
-    const QPoint pos = event->position().toPoint();
-    placeIndicator(insertionIndexAt(pos));
-
-    auto* scroll = qobject_cast<QScrollArea*>(parentWidget() ? parentWidget()->parentWidget() : nullptr);
-    if (!scroll) {
-        return;
-    }
-    const QPoint viewportPos = mapTo(scroll->viewport(), pos);
-    auto* bar = scroll->verticalScrollBar();
-    constexpr int kMargin = 28;
-    constexpr int kStep = 16;
-    if (viewportPos.y() < kMargin) {
-        bar->setValue(bar->value() - kStep);
-    } else if (viewportPos.y() > scroll->viewport()->height() - kMargin) {
-        bar->setValue(bar->value() + kStep);
-    }
-}
-
-void SampleListHost::dragLeaveEvent(QDragLeaveEvent* event)
-{
-    hideIndicator();
-    QWidget::dragLeaveEvent(event);
-}
-
-void SampleListHost::dropEvent(QDropEvent* event)
-{
-    hideIndicator();
-    if (!event->mimeData()->hasFormat(kSampleReorderMime)) {
-        event->ignore();
-        return;
-    }
-    const int sampleId = event->mimeData()->data(kSampleReorderMime).toInt();
-    const int insertIndex = insertionIndexAt(event->position().toPoint());
-    event->setDropAction(Qt::MoveAction);
-    event->accept();
-    emit sampleReordered(sampleId, insertIndex);
 }

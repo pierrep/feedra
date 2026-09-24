@@ -372,6 +372,21 @@ void SoundPlayer::setReverbSend(float send)
     }
 }
 
+float SoundPlayer::getReverbSend2() const
+{
+    if (player.empty()) {
+        return 0;
+    }
+    return player[curSound]->audioPlayer->getReverbSend2();
+}
+
+void SoundPlayer::setReverbSend2(float send)
+{
+    for (AudioSample* sample : player) {
+        sample->audioPlayer->setReverbSend2(send);
+    }
+}
+
 void SoundPlayer::onPlaybackEnded(OpenALSoundPlayer* ended)
 {
     for (AudioSample* sample : player) {

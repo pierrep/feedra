@@ -20,6 +20,13 @@ QWidget#SoundPad, QWidget#PadCard {
     border: none;
 }
 
+QPushButton#ScenePlay, QPushButton#ScenePlay:hover, QPushButton#ScenePlay:pressed,
+QPushButton#ScenePlay:checked, QPushButton#ScenePlay:focus {
+    background: #404040;
+    color: #f2f2f2;
+    border: none;
+}
+
 QPushButton#SceneStop {
     background: #faa078;
     border: none;
@@ -69,6 +76,10 @@ QLineEdit#SceneName {
     padding: 0;
 }
 
+QWidget#SceneRow[playing="true"] QLineEdit#SceneName {
+    color: #1c1410;
+}
+
 QLineEdit#SceneName[editing="true"] {
     background: #f4ebe3;
     border: 1px solid #68533e;
@@ -99,7 +110,7 @@ QWidget#SampleRow QLabel#SampleGrip {
     font-size: 14px;
 }
 
-QFrame#SampleDropIndicator {
+QFrame#ListDropIndicator {
     background: #ff6464;
     border: none;
 }

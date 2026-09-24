@@ -122,6 +122,8 @@ public:
     bool isStreamEnd() const { return stream_end; }
     float getReverbSend() const { return reverbSend; }
     void setReverbSend(float send) { reverbSend = send; }
+    float getReverbSend2() const { return reverbSend2; }
+    void setReverbSend2(float send) { reverbSend2 = send; }
 
     static int reverbPresetCount();
     static std::string reverbPresetId(int index);
@@ -129,6 +131,13 @@ public:
     static int reverbPresetIndex();
     static void setReverbPreset(int index);
     static bool setReverbPresetById(const std::string& id);
+
+    static float defaultConvolutionGain();
+    static float convolutionGain();
+    static void setConvolutionGain(float gain);
+    static bool convolutionAvailable();
+    static std::filesystem::path convolutionImpulsePath();
+    static bool setConvolutionImpulse(const std::filesystem::path& path);
 
     int getFileFormat() const { return fileformat; }
     ALenum getOpenALFormat() const { return openALformat; }
@@ -232,7 +241,8 @@ private:
 
     bool spatialisedStereo = false;
 
-    ALuint filter = 0;
+    ALuint filters[2] = { 0, 0 };
     float reverbSend = 0.0f;
+    float reverbSend2 = 0.0f;
     bool bUseFilter = false;
 };

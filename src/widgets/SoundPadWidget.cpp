@@ -589,6 +589,7 @@ bool SoundPadWidget::commitDecoded(int slotIndex, DecodedAudio audio)
     setupLoadedSound(slot.path);
     m_player.recalculateDelay(static_cast<int>(m_player.player.size()) - 1);
     m_player.setReverbSend(m_reverb);
+    m_player.setReverbSend2(m_reverb2);
     return true;
 }
 
@@ -671,8 +672,10 @@ void SoundPadWidget::loadFromJson(const QJsonObject& sceneObj)
     m_sampleRate = pad.value(QStringLiteral("samplerate")).toInt();
     m_channels = pad.value(QStringLiteral("channels")).toInt();
     m_reverb = static_cast<float>(pad.value(QStringLiteral("reverbsend")).toDouble());
+    m_reverb2 = static_cast<float>(pad.value(QStringLiteral("reverbsend2")).toDouble());
     m_player.setup(m_config, m_padId);
     m_player.setReverbSend(m_reverb);
+    m_player.setReverbSend2(m_reverb2);
 
     const QJsonObject samples = pad.value(QStringLiteral("samples")).toObject();
     for (int i = 0;; ++i) {
@@ -709,6 +712,7 @@ void SoundPadWidget::saveToJson(QJsonObject& sceneObj) const
     pad.insert(QStringLiteral("playrandom"), m_player.bRandomPlayback);
     pad.insert(QStringLiteral("panrandom"), m_player.isRandomPan());
     pad.insert(QStringLiteral("reverbsend"), m_player.getReverbSend());
+    pad.insert(QStringLiteral("reverbsend2"), m_player.player.empty() ? m_reverb2 : m_player.getReverbSend2());
     pad.insert(QStringLiteral("mindelay"), m_player.minDelay);
     pad.insert(QStringLiteral("maxdelay"), m_player.maxDelay);
 
@@ -768,6 +772,19 @@ void SoundPadWidget::clearPad()
     m_playhead->setTimeText(QString());
     m_playhead->setVisible(false);
     m_reverb = 0.0f;
+    m_reverb2 = 0.0f;
+}
+
+void SoundPadWidget::setReverbSend(float send)
+{
+    m_reverb = send;
+    m_player.setReverbSend(send);
+}
+
+void SoundPadWidget::setReverbSend2(float send)
+{
+    m_reverb2 = send;
+    m_player.setReverbSend2(send);
 }
 
 void SoundPadWidget::copyFrom(SoundPadWidget& other)
@@ -786,6 +803,9 @@ void SoundPadWidget::copyFrom(SoundPadWidget& other)
     const float reverb = (other.isLoading() || other.m_player.player.empty())
         ? other.m_reverb
         : other.m_player.getReverbSend();
+    const float reverb2 = (other.isLoading() || other.m_player.player.empty())
+        ? other.m_reverb2
+        : other.m_player.getReverbSend2();
 
     clearPad();
     m_stream = stream;
@@ -799,6 +819,7 @@ void SoundPadWidget::copyFrom(SoundPadWidget& other)
     setSoundName(name);
     setPadVolume(volume);
     m_reverb = reverb;
+    m_reverb2 = reverb2;
     m_notifyWhenDone = true;
     for (const LoadSlot& spec : specs) {
         enqueueSample(spec.path, spec.pitch, spec.gain, spec.pan, spec.panRandom || randomPan);

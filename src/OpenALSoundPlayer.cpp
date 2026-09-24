@@ -11,8 +11,10 @@
 #include <map>
 #include <thread>
 #include <chrono>
+#include "AL/alext.h"
 #include "AL/efx.h"
 #include "AL/efx-presets.h"
+#include <climits>
 
 #ifdef FEEDRA_USING_MPG123
 #ifdef _WIN32
@@ -28,9 +30,19 @@ static ALCdevice * alDevice = nullptr;
 static ALCcontext * alContext = nullptr;
 static std::atomic<bool> g_alFloat32{false};
 
+#ifndef AL_SOFT_convolution_effect
+#define AL_SOFT_convolution_effect
+#define AL_EFFECT_CONVOLUTION_SOFT 0xA000
+#endif
+
 static bool bUseEffects = false;
-static ALuint effects[2] = { 0, 0 };
-static ALuint effectSlots[2] = { 0, 0 };
+static bool bUseConvolution = false;
+static int g_slotCount = 0;
+static ALuint irBuffer = 0;
+static float g_convolutionGain = 1.0f / 16.0f;
+static std::filesystem::path g_irPath;
+static ALuint effects[3] = { 0, 0, 0 };
+static ALuint effectSlots[3] = { 0, 0, 0 };
 static EFXEAXREVERBPROPERTIES reverbs[2] = {
     EFX_REVERB_PRESET_ALLEY,
     EFX_REVERB_PRESET_ALLEY
@@ -314,6 +326,107 @@ static string getMpg123EncodingString(int encoding) {
 	}
 }
 #endif
+
+static SNDFILE* openImpulseFile(const std::filesystem::path& filename, SF_INFO* sfinfo)
+{
+#ifdef _WIN32
+    return sf_wchar_open(filename.wstring().c_str(), SFM_READ, sfinfo);
+#else
+    return sf_open(filename.string().c_str(), SFM_READ, sfinfo);
+#endif
+}
+
+static ALuint loadImpulseBuffer(const std::filesystem::path& filename)
+{
+    SF_INFO sfinfo;
+    std::memset(&sfinfo, 0, sizeof(sfinfo));
+    SNDFILE* sndfile = openImpulseFile(filename, &sfinfo);
+    if (!sndfile) {
+        qWarning() << "Could not open impulse response" << filename.string().c_str() << sf_strerror(nullptr);
+        return 0;
+    }
+    if (sfinfo.frames < 1 || sfinfo.frames > static_cast<sf_count_t>(INT_MAX / sizeof(float)) / sfinfo.channels) {
+        qWarning() << "Bad sample count in impulse response" << filename.string().c_str() << sfinfo.frames;
+        sf_close(sndfile);
+        return 0;
+    }
+
+    ALenum format = AL_NONE;
+    if (sfinfo.channels == 1) {
+        format = AL_FORMAT_MONO_FLOAT32;
+    } else if (sfinfo.channels == 2) {
+        format = AL_FORMAT_STEREO_FLOAT32;
+    } else if (sfinfo.channels == 3) {
+        if (sf_command(sndfile, SFC_WAVEX_GET_AMBISONIC, nullptr, 0) == SF_AMBISONIC_B_FORMAT) {
+            format = AL_FORMAT_BFORMAT2D_FLOAT32;
+        }
+    } else if (sfinfo.channels == 4) {
+        if (sf_command(sndfile, SFC_WAVEX_GET_AMBISONIC, nullptr, 0) == SF_AMBISONIC_B_FORMAT) {
+            format = AL_FORMAT_BFORMAT3D_FLOAT32;
+        }
+    }
+    if (!format) {
+        qWarning() << "Unsupported impulse response channel count" << sfinfo.channels;
+        sf_close(sndfile);
+        return 0;
+    }
+
+    qInfo() << "Loading impulse response:" << filename.string().c_str()
+            << sfinfo.samplerate << "hz" << static_cast<long long>(sfinfo.frames) << "frames";
+
+    std::vector<float> samples(static_cast<size_t>(sfinfo.frames * sfinfo.channels));
+    const sf_count_t numFrames = sf_readf_float(sndfile, samples.data(), sfinfo.frames);
+    sf_close(sndfile);
+    if (numFrames < 1) {
+        qWarning() << "Failed to read impulse response" << filename.string().c_str();
+        return 0;
+    }
+
+    ALuint buffer = 0;
+    alGetError();
+    alGenBuffers(1, &buffer);
+    const ALsizei numBytes = static_cast<ALsizei>(numFrames * sfinfo.channels) * static_cast<ALsizei>(sizeof(float));
+    alBufferData(buffer, format, samples.data(), numBytes, sfinfo.samplerate);
+    const ALenum err = alGetError();
+    if (err != AL_NO_ERROR) {
+        qWarning() << "OpenAL error loading impulse response:" << alGetString(err);
+        if (buffer && alIsBuffer(buffer)) {
+            alDeleteBuffers(1, &buffer);
+        }
+        return 0;
+    }
+    return buffer;
+}
+
+static ALuint createConvolutionEffect(ALuint effect)
+{
+    alGetError();
+    alEffecti(effect, AL_EFFECT_TYPE, AL_EFFECT_CONVOLUTION_SOFT);
+    const ALenum err = alGetError();
+    if (err != AL_NO_ERROR) {
+        qWarning() << "Convolution reverb is not supported:" << alGetString(err);
+        return 0;
+    }
+    qInfo() << "Convolution reverb effect created";
+    return effect;
+}
+
+static bool applyConvolutionSlot()
+{
+    if (!bUseConvolution || effectSlots[2] == 0 || effects[2] == 0 || irBuffer == 0) {
+        return false;
+    }
+    alGetError();
+    alAuxiliaryEffectSloti(effectSlots[2], AL_BUFFER, static_cast<ALint>(irBuffer));
+    alAuxiliaryEffectSlotf(effectSlots[2], AL_EFFECTSLOT_GAIN, g_convolutionGain);
+    alAuxiliaryEffectSloti(effectSlots[2], AL_EFFECTSLOT_EFFECT, static_cast<ALint>(effects[2]));
+    const ALenum err = alGetError();
+    if (err != AL_NO_ERROR) {
+        qWarning() << "Failed to apply convolution reverb:" << alGetString(err);
+        return false;
+    }
+    return true;
+}
 
 /* LoadEffect loads the given initial reverb properties into the given OpenAL
  * effect object, and returns non-zero on success.
@@ -670,6 +783,63 @@ bool OpenALSoundPlayer::setReverbPresetById(const std::string& id)
     return false;
 }
 
+float OpenALSoundPlayer::defaultConvolutionGain()
+{
+    return 1.0f / 16.0f;
+}
+
+float OpenALSoundPlayer::convolutionGain()
+{
+    return g_convolutionGain;
+}
+
+void OpenALSoundPlayer::setConvolutionGain(float gain)
+{
+    if (gain < 0.0f) {
+        gain = 0.0f;
+    } else if (gain > 1.0f) {
+        gain = 1.0f;
+    }
+    g_convolutionGain = gain;
+    if (bUseConvolution && effectSlots[2] != 0 && irBuffer != 0) {
+        alAuxiliaryEffectSlotf(effectSlots[2], AL_EFFECTSLOT_GAIN, g_convolutionGain);
+        alGetError();
+    }
+}
+
+bool OpenALSoundPlayer::convolutionAvailable()
+{
+    return bUseConvolution;
+}
+
+std::filesystem::path OpenALSoundPlayer::convolutionImpulsePath()
+{
+    return g_irPath;
+}
+
+bool OpenALSoundPlayer::setConvolutionImpulse(const std::filesystem::path& path)
+{
+    if (!bUseConvolution || path.empty()) {
+        return false;
+    }
+    const ALuint buffer = loadImpulseBuffer(path);
+    if (!buffer) {
+        return false;
+    }
+    const ALuint previous = irBuffer;
+    irBuffer = buffer;
+    if (!applyConvolutionSlot()) {
+        irBuffer = previous;
+        alDeleteBuffers(1, &buffer);
+        return false;
+    }
+    g_irPath = path;
+    if (previous != 0 && previous != buffer) {
+        alDeleteBuffers(1, &previous);
+    }
+    return true;
+}
+
 #define BUFFER_STREAM_SIZE 4096
 
 
@@ -694,6 +864,7 @@ OpenALSoundPlayer::OpenALSoundPlayer(){
     spatialisedStereo = false;
     bUseFilter = false;
     reverbSend      = 0.0f;
+    reverbSend2     = 0.0f;
 #ifdef FEEDRA_USING_MPG123
 	mp3streamf		= 0;
 #endif
@@ -1034,24 +1205,32 @@ void OpenALSoundPlayer::initialize(){
             } else {
                 qInfo() << "Device supports " << num_sends <<" effect sends";
 
-                /* Generate FX slots */
-                alGenEffects(2, effects);
+                /* Generate FX slots. The third effect is the convolution reverb. */
+                alGenEffects(3, effects);
                 if(!LoadEffect(effects[0], &reverbs[0]) || !LoadEffect(effects[1], &reverbs[1]))
                 {
                     qCritical( ) <<  "Failed to load effects, aborting...";
                     bUseEffects = false;
-                    alDeleteEffects(2, effects);
+                    alDeleteEffects(3, effects);
+                    effects[0] = effects[1] = effects[2] = 0;
                     close();
                     return;
                 }
 
-                /* Create the effect slot objects, one for each "active" effect. */
-                alGenAuxiliaryEffectSlots(2, effectSlots);
+                bUseConvolution = createConvolutionEffect(effects[2]) != 0;
+                if (!bUseConvolution) {
+                    alDeleteEffects(1, &effects[2]);
+                    effects[2] = 0;
+                }
+
+                g_slotCount = bUseConvolution ? 3 : 2;
+                alGenAuxiliaryEffectSlots(g_slotCount, effectSlots);
 
                 /* Tell the effect slots to use the loaded effect objects, with slot 0 for
                  * Zone 0 and slot 1 for Zone 1. Note that this effectively copies the
                  * effect properties. Modifying or deleting the effect object afterward
                  * won't directly affect the effect slot until they're reapplied like this.
+                 * Slot 2 receives the impulse response when one is loaded.
                  */
                 alAuxiliaryEffectSloti(effectSlots[0], AL_EFFECTSLOT_EFFECT, (ALint)effects[0]);
                 alAuxiliaryEffectSloti(effectSlots[1], AL_EFFECTSLOT_EFFECT, (ALint)effects[1]);
@@ -1102,9 +1281,18 @@ void OpenALSoundPlayer::close(){
 			mpg123_exit();
 #endif
             if(bUseEffects) {
-                alDeleteAuxiliaryEffectSlots(2, effectSlots);
-                alDeleteEffects(2, effects);
+                if (g_slotCount > 0) {
+                    alDeleteAuxiliaryEffectSlots(g_slotCount, effectSlots);
+                    alDeleteEffects(g_slotCount, effects);
+                }
+                if (irBuffer != 0) {
+                    alDeleteBuffers(1, &irBuffer);
+                    irBuffer = 0;
+                }
+                g_irPath.clear();
                 bUseEffects = false;
+                bUseConvolution = false;
+                g_slotCount = 0;
             }
 
 			alcMakeContextCurrent(nullptr);
@@ -1984,12 +2172,19 @@ bool OpenALSoundPlayer::uploadDecoded(DecodedAudio decoded)
         }
     }
 
-    if (bUseEffects) {
+    if (bUseEffects && !sources.empty()) {
         reverbSend = 0.0f;
-        alGenFilters(1, &filter);
-        alFilteri(filter, AL_FILTER_TYPE, AL_FILTER_LOWPASS);
-        alFilterf(filter, AL_LOWPASS_GAIN, reverbSend);
-        alSource3i(sources[0], AL_AUXILIARY_SEND_FILTER, static_cast<ALint>(effectSlots[1]), 0, filter);
+        reverbSend2 = 0.0f;
+        alGenFilters(1, &filters[0]);
+        alFilteri(filters[0], AL_FILTER_TYPE, AL_FILTER_LOWPASS);
+        alFilterf(filters[0], AL_LOWPASS_GAIN, reverbSend);
+        alSource3i(sources[0], AL_AUXILIARY_SEND_FILTER, static_cast<ALint>(effectSlots[0]), 0, filters[0]);
+        if (bUseConvolution && effectSlots[2] != 0) {
+            alGenFilters(1, &filters[1]);
+            alFilteri(filters[1], AL_FILTER_TYPE, AL_FILTER_LOWPASS);
+            alFilterf(filters[1], AL_LOWPASS_GAIN, reverbSend2);
+            alSource3i(sources[0], AL_AUXILIARY_SEND_FILTER, static_cast<ALint>(effectSlots[2]), 1, filters[1]);
+        }
         err = alGetError();
         if (err != AL_NO_ERROR) {
             qCritical() << "OpenALSoundPlayer:" << "attaching FX sends failed..."
@@ -2133,10 +2328,14 @@ void OpenALSoundPlayer::update(){
         }
     }
 
-    if(bUseEffects)
+    if(bUseEffects && bUseFilter && !sources.empty())
     {
-        alFilterf(filter, AL_LOWPASS_GAIN, reverbSend);
-        alSource3i(sources[0], AL_AUXILIARY_SEND_FILTER, (ALint)effectSlots[0], 0, filter);
+        alFilterf(filters[0], AL_LOWPASS_GAIN, reverbSend);
+        alSource3i(sources[0], AL_AUXILIARY_SEND_FILTER, static_cast<ALint>(effectSlots[0]), 0, filters[0]);
+        if (filters[1] != 0 && bUseConvolution && effectSlots[2] != 0) {
+            alFilterf(filters[1], AL_LOWPASS_GAIN, reverbSend2);
+            alSource3i(sources[0], AL_AUXILIARY_SEND_FILTER, static_cast<ALint>(effectSlots[2]), 1, filters[1]);
+        }
     }
 }
 
@@ -2163,7 +2362,14 @@ void OpenALSoundPlayer::unload(){
         sources.clear();
         buffers.clear();
         if(bUseFilter) {
-            alDeleteFilters(1, &filter);
+            if (filters[0] != 0) {
+                alDeleteFilters(1, &filters[0]);
+                filters[0] = 0;
+            }
+            if (filters[1] != 0) {
+                alDeleteFilters(1, &filters[1]);
+                filters[1] = 0;
+            }
             bUseFilter = false;
         }
 	}

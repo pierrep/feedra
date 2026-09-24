@@ -3,14 +3,16 @@
 #include <QWidget>
 
 class QLineEdit;
+class QAbstractButton;
 class QPushButton;
-class QToolButton;
 
 class SceneRowWidget : public QWidget
 {
     Q_OBJECT
 public:
     explicit SceneRowWidget(int sceneId, const QString& name, QWidget* parent = nullptr);
+
+    static QString dragMimeType();
 
     int sceneId() const { return m_id; }
     QString sceneName() const;
@@ -29,15 +31,19 @@ signals:
 protected:
     void paintEvent(QPaintEvent* event) override;
     void mousePressEvent(QMouseEvent* event) override;
+    void mouseMoveEvent(QMouseEvent* event) override;
     bool eventFilter(QObject* watched, QEvent* event) override;
 
 private:
     void beginEditing();
     void finishEditing();
+    void startDragIfMoved(const QPoint& pos);
 
     int m_id = 0;
+    QPoint m_pressPos;
+    bool m_playing = false;
     QLineEdit* m_name = nullptr;
-    QPushButton* m_play = nullptr;
+    QAbstractButton* m_play = nullptr;
     QPushButton* m_stop = nullptr;
     QPushButton* m_remove = nullptr;
 };

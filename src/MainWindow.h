@@ -14,6 +14,7 @@ class QProgressBar;
 class QCheckBox;
 class QComboBox;
 class QJsonObject;
+class QKeyEvent;
 class QLabel;
 class QLineEdit;
 class QPushButton;
@@ -32,7 +33,7 @@ public:
 
 protected:
     void closeEvent(QCloseEvent* event) override;
-    void keyPressEvent(QKeyEvent* event) override;
+    bool eventFilter(QObject* watched, QEvent* event) override;
 
 private:
     enum class Page { Main, Settings, Theme };
@@ -43,6 +44,7 @@ private:
     void buildSettingsPage();
     void buildThemePage();
     void syncSettingsPage();
+    void applyImpulsePath(const QString& path);
     void refreshThemeSwatches();
     void applyAppSettings(const QJsonObject& global);
     void connectScene(Scene* scene);
@@ -52,9 +54,11 @@ private:
     SoundPadWidget* findPad(int sceneId, int padId) const;
     void createDefaultScenes();
     void addNewScene();
-    void deleteActiveScene();
+    void deleteScene(int sceneId);
     void enableScene(int idx);
+    void moveScene(int fromIndex, int insertIndex);
     void updateSceneListLayout();
+    bool handleReorderKey(QKeyEvent* event);
     void updateMainControls();
     void updateEditControls();
     void rebuildEditSamples();
@@ -112,6 +116,7 @@ private:
     QSpinBox* m_minDelay = nullptr;
     QSpinBox* m_maxDelay = nullptr;
     QSlider* m_reverbSend = nullptr;
+    QSlider* m_reverbSend2 = nullptr;
     QCheckBox* m_randomPlayback = nullptr;
     QLabel* m_infoLabel = nullptr;
     bool m_bottomCollapsed = false;
@@ -130,6 +135,9 @@ private:
     QSpinBox* m_gridRows = nullptr;
     QLineEdit* m_libraryPath = nullptr;
     QComboBox* m_reverbPreset = nullptr;
+    QSlider* m_convolutionGain = nullptr;
+    QLineEdit* m_impulsePath = nullptr;
+    QPushButton* m_impulseBrowse = nullptr;
     QComboBox* m_themePreset = nullptr;
     struct ThemeSwatch {
         QPushButton* button = nullptr;

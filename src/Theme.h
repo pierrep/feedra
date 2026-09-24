@@ -52,6 +52,7 @@ public:
         QColor sceneActiveBorder;
         QColor sceneText;
         QColor sceneActiveText;
+        QColor scenePlayingText;
         QColor sceneEditingBackground;
         QColor sceneEditingText;
         QColor sampleBackground;
