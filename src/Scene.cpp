@@ -208,10 +208,13 @@ void Scene::update()
             endFade();
         }
     }
+    bool audible = false;
     for (SoundPadWidget* pad : pads) {
         pad->setFadeVolume(m_fadeVolume);
         pad->updateAudio();
+        audible = audible || pad->isPlaying();
     }
+    m_row->setAudible(audible);
 }
 
 void Scene::endFade()

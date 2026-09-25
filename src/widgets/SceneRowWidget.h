@@ -19,6 +19,8 @@ public:
     void setSceneName(const QString& name);
     void setActive(bool active);
     void setPlaying(bool playing);
+    // True while any pad in the scene is playing; drives the live meter beside the name.
+    void setAudible(bool audible);
     void setInteractive(bool enabled);
 
 signals:
@@ -44,6 +46,7 @@ private:
     int m_id = 0;
     QPoint m_pressPos;
     bool m_playing = false;
+    bool m_audible = false;
     QLineEdit* m_name = nullptr;
     QAbstractButton* m_play = nullptr;
     QAbstractButton* m_stop = nullptr;

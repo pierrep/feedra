@@ -265,11 +265,12 @@ void SceneRowWidget::paintEvent(QPaintEvent*)
     painter.setBrush(fill);
     painter.drawRoundedRect(box, 10, 10);
 
-    // Live meter: three bars that bounce while the scene plays, a quiet dot otherwise.
+    // Live meter: three bars that bounce while any pad in the scene is playing, a quiet
+    // dot otherwise. Independent of the scene's own play button, so pads started by hand count.
     const qreal cx = 16.0;
     const qreal cy = height() / 2.0;
     painter.setPen(Qt::NoPen);
-    if (m_playing) {
+    if (m_audible) {
         painter.setBrush(accent);
         static const qreal kPhase[3] = {0.0, 2.1, 4.2};
         for (int i = 0; i < 3; ++i) {
@@ -284,6 +285,20 @@ void SceneRowWidget::paintEvent(QPaintEvent*)
     }
 }
 
+void SceneRowWidget::setAudible(bool audible)
+{
+    if (m_audible == audible) {
+        return;
+    }
+    m_audible = audible;
+    if (audible) {
+        m_meterTimer->start();
+    } else {
+        m_meterTimer->stop();
+    }
+    update(QRect(0, 0, 30, height()));
+}
+
 void SceneRowWidget::setPlaying(bool playing)
 {
     if (m_playing != playing) {
@@ -291,11 +306,6 @@ void SceneRowWidget::setPlaying(bool playing)
         setProperty("playing", playing);
         restyle(this);
         restyle(m_name);
-        if (playing) {
-            m_meterTimer->start();
-        } else {
-            m_meterTimer->stop();
-        }
         refreshTools();
     }
     static_cast<SceneIconButton*>(m_play)->setPlaying(playing);
