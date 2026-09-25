@@ -9,11 +9,12 @@ class Theme : public QObject
 {
     Q_OBJECT
 public:
-    enum class Id { Parchment, Night, Forest, Ink };
+    enum class Id { Midnight, Parchment, Night, Forest, Ink };
 
     struct Palette {
         QColor background;
         QColor text;
+        QColor textMuted;
         QColor menuBackground;
         QColor menuText;
         QColor panelBackground;
@@ -92,6 +93,6 @@ private:
     Theme();
     static Palette preset(Id id);
 
-    Id m_id = Id::Parchment;
+    Id m_id = Id::Midnight;
     Palette m_palette;
 };

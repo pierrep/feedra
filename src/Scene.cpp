@@ -9,8 +9,8 @@
 
 namespace {
 constexpr int kGridMargin = 8;
-constexpr int kGridHSpace = 25;
-constexpr int kGridVSpace = 10;
+constexpr int kGridHSpace = 16;
+constexpr int kGridVSpace = 16;
 
 class PadGridWidget : public QWidget
 {

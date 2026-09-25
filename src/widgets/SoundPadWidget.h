@@ -4,6 +4,7 @@
 
 #include <QAbstractButton>
 #include <QJsonObject>
+#include <QVector>
 #include <QPoint>
 #include <QWidget>
 #include <atomic>
@@ -40,13 +41,19 @@ private:
     bool m_armed = false;
 };
 
+// The pad's waveform strip: one bar per peak bin, lit up to the playhead. Click or drag to seek.
 class PadPlayhead : public QWidget
 {
 public:
+    static constexpr int kBars = 30;
+
     explicit PadPlayhead(QWidget* parent = nullptr);
     void setProgress(float pct);
     void setDelayMode(bool delay);
+    void setPlaying(bool playing);
     void setTimeText(const QString& text);
+    void setPeaks(const QVector<float>& peaks);
+    bool hasPeaks() const { return !m_peaks.isEmpty(); }
 
 protected:
     void paintEvent(QPaintEvent* event) override;
@@ -57,7 +64,9 @@ private:
     friend class SoundPadWidget;
     float m_progress = 0.0f;
     bool m_delay = false;
+    bool m_playing = false;
     QString m_time;
+    QVector<float> m_peaks;
     std::function<void(float)> m_onScrub;
 };
 
@@ -65,8 +74,11 @@ class SoundPadWidget : public QWidget
 {
     Q_OBJECT
 public:
-    static constexpr int kDesignWidth = 124;
-    static constexpr int kDesignHeight = 142;
+    // Smallest size the grid gives a pad. Contents are laid out on a 176x204 canvas and scaled.
+    static constexpr int kDesignWidth = 132;
+    static constexpr int kDesignHeight = 153;
+    static constexpr int kLayoutWidth = 176;
+    static constexpr int kLayoutHeight = 204;
 
     SoundPadWidget(AppConfig* config, int sceneId, int padId, QWidget* parent = nullptr);
     ~SoundPadWidget() override;
@@ -155,6 +167,10 @@ private:
     void applyVolume();
     void updateVolumeLabel();
     QString remainingTimeText() const;
+    QString positionTimeText() const;
+    QString currentSamplePath() const;
+    void refreshPeaks();
+    void refreshChrome();
     QRect padCardRect() const;
     qreal contentScale() const;
     void layoutContents();
@@ -180,6 +196,12 @@ private:
     int m_channels = 0;
     float m_fadeVolume = 1.0f;
     bool m_selected = false;
+    bool m_uiLoaded = false;
+    bool m_uiLoading = false;
+    bool m_uiPlaying = false;
+    bool m_uiDelay = false;
+    QString m_timeText;
+    QString m_peakPath;
     std::vector<std::string> m_soundPaths;
 
     QWidget* m_card = nullptr;

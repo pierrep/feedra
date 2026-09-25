@@ -12,25 +12,34 @@
 #include <QDrag>
 #include <QDragEnterEvent>
 #include <QDropEvent>
+#include <QElapsedTimer>
 #include <QFileDialog>
 #include <QFileInfo>
 #include <QFont>
+#include <QHash>
 #include <QJsonObject>
 #include <QLabel>
+#include <QLinearGradient>
 #include <QLineEdit>
 #include <QMimeData>
 #include <QMouseEvent>
 #include <QAbstractButton>
 #include <QPainter>
+#include <QPainterPath>
 #include <QPaintEvent>
-#include <QPixmap>
+#include <QPointer>
 #include <QPolygonF>
 #include <QResizeEvent>
+#include <QSet>
 #include <QSizePolicy>
 #include <QSlider>
+#include <QThread>
+#include <QThreadPool>
 #include <QUrl>
 #include <QWidget>
 #include <algorithm>
+#include <atomic>
+#include <cmath>
 #include <filesystem>
 #include <utility>
 
@@ -43,25 +52,185 @@ QStringList audioNameFilters()
     };
 }
 
-QPixmap loopIcon()
+QColor withAlpha(QColor color, qreal alpha)
 {
-    static const QPixmap icon(QStringLiteral(":/images/loopicon.png"));
-    return icon;
+    color.setAlphaF(static_cast<float>(std::clamp(alpha, 0.0, 1.0)));
+    return color;
 }
 
-QPixmap tintedLoopIcon(const QColor& color)
+// Icons are drawn on a 24x24 grid (the same geometry as the mockup) and scaled into `r`.
+void mapToIconBox(QPainter& p, const QRectF& r)
 {
-    QPixmap src = loopIcon();
-    if (src.isNull()) {
-        return src;
+    const qreal s = std::min(r.width(), r.height()) / 24.0;
+    p.translate(r.center().x() - 12.0 * s, r.center().y() - 12.0 * s);
+    p.scale(s, s);
+}
+
+void drawLoopIcon(QPainter& p, const QRectF& r, const QColor& color)
+{
+    p.save();
+    mapToIconBox(p, r);
+    QPen pen(color, 2.0, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin);
+    p.setPen(pen);
+    p.setBrush(Qt::NoBrush);
+    QPainterPath path;
+    path.moveTo(17, 2); path.lineTo(21, 6); path.lineTo(17, 10);
+    path.moveTo(3, 11); path.lineTo(3, 10);
+    path.arcTo(QRectF(3, 6, 8, 8), 180, -90);
+    path.lineTo(21, 6);
+    path.moveTo(7, 22); path.lineTo(3, 18); path.lineTo(7, 14);
+    path.moveTo(21, 13); path.lineTo(21, 14);
+    path.arcTo(QRectF(13, 10, 8, 8), 0, -90);
+    path.lineTo(3, 18);
+    p.drawPath(path);
+    p.restore();
+}
+
+void drawFolderIcon(QPainter& p, const QRectF& r, const QColor& color)
+{
+    p.save();
+    mapToIconBox(p, r);
+    p.setPen(QPen(color, 2.0, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
+    p.setBrush(Qt::NoBrush);
+    QPainterPath path;
+    path.moveTo(3, 7);
+    path.quadTo(3, 5, 5, 5);
+    path.lineTo(9, 5); path.lineTo(11, 7); path.lineTo(19, 7);
+    path.quadTo(21, 7, 21, 9);
+    path.lineTo(21, 17);
+    path.quadTo(21, 19, 19, 19);
+    path.lineTo(5, 19);
+    path.quadTo(3, 19, 3, 17);
+    path.closeSubpath();
+    p.drawPath(path);
+    p.restore();
+}
+
+void drawPlusIcon(QPainter& p, const QRectF& r, const QColor& color)
+{
+    p.save();
+    mapToIconBox(p, r);
+    p.setPen(QPen(color, 2.0, Qt::SolidLine, Qt::RoundCap));
+    p.drawLine(QPointF(12, 5), QPointF(12, 19));
+    p.drawLine(QPointF(5, 12), QPointF(19, 12));
+    p.restore();
+}
+
+void drawPlayIcon(QPainter& p, const QRectF& r, const QColor& color)
+{
+    p.save();
+    mapToIconBox(p, r);
+    p.setPen(QPen(color, 1.5, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
+    p.setBrush(color);
+    QPolygonF tri;
+    tri << QPointF(8.5, 5.5) << QPointF(8.5, 18.5) << QPointF(19.0, 12.0);
+    p.drawPolygon(tri);
+    p.restore();
+}
+
+void drawPauseIcon(QPainter& p, const QRectF& r, const QColor& color)
+{
+    p.save();
+    mapToIconBox(p, r);
+    p.setPen(Qt::NoPen);
+    p.setBrush(color);
+    p.drawRoundedRect(QRectF(6, 5, 4, 14), 1, 1);
+    p.drawRoundedRect(QRectF(14, 5, 4, 14), 1, 1);
+    p.restore();
+}
+
+// 0..1 breathing value shared by every playing pad, so glows pulse together.
+qreal pulsePhase()
+{
+    static QElapsedTimer clock;
+    if (!clock.isValid()) {
+        clock.start();
     }
-    QPixmap tinted(src.size());
-    tinted.fill(Qt::transparent);
-    QPainter p(&tinted);
-    p.drawPixmap(0, 0, src);
-    p.setCompositionMode(QPainter::CompositionMode_SourceIn);
-    p.fillRect(tinted.rect(), color);
-    return tinted;
+    const qreal t = static_cast<qreal>(clock.elapsed()) / 2400.0;
+    constexpr qreal kTau = 6.283185307179586;
+    return 0.5 + 0.5 * std::sin(t * kTau);
+}
+
+QString formatClock(float seconds)
+{
+    const int total = std::max(0, static_cast<int>(seconds));
+    const int hours = total / 3600;
+    const int minutes = (total / 60) % 60;
+    const int secs = total % 60;
+    if (hours > 0) {
+        return QString("%1:%2:%3").arg(hours).arg(minutes, 2, 10, QChar('0')).arg(secs, 2, 10, QChar('0'));
+    }
+    return QString("%1:%2").arg(minutes).arg(secs, 2, 10, QChar('0'));
+}
+
+// Waveform strips for pads: a few peak bins per file, computed once on one low-priority
+// background thread and shared by every pad that shows that file.
+struct PadPeakCache {
+    QHash<QString, QVector<float>> peaks;
+    QSet<QString> pending;
+    QThreadPool* pool = nullptr;
+    std::atomic<bool> cancel{false};
+};
+
+PadPeakCache& peakCache()
+{
+    static PadPeakCache cache;
+    if (!cache.pool) {
+        cache.pool = new QThreadPool(qApp);
+        cache.pool->setMaxThreadCount(1);
+        QObject::connect(qApp, &QCoreApplication::aboutToQuit, []() {
+            peakCache().cancel.store(true);
+            peakCache().pool->clear();
+            peakCache().pool->waitForDone();
+        });
+    }
+    return cache;
+}
+
+// Returns the cached strip for `path`, or an empty vector after queueing the scan.
+QVector<float> padPeaks(const QString& path)
+{
+    PadPeakCache& cache = peakCache();
+    const auto it = cache.peaks.constFind(path);
+    if (it != cache.peaks.constEnd()) {
+        return it.value();
+    }
+    if (path.isEmpty() || cache.pending.contains(path)) {
+        return {};
+    }
+    cache.pending.insert(path);
+    cache.pool->start([path]() {
+        QThread::currentThread()->setPriority(QThread::LowPriority);
+        PadPeakCache& c = peakCache();
+        const WaveformPeaks raw = OpenALSoundPlayer::computePeaks(
+            std::filesystem::path(path.toStdString()), PadPlayhead::kBars, &c.cancel);
+        if (c.cancel.load()) {
+            return;
+        }
+        QVector<float> bars;
+        if (raw.ok) {
+            float loudest = 0.0f;
+            for (size_t i = 0; i < raw.maxs.size() && i < raw.mins.size(); ++i) {
+                const float amp = std::max(std::abs(raw.mins[i]), std::abs(raw.maxs[i]));
+                bars.append(amp);
+                loudest = std::max(loudest, amp);
+            }
+            if (loudest > 0.0f) {
+                for (float& bar : bars) {
+                    bar /= loudest;
+                }
+            }
+        }
+        if (bars.isEmpty()) {
+            bars.fill(0.35f, PadPlayhead::kBars); // unreadable: keep a flat strip, don't retry forever
+        }
+        QMetaObject::invokeMethod(qApp, [path, bars]() {
+            PadPeakCache& c = peakCache();
+            c.pending.remove(path);
+            c.peaks.insert(path, bars);
+        }, Qt::QueuedConnection);
+    });
+    return {};
 }
 }
 
@@ -72,11 +241,17 @@ GlyphButton::GlyphButton(Kind kind, QWidget* parent)
     setCursor(Qt::PointingHandCursor);
     setFocusPolicy(Qt::NoFocus);
     setAttribute(Qt::WA_TranslucentBackground);
+    setAttribute(Qt::WA_Hover);
     setAutoFillBackground(false);
     if (kind == Kind::Loop) {
         setCheckable(true);
+        setToolTip(tr("Loop"));
+    }
+    if (kind == Kind::Load) {
+        setToolTip(tr("Load sounds"));
     }
     if (kind == Kind::Stop) {
+        setToolTip(tr("Stop"));
         setAttribute(Qt::WA_TransparentForMouseEvents, true);
     }
 }
@@ -114,59 +289,91 @@ void GlyphButton::setArmed(bool armed)
 
 QSize GlyphButton::sizeHint() const
 {
-    return m_kind == Kind::Play ? QSize(50, 50) : QSize(16, 16);
+    return m_kind == Kind::Play ? QSize(64, 64) : QSize(24, 24);
 }
 
 void GlyphButton::paintEvent(QPaintEvent*)
 {
     QPainter p(this);
     p.setRenderHint(QPainter::Antialiasing, true);
-    const QRectF r = QRectF(rect()).adjusted(0.5, 0.5, -0.5, -0.5);
-
     const Theme::Palette& theme = Theme::instance().palette();
+    const QRectF r = QRectF(rect()).adjusted(0.5, 0.5, -0.5, -0.5);
+    const qreal radius = std::min(r.width(), r.height()) * 0.25;
+    const bool hover = underMouse() && isEnabled();
 
     if (m_kind == Kind::Load) {
-        p.setBrush(theme.loadButton);
-        p.setPen(QPen(theme.loadButton, 1));
-        p.drawRoundedRect(r, 6, 6);
+        if (!m_loaded) {
+            // Empty pad: a dashed drop circle with a plus.
+            const qreal d = std::min(r.width(), r.height()) - 2.0;
+            const QRectF circle(r.center().x() - d / 2.0, r.center().y() - d / 2.0, d, d);
+            QPen pen(hover ? theme.textMuted : theme.playOutline, std::max(1.0, d / 30.0));
+            pen.setDashPattern({3.0, 2.5});
+            p.setPen(pen);
+            p.setBrush(hover ? withAlpha(theme.playEmpty, 0.6) : Qt::transparent);
+            p.drawEllipse(circle);
+            drawPlusIcon(p, circle.adjusted(d * 0.3, d * 0.3, -d * 0.3, -d * 0.3), hover ? theme.text : theme.textMuted);
+            return;
+        }
+        p.setPen(Qt::NoPen);
+        p.setBrush(hover ? theme.playOutline : theme.loadButton);
+        p.drawRoundedRect(r, radius, radius);
+        drawFolderIcon(p, r.adjusted(r.width() * 0.2, r.height() * 0.2, -r.width() * 0.2, -r.height() * 0.2),
+            hover ? theme.text : theme.stopArmed);
         return;
     }
 
     if (m_kind == Kind::Stop) {
-        if (m_armed) {
-            p.setPen(Qt::NoPen);
-            p.setBrush(theme.stopArmed);
-            p.drawRect(r);
+        if (!m_armed) {
+            return;
         }
+        p.setPen(Qt::NoPen);
+        p.setBrush(hover ? theme.playOutline : theme.loadButton);
+        p.drawRoundedRect(r, radius, radius);
+        const qreal side = r.width() * 0.36;
+        p.setBrush(hover ? theme.text : theme.stopArmed);
+        p.drawRoundedRect(QRectF(r.center().x() - side / 2.0, r.center().y() - side / 2.0, side, side),
+            side * 0.15, side * 0.15);
         return;
     }
 
     if (m_kind == Kind::Loop) {
-        const QColor color = isChecked() ? theme.loopOn : theme.loopOff;
-        const QPixmap icon = tintedLoopIcon(color);
-        if (!icon.isNull()) {
-            p.drawPixmap(rect(), icon);
+        const bool on = isChecked();
+        const QRectF box = r.adjusted(0.5, 0.5, -0.5, -0.5);
+        if (on) {
+            p.setBrush(withAlpha(theme.loopOn, hover ? 0.24 : 0.16));
+            p.setPen(QPen(withAlpha(theme.loopOn, 0.45), 1.0));
         } else {
-            p.setPen(QPen(color, 2));
-            p.drawEllipse(r.adjusted(2, 2, -2, -2));
+            p.setBrush(hover ? withAlpha(theme.playEmpty, 0.8) : Qt::transparent);
+            p.setPen(QPen(theme.padBorder, 1.0));
         }
+        p.drawRoundedRect(box, radius, radius);
+        drawLoopIcon(p, box.adjusted(box.width() * 0.2, box.height() * 0.2, -box.width() * 0.2, -box.height() * 0.2),
+            on ? theme.loopOn : (hover ? theme.text : theme.loopOff));
         return;
     }
 
-    p.setBrush(m_loaded ? theme.playLoaded : theme.playEmpty);
-    p.setPen(Qt::NoPen);
-    if (m_playing) {
-        const qreal barW = r.width() / 3.0;
-        p.drawRect(QRectF(r.left(), r.top(), barW, r.height()));
-        p.drawRect(QRectF(r.left() + r.width() * 2.0 / 3.0, r.top(), barW, r.height()));
-    } else {
-        QPolygonF tri;
-        tri << r.topLeft() << r.bottomLeft() << QPointF(r.right(), r.center().y());
-        p.drawPolygon(tri);
+    // Play: a round button, filled with the accent while the pad is live.
+    if (!m_loaded) {
+        return;
     }
-    p.setBrush(Qt::NoBrush);
-    p.setPen(QPen(theme.playOutline, 1));
-    p.drawRect(r);
+    const qreal d = std::min(r.width(), r.height()) * 0.875;
+    const QRectF circle(r.center().x() - d / 2.0, r.center().y() - d / 2.0, d, d);
+    if (m_playing) {
+        QRadialGradient halo(circle.center(), r.width() / 2.0);
+        halo.setColorAt(0.70, withAlpha(theme.playLoaded, 0.40));
+        halo.setColorAt(1.00, withAlpha(theme.playLoaded, 0.0));
+        p.setPen(Qt::NoPen);
+        p.setBrush(halo);
+        p.drawEllipse(r);
+        p.setBrush(hover ? theme.playLoaded.lighter(110) : theme.playLoaded);
+        p.drawEllipse(circle);
+        drawPauseIcon(p, circle.adjusted(d * 0.3, d * 0.3, -d * 0.3, -d * 0.3), theme.background);
+    } else {
+        p.setBrush(hover ? theme.playOutline : theme.playEmpty);
+        p.setPen(QPen(hover ? theme.textMuted : theme.playOutline, 1.0));
+        p.drawEllipse(circle);
+        drawPlayIcon(p, circle.adjusted(d * 0.3, d * 0.3, -d * 0.3, -d * 0.3), theme.text);
+    }
 }
 
 PadPlayhead::PadPlayhead(QWidget* parent)
@@ -179,8 +386,13 @@ PadPlayhead::PadPlayhead(QWidget* parent)
 
 void PadPlayhead::setProgress(float pct)
 {
-    m_progress = std::clamp(pct, 0.0f, 1.0f);
-    update();
+    pct = std::clamp(pct, 0.0f, 1.0f);
+    const int oldBar = static_cast<int>(m_progress * kBars * 4);
+    const int newBar = static_cast<int>(pct * kBars * 4);
+    m_progress = pct;
+    if (oldBar != newBar) {
+        update();
+    }
 }
 
 void PadPlayhead::setDelayMode(bool delay)
@@ -192,31 +404,61 @@ void PadPlayhead::setDelayMode(bool delay)
     update();
 }
 
-void PadPlayhead::setTimeText(const QString& text)
+void PadPlayhead::setPlaying(bool playing)
 {
-    if (m_time == text) {
+    if (m_playing == playing) {
         return;
     }
+    m_playing = playing;
+    update();
+}
+
+void PadPlayhead::setTimeText(const QString& text)
+{
     m_time = text;
+}
+
+void PadPlayhead::setPeaks(const QVector<float>& peaks)
+{
+    m_peaks = peaks;
     update();
 }
 
 void PadPlayhead::paintEvent(QPaintEvent*)
 {
     QPainter p(this);
-    const QRect r = rect().adjusted(0, 0, -1, -1);
+    p.setRenderHint(QPainter::Antialiasing, true);
     const Theme::Palette& theme = Theme::instance().palette();
-    p.fillRect(QRect(r.x(), r.y(), static_cast<int>(r.width() * m_progress), r.height()),
-        m_delay ? theme.playheadDelay : theme.playhead);
-    p.setPen(QPen(theme.playheadBorder, 1));
-    p.setBrush(Qt::NoBrush);
-    p.drawRect(r);
-    if (!m_time.isEmpty()) {
-        p.setPen(theme.playheadText);
-        QFont f = font();
-        f.setPixelSize(std::max(6, height() - 4));
-        p.setFont(f);
-        p.drawText(r, Qt::AlignCenter, m_time);
+    const qreal w = width();
+    const qreal h = height();
+    const qreal gap = std::max(1.0, w / 76.0);
+    const qreal barW = (w - gap * (kBars - 1)) / kBars;
+    const qreal minH = std::max(2.0, h * 0.12);
+    const qreal fillTo = m_progress * kBars;
+    const int headBar = static_cast<int>(fillTo);
+
+    p.setPen(Qt::NoPen);
+    for (int i = 0; i < kBars; ++i) {
+        // No peaks yet: a quiet flat strip until the background scan lands.
+        const float amp = m_peaks.size() == kBars ? m_peaks[i] : 0.18f;
+        const qreal bh = std::max(minH, static_cast<qreal>(amp) * h);
+        QColor color = theme.playheadBorder;
+        if (m_delay) {
+            if (i < headBar) {
+                color = theme.playheadDelay;
+            }
+        } else if (m_playing) {
+            if (i < headBar) {
+                color = theme.playhead;
+            } else if (i == headBar) {
+                color = theme.playheadText;
+            }
+        } else if (m_progress > 0.0f && i < headBar) {
+            color = theme.playheadDelay; // paused part-way
+        }
+        p.setBrush(color);
+        const QRectF bar(i * (barW + gap), (h - bh) / 2.0, barW, bh);
+        p.drawRoundedRect(bar, std::min(barW / 2.0, 2.0), std::min(barW / 2.0, 2.0));
     }
 }
 
@@ -280,10 +522,10 @@ SoundPadWidget::SoundPadWidget(AppConfig* config, int sceneId, int padId, QWidge
     m_name = new QLineEdit(m_card);
     m_name->setObjectName("PadName");
     m_name->setMaxLength(17);
-    m_name->setAlignment(Qt::AlignCenter);
-    m_name->setPlaceholderText(QStringLiteral("name"));
+    m_name->setAlignment(Qt::AlignLeft | Qt::AlignVCenter);
+    m_name->setPlaceholderText(tr("Empty pad"));
 
-    layoutContents();
+    refreshChrome();
 
     // The card forwards unhandled presses to mousePressEvent, so watching it too would select twice.
     const QList<QWidget*> controls{m_volume, m_load, m_loop, m_stop, m_play, m_playhead, m_name};
@@ -341,6 +583,7 @@ QString SoundPadWidget::soundName() const
 void SoundPadWidget::setSoundName(const QString& name)
 {
     m_name->setText(name);
+    m_name->setCursorPosition(0);
 }
 
 float SoundPadWidget::padVolume() const
@@ -382,18 +625,39 @@ void SoundPadWidget::updateAudio()
 
     const bool loaded = !isLoading() && m_player.isLoaded();
     const bool playing = m_player.isPlaying();
+    const bool delay = loaded && m_player.isPlayingDelay();
     // Play does nothing on an empty pad, so let clicks through to select the pad.
     const bool empty = !isLoading() && !m_player.isLoaded();
     if (m_play->testAttribute(Qt::WA_TransparentForMouseEvents) != empty) {
         m_play->setAttribute(Qt::WA_TransparentForMouseEvents, empty);
     }
     m_play->setLoaded(loaded);
-    m_play->setPlaying(playing);
-    m_stop->setArmed(playing);
+    m_play->setPlaying(playing && !delay);
+    m_load->setLoaded(loaded || isLoading());
     m_playhead->setProgress(loaded ? m_player.getPosition() : 0.0f);
-    m_playhead->setDelayMode(m_player.isPlayingDelay());
-    m_playhead->setTimeText(loaded ? remainingTimeText() : QString());
+    m_playhead->setDelayMode(delay);
+    m_playhead->setPlaying(playing && !delay);
     m_playhead->setVisible(loaded);
+    if (loaded) {
+        refreshPeaks();
+    }
+
+    const QString time = loaded ? (delay ? tr("Next in %1").arg(remainingTimeText()) : positionTimeText()) : QString();
+    const bool loading = isLoading();
+    const bool stateChanged = loaded != m_uiLoaded || playing != m_uiPlaying || delay != m_uiDelay
+        || loading != m_uiLoading;
+    m_uiLoading = loading;
+    m_uiLoaded = loaded;
+    m_uiPlaying = playing;
+    m_uiDelay = delay;
+    if (stateChanged) {
+        refreshChrome();
+    }
+    if (stateChanged || time != m_timeText || (playing && !delay)) {
+        // Playing pads repaint every tick for the breathing glow.
+        m_timeText = time;
+        update();
+    }
 }
 
 void SoundPadWidget::setSelected(bool selected)
@@ -402,32 +666,147 @@ void SoundPadWidget::setSelected(bool selected)
         return;
     }
     m_selected = selected;
+    refreshChrome();
     update();
+}
+
+QString SoundPadWidget::currentSamplePath() const
+{
+    if (m_soundPaths.empty()) {
+        return {};
+    }
+    const int cur = std::clamp(m_player.getCurSound(), 0, static_cast<int>(m_soundPaths.size()) - 1);
+    return QString::fromStdString(m_soundPaths[static_cast<size_t>(cur)]);
+}
+
+void SoundPadWidget::refreshPeaks()
+{
+    const QString path = currentSamplePath();
+    if (path == m_peakPath && m_playhead->hasPeaks()) {
+        return;
+    }
+    const QVector<float> peaks = padPeaks(path);
+    if (path != m_peakPath || !peaks.isEmpty()) {
+        m_peakPath = path;
+        m_playhead->setPeaks(peaks);
+    }
+}
+
+// Which controls a pad shows depends on its state; the load and stop tools only appear
+// on the selected pad (or, for load, on an empty one, where it becomes the drop circle).
+void SoundPadWidget::refreshChrome()
+{
+    const bool loading = isLoading();
+    const bool empty = !loading && !m_uiLoaded;
+    const bool hasSound = m_uiLoaded;
+    m_load->setVisible(empty || (hasSound && m_selected));
+    m_loop->setVisible(hasSound);
+    m_stop->setArmed(hasSound && (m_uiPlaying || m_selected));
+    m_volume->setVisible(hasSound);
+    m_volumeValue->setVisible(hasSound);
+    layoutContents();
 }
 
 void SoundPadWidget::paintEvent(QPaintEvent*)
 {
     QPainter p(this);
     p.setRenderHint(QPainter::Antialiasing, true);
+    p.setRenderHint(QPainter::TextAntialiasing, true);
     const qreal s = contentScale();
-    const qreal inset = 1.5 * s;
-    const QRectF card = QRectF(padCardRect()).adjusted(inset, inset, -inset, -inset);
     const Theme::Palette& theme = Theme::instance().palette();
-    p.setBrush(theme.padFill);
-    p.setPen(QPen(m_selected ? theme.padSelected : theme.padBorder, (m_selected ? 4 : 3) * s));
-    p.drawRoundedRect(card, 5 * s, 5 * s);
-    if (isLoading() && m_loadTotal > 0) {
+    const QRectF card = QRectF(padCardRect()).adjusted(0.5, 0.5, -0.5, -0.5);
+    const qreal radius = 12.0 * s;
+    const bool loading = isLoading() && m_loadTotal > 0;
+    const bool empty = !loading && !m_uiLoaded;
+    const bool live = m_uiPlaying && !m_uiDelay;
+    const QColor accent = theme.playLoaded;
+
+    auto at = [s](qreal x, qreal y, qreal w, qreal h) {
+        return QRectF(x * s, y * s, w * s, h * s);
+    };
+
+    // Selection ring sits in the margin, with a gap so it reads against any card colour.
+    if (m_selected) {
+        p.setPen(QPen(theme.padSelected, 2.0 * s));
+        p.setBrush(Qt::NoBrush);
+        const qreal o = 3.0 * s;
+        p.drawRoundedRect(card.adjusted(-o, -o, o, o), radius + o, radius + o);
+    } else if (live) {
+        const qreal pulse = 0.55 + 0.45 * pulsePhase();
+        p.setBrush(Qt::NoBrush);
+        for (int i = 3; i >= 1; --i) {
+            const qreal o = i * s;
+            p.setPen(QPen(withAlpha(accent, (0.30 / i) * pulse), 1.2 * s));
+            p.drawRoundedRect(card.adjusted(-o, -o, o, o), radius + o, radius + o);
+        }
+    }
+
+    if (empty) {
+        QPen dashed(theme.padBorder, 1.0);
+        dashed.setDashPattern({4.0, 3.0});
+        p.setPen(dashed);
+        p.setBrush(theme.padFill.darker(112));
+    } else if (live) {
+        QLinearGradient tint(card.topLeft(), card.bottomLeft());
+        tint.setColorAt(0.0, withAlpha(accent, 0.14));
+        tint.setColorAt(0.62, withAlpha(accent, 0.0));
         p.setPen(Qt::NoPen);
-        p.setBrush(QColor(0, 0, 0, 80));
-        p.drawRoundedRect(card, 5 * s, 5 * s);
-        const qreal barH = std::max(3.0, 4.0 * s);
-        const QRectF track(card.left() + 8 * s, card.bottom() - barH - 8 * s, card.width() - 16 * s, barH);
+        p.setBrush(theme.padFill);
+        p.drawRoundedRect(card, radius, radius);
+        p.setBrush(tint);
+        p.setPen(QPen(withAlpha(accent, 0.75), 1.0));
+    } else {
+        p.setPen(QPen(theme.padBorder, 1.0));
+        p.setBrush(theme.padFill);
+    }
+    p.drawRoundedRect(card, radius, radius);
+
+    // Status dot beside the name: dim when idle, accent when live, half accent while waiting.
+    QColor dot = empty ? theme.padBorder : theme.playheadDelay;
+    if (live) {
+        dot = accent;
+    } else if (m_uiDelay) {
+        dot = withAlpha(accent, 0.5);
+    }
+    p.setPen(Qt::NoPen);
+    p.setBrush(dot);
+    p.drawEllipse(at(14, 22, 8, 8));
+
+    QFont captionFont = font();
+    captionFont.setPixelSize(std::max(7, qRound(12 * s)));
+    QFont monoFont(QStringLiteral("Geist Mono"));
+    monoFont.setStyleHint(QFont::Monospace);
+    monoFont.setPixelSize(std::max(7, qRound(11 * s)));
+
+    if (empty) {
+        p.setFont(captionFont);
+        p.setPen(theme.textMuted);
+        p.drawText(at(14, 110, 148, 18), Qt::AlignHCenter | Qt::AlignVCenter, tr("Drop audio or click"));
+        return;
+    }
+
+    if (loading) {
+        p.setFont(captionFont);
+        p.setPen(theme.textMuted);
+        p.drawText(at(14, 64, 148, 18), Qt::AlignHCenter | Qt::AlignVCenter,
+            tr("Loading %1 of %2").arg(std::min(m_nextCommit + 1, m_loadTotal)).arg(m_loadTotal));
+        const QRectF track = at(14, 90, 148, 4);
+        p.setPen(Qt::NoPen);
         p.setBrush(theme.progressTrack);
-        p.drawRoundedRect(track, barH / 2, barH / 2);
+        p.drawRoundedRect(track, track.height() / 2, track.height() / 2);
         QRectF chunk = track;
         chunk.setWidth(track.width() * (static_cast<qreal>(m_nextCommit) / static_cast<qreal>(m_loadTotal)));
-        p.setBrush(theme.progressChunk);
-        p.drawRoundedRect(chunk, barH / 2, barH / 2);
+        if (chunk.width() > 0) {
+            p.setBrush(theme.progressChunk);
+            p.drawRoundedRect(chunk, track.height() / 2, track.height() / 2);
+        }
+        return;
+    }
+
+    if (!m_timeText.isEmpty()) {
+        p.setFont(monoFont);
+        p.setPen(live ? theme.text : (m_uiDelay ? accent : theme.textMuted));
+        p.drawText(at(14, 150, 96, 16), Qt::AlignLeft | Qt::AlignVCenter, m_timeText);
     }
 }
 
@@ -444,9 +823,9 @@ QSize SoundPadWidget::minimumSizeHint() const
 qreal SoundPadWidget::contentScale() const
 {
     if (width() <= 0 || height() <= 0) {
-        return 1.0;
+        return kDesignWidth / qreal(kLayoutWidth);
     }
-    return std::min(width() / qreal(kDesignWidth), height() / qreal(kDesignHeight));
+    return std::min(width() / qreal(kLayoutWidth), height() / qreal(kLayoutHeight));
 }
 
 void SoundPadWidget::layoutContents()
@@ -456,36 +835,64 @@ void SoundPadWidget::layoutContents()
         return QRect(qRound(x * s), qRound(y * s), qRound(w * s), qRound(h * s));
     };
 
-    m_volume->setGeometry(scaled(2, 2, 68, 15));
-    m_volumeValue->setGeometry(scaled(70, 1, 52, 16));
-    m_card->setGeometry(scaled(2, 20, 120, 120));
-    m_load->setGeometry(scaled(10, 10, 15, 15));
-    m_loop->setGeometry(scaled(52, 10, 15, 15));
-    m_stop->setGeometry(scaled(95, 10, 15, 15));
-    m_play->setGeometry(scaled(35, 35, 50, 50));
-    m_playhead->setGeometry(scaled(35, 86, 50, 10));
-    m_name->setGeometry(scaled(10, 100, 100, 16));
+    // Everything below is placed on the 176x204 mockup canvas; the card itself is inset
+    // 4px so the selection ring and live glow have room around it.
+    const bool empty = !isLoading() && !m_uiLoaded;
+    const bool toolsShown = m_uiLoaded && m_selected;
+
+    m_card->setGeometry(scaled(4, 4, 168, 196));
+    // Child geometry below is in pad coordinates; the card starts at (4,4).
+    auto inCard = [&](int x, int y, int w, int h) {
+        QRect r = scaled(x, y, w, h);
+        r.translate(-m_card->x(), -m_card->y());
+        return r;
+    };
+
+    const int nameRight = toolsShown ? 104 : 132;
+    m_name->setGeometry(inCard(28, 14, nameRight - 28, 24));
+    m_loop->setGeometry(inCard(138, 14, 24, 24));
+    if (empty) {
+        m_load->setGeometry(inCard(62, 54, 52, 52));
+    } else {
+        m_load->setGeometry(inCard(110, 14, 24, 24));
+    }
+    m_play->setGeometry(inCard(56, 46, 64, 64));
+    m_stop->setGeometry(inCard(134, 86, 28, 28));
+    m_playhead->setGeometry(inCard(14, 120, 148, 24));
+    m_volumeValue->setGeometry(scaled(92, 150, 70, 16));
+    m_volume->setGeometry(scaled(14, 170, 148, 16));
+    m_volume->raise();
+    m_volumeValue->raise();
 
     QFont nameFont = m_name->font();
-    nameFont.setPixelSize(std::max(1, qRound(11 * s)));
+    nameFont.setPixelSize(std::max(7, qRound(13 * s)));
+    nameFont.setWeight(QFont::DemiBold);
     m_name->setFont(nameFont);
+    if (!m_name->hasFocus()) {
+        m_name->setCursorPosition(0); // show the start of long names, not the scrolled end
+    }
 
-    QFont volFont = m_volumeValue->font();
-    volFont.setPixelSize(std::max(1, qRound(9 * s)));
+    QFont volFont(QStringLiteral("Geist Mono"));
+    volFont.setStyleHint(QFont::Monospace);
+    volFont.setPixelSize(std::max(7, qRound(11 * s)));
     m_volumeValue->setFont(volFont);
 
-    const int groove = std::max(2, qRound(6 * s));
-    const int handle = std::max(8, qRound(12 * s));
-    const int margin = std::max(2, qRound(4 * s));
+    const int groove = std::max(2, qRound(3 * s));
+    const int handle = std::max(8, qRound(10 * s));
+    const int margin = (handle - groove) / 2;
     const Theme::Palette& theme = Theme::instance().palette();
     m_volume->setStyleSheet(QStringLiteral(
+        "QSlider#PadVolume { background: transparent; }"
         "QSlider#PadVolume::groove:horizontal {"
         " height: %1px; background: %2; border-radius: %3px; }"
+        "QSlider#PadVolume::sub-page:horizontal {"
+        " background: %4; border-radius: %3px; }"
         "QSlider#PadVolume::handle:horizontal {"
-        " background: %4; width: %5px; margin: -%6px 0; border-radius: %7px; }")
+        " background: %5; width: %6px; margin: -%7px 0; border-radius: %8px; }")
         .arg(groove)
         .arg(theme.sliderGroove.name(QColor::HexRgb))
-        .arg(groove / 2)
+        .arg(std::max(1, groove / 2))
+        .arg(theme.playheadDelay.name(QColor::HexRgb))
         .arg(theme.sliderHandle.name(QColor::HexRgb))
         .arg(handle)
         .arg(margin)
@@ -500,7 +907,7 @@ void SoundPadWidget::resizeEvent(QResizeEvent* event)
 
 QRect SoundPadWidget::padCardRect() const
 {
-    return m_card ? m_card->geometry() : rect().adjusted(2, 18, -2, -2);
+    return m_card ? m_card->geometry() : rect().adjusted(4, 4, -4, -4);
 }
 
 void SoundPadWidget::setInteractive(bool enabled)
@@ -1114,23 +1521,15 @@ void SoundPadWidget::updateVolumeLabel()
     m_volumeValue->setText(VolumeDb::format(VolumeDb::fromSlider(m_volume->value(), VolumeDb::kFloorDb)));
 }
 
+QString SoundPadWidget::positionTimeText() const
+{
+    const float duration = m_player.getDuration();
+    return QStringLiteral("%1 / %2")
+        .arg(formatClock(m_player.getPosition() * duration), formatClock(duration));
+}
+
 QString SoundPadWidget::remainingTimeText() const
 {
-    float timeLeft = 0.0f;
-    if (m_player.isPlayingDelay()) {
-        timeLeft = (1.0f - m_player.getPosition()) * m_player.getTotalDelay();
-    } else {
-        timeLeft = (1.0f - m_player.getPosition()) * m_player.getDuration();
-    }
-    const int total = static_cast<int>(timeLeft);
-    const int minutes = (total / 60) % 60;
-    const int seconds = total % 60;
-    const int hours = total / 3600;
-    if (hours > 0) {
-        return QString("%1:%2:%3")
-            .arg(hours)
-            .arg(minutes, 2, 10, QChar('0'))
-            .arg(seconds, 2, 10, QChar('0'));
-    }
-    return QString("%1:%2").arg(minutes, 2, 10, QChar('0')).arg(seconds, 2, 10, QChar('0'));
+    const float total = m_player.isPlayingDelay() ? m_player.getTotalDelay() : m_player.getDuration();
+    return formatClock((1.0f - m_player.getPosition()) * total);
 }

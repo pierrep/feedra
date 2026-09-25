@@ -1260,6 +1260,7 @@ void MainWindow::buildThemePage()
     grid->setVerticalSpacing(8);
 
     m_themePreset = new QComboBox(host);
+    m_themePreset->addItem(Theme::idLabel(Theme::Id::Midnight));
     m_themePreset->addItem(Theme::idLabel(Theme::Id::Parchment));
     m_themePreset->addItem(Theme::idLabel(Theme::Id::Night));
     m_themePreset->addItem(Theme::idLabel(Theme::Id::Forest));

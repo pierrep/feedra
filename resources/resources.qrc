@@ -2,6 +2,11 @@
     <qresource prefix="/">
         <file>feedra.qss</file>
         <file alias="fonts/NewMediaFett.ttf">../bin/data/fonts/NewMediaFett.ttf</file>
+        <file alias="fonts/Geist-Regular.ttf">../bin/data/fonts/Geist-Regular.ttf</file>
+        <file alias="fonts/Geist-Medium.ttf">../bin/data/fonts/Geist-Medium.ttf</file>
+        <file alias="fonts/Geist-SemiBold.ttf">../bin/data/fonts/Geist-SemiBold.ttf</file>
+        <file alias="fonts/GeistMono-Regular.ttf">../bin/data/fonts/GeistMono-Regular.ttf</file>
+        <file alias="fonts/GeistMono-Medium.ttf">../bin/data/fonts/GeistMono-Medium.ttf</file>
         <file alias="images/loopicon.png">../bin/data/images/loopicon.png</file>
         <file alias="images/feedra.png">../bin/data/feedra.png</file>
     </qresource>

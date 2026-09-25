@@ -1,6 +1,7 @@
 #include "Theme.h"
 
 #include <QApplication>
+#include <QPalette>
 
 namespace {
 
@@ -14,6 +15,7 @@ struct Role {
 const Role kRoles[] = {
     {"background", "Window", "Background", &Theme::Palette::background},
     {"text", "Window", "Text", &Theme::Palette::text},
+    {"textMuted", "Window", "Muted text", &Theme::Palette::textMuted},
     {"menuBackground", "Window", "Menu bar", &Theme::Palette::menuBackground},
     {"menuText", "Window", "Menu text", &Theme::Palette::menuText},
     {"panelBackground", "Window", "Panel", &Theme::Palette::panelBackground},
@@ -74,11 +76,71 @@ QString hex(const QColor& color)
     return color.name(QColor::HexRgb);
 }
 
+Theme::Palette midnightPalette()
+{
+    // Dark, low-chroma neutrals with a single ember accent for anything "live".
+    Theme::Palette p;
+    p.background = QColor(QStringLiteral("#0f1115"));
+    p.text = QColor(QStringLiteral("#e8eaf0"));
+    p.textMuted = QColor(QStringLiteral("#8a91a0"));
+    p.menuBackground = QColor(QStringLiteral("#0b0d11"));
+    p.menuText = QColor(QStringLiteral("#e8eaf0"));
+    p.panelBackground = QColor(QStringLiteral("#13161c"));
+    p.panelBorder = QColor(QStringLiteral("#2a2f3a"));
+    p.tabBackground = QColor(QStringLiteral("#1f232c"));
+    p.tabText = QColor(QStringLiteral("#e8eaf0"));
+    p.tabBorder = QColor(QStringLiteral("#2a2f3a"));
+    p.fieldBackground = QColor(QStringLiteral("#171a21"));
+    p.fieldBorder = QColor(QStringLiteral("#2a2f3a"));
+    p.fieldText = QColor(QStringLiteral("#e8eaf0"));
+    p.focusBorder = QColor(QStringLiteral("#7aa2ff"));
+    p.selection = QColor(QStringLiteral("#ff7a3d"));
+    p.selectionText = QColor(QStringLiteral("#16110d"));
+    p.sliderGroove = QColor(QStringLiteral("#262b35"));
+    p.sliderHandle = QColor(QStringLiteral("#e8eaf0"));
+    p.accentButton = QColor(QStringLiteral("#262b35"));
+    p.accentButtonText = QColor(QStringLiteral("#e8eaf0"));
+    p.accentButtonBorder = QColor(QStringLiteral("#343a47"));
+    p.padFill = QColor(QStringLiteral("#171a21"));
+    p.padBorder = QColor(QStringLiteral("#2a2f3a"));
+    p.padSelected = QColor(QStringLiteral("#7aa2ff"));
+    p.playLoaded = QColor(QStringLiteral("#ff7a3d"));
+    p.playEmpty = QColor(QStringLiteral("#262b35"));
+    p.playOutline = QColor(QStringLiteral("#343a47"));
+    p.loopOff = QColor(QStringLiteral("#6b7280"));
+    p.loopOn = QColor(QStringLiteral("#ff7a3d"));
+    p.loadButton = QColor(QStringLiteral("#262b35"));
+    p.stopArmed = QColor(QStringLiteral("#aab1bf"));
+    p.playhead = QColor(QStringLiteral("#ff7a3d"));
+    p.playheadDelay = QColor(QStringLiteral("#5b6272"));
+    p.playheadBorder = QColor(QStringLiteral("#343a47"));
+    p.playheadText = QColor(QStringLiteral("#e8eaf0"));
+    p.sceneFill = QColor(QStringLiteral("#171a21"));
+    p.sceneActiveFill = QColor(QStringLiteral("#1f232c"));
+    p.sceneBorder = QColor(QStringLiteral("#2a2f3a"));
+    p.sceneActiveBorder = QColor(QStringLiteral("#7aa2ff"));
+    p.sceneText = QColor(QStringLiteral("#e8eaf0"));
+    p.sceneActiveText = QColor(QStringLiteral("#e8eaf0"));
+    p.scenePlayingText = QColor(QStringLiteral("#0f1115"));
+    p.sceneEditingBackground = QColor(QStringLiteral("#262b35"));
+    p.sceneEditingText = QColor(QStringLiteral("#e8eaf0"));
+    p.sampleBackground = QColor(QStringLiteral("#171a21"));
+    p.sampleBorder = QColor(QStringLiteral("#2a2f3a"));
+    p.sampleText = QColor(QStringLiteral("#e8eaf0"));
+    p.sampleGrip = QColor(QStringLiteral("#5b6272"));
+    p.sampleSelected = QColor(QStringLiteral("#7aa2ff"));
+    p.dropIndicator = QColor(QStringLiteral("#ff7a3d"));
+    p.progressTrack = QColor(QStringLiteral("#262b35"));
+    p.progressChunk = QColor(QStringLiteral("#ff7a3d"));
+    return p;
+}
+
 Theme::Palette parchmentPalette()
 {
     Theme::Palette p;
     p.background = QColor(QStringLiteral("#9a8e84"));
     p.text = QColor(QStringLiteral("#1c1410"));
+    p.textMuted = QColor(QStringLiteral("#5a4c42"));
     p.menuBackground = QColor(QStringLiteral("#7d7168"));
     p.menuText = QColor(QStringLiteral("#fbe9d8"));
     p.panelBackground = QColor(QStringLiteral("#7d7168"));
@@ -136,6 +198,7 @@ Theme::Palette nightPalette()
     Theme::Palette p;
     p.background = QColor(QStringLiteral("#241f1c"));
     p.text = QColor(QStringLiteral("#f3e6d8"));
+    p.textMuted = QColor(QStringLiteral("#a89888"));
     p.menuBackground = QColor(QStringLiteral("#1a1614"));
     p.menuText = QColor(QStringLiteral("#f6e7d6"));
     p.panelBackground = QColor(QStringLiteral("#1a1614"));
@@ -193,6 +256,7 @@ Theme::Palette forestPalette()
     Theme::Palette p;
     p.background = QColor(QStringLiteral("#6d7b5e"));
     p.text = QColor(QStringLiteral("#172016"));
+    p.textMuted = QColor(QStringLiteral("#3e4c36"));
     p.menuBackground = QColor(QStringLiteral("#3e4c36"));
     p.menuText = QColor(QStringLiteral("#f4f7ec"));
     p.panelBackground = QColor(QStringLiteral("#3e4c36"));
@@ -250,6 +314,7 @@ Theme::Palette inkPalette()
     Theme::Palette p;
     p.background = QColor(QStringLiteral("#d7d2c8"));
     p.text = QColor(QStringLiteral("#1b1e24"));
+    p.textMuted = QColor(QStringLiteral("#5b6270"));
     p.menuBackground = QColor(QStringLiteral("#243044"));
     p.menuText = QColor(QStringLiteral("#f7f4ee"));
     p.panelBackground = QColor(QStringLiteral("#243044"));
@@ -311,13 +376,15 @@ Theme& Theme::instance()
 }
 
 Theme::Theme()
-    : m_palette(parchmentPalette())
+    : m_palette(midnightPalette())
 {
 }
 
 QString Theme::idName() const
 {
     switch (m_id) {
+    case Id::Midnight:
+        return QStringLiteral("midnight");
     case Id::Night:
         return QStringLiteral("night");
     case Id::Forest:
@@ -333,6 +400,8 @@ QString Theme::idName() const
 QString Theme::idLabel(Id id)
 {
     switch (id) {
+    case Id::Midnight:
+        return QStringLiteral("Midnight");
     case Id::Night:
         return QStringLiteral("Night");
     case Id::Forest:
@@ -348,6 +417,8 @@ QString Theme::idLabel(Id id)
 Theme::Palette Theme::preset(Id id)
 {
     switch (id) {
+    case Id::Midnight:
+        return midnightPalette();
     case Id::Night:
         return nightPalette();
     case Id::Forest:
@@ -403,8 +474,11 @@ void Theme::setColorAt(int index, const QColor& color)
 
 void Theme::load(const QString& themeId, const QJsonObject& colors)
 {
-    Id id = Id::Parchment;
-    if (themeId == QLatin1String("night")) {
+    // Settings saved before a theme was stored get the default look.
+    Id id = Id::Midnight;
+    if (themeId == QLatin1String("parchment")) {
+        id = Id::Parchment;
+    } else if (themeId == QLatin1String("night")) {
         id = Id::Night;
     } else if (themeId == QLatin1String("forest")) {
         id = Id::Forest;
@@ -438,6 +512,33 @@ QJsonObject Theme::colorsJson() const
 void Theme::apply()
 {
     if (qApp) {
+        // Fusion draws anything the stylesheet leaves alone (menus, check boxes, scroll bars)
+        // from the application palette, so keep that in step with the theme.
+        const Palette& t = m_palette;
+        QPalette pal;
+        pal.setColor(QPalette::Window, t.background);
+        pal.setColor(QPalette::WindowText, t.text);
+        pal.setColor(QPalette::Base, t.fieldBackground);
+        pal.setColor(QPalette::AlternateBase, t.panelBackground);
+        pal.setColor(QPalette::Text, t.fieldText);
+        pal.setColor(QPalette::PlaceholderText, t.textMuted);
+        pal.setColor(QPalette::Button, t.fieldBackground);
+        pal.setColor(QPalette::ButtonText, t.text);
+        pal.setColor(QPalette::BrightText, t.selectionText);
+        pal.setColor(QPalette::Highlight, t.selection);
+        pal.setColor(QPalette::HighlightedText, t.selectionText);
+        pal.setColor(QPalette::ToolTipBase, t.panelBackground);
+        pal.setColor(QPalette::ToolTipText, t.text);
+        pal.setColor(QPalette::Light, t.playOutline);
+        pal.setColor(QPalette::Midlight, t.fieldBorder);
+        pal.setColor(QPalette::Mid, t.panelBorder);
+        pal.setColor(QPalette::Dark, t.panelBorder);
+        pal.setColor(QPalette::Shadow, t.menuBackground);
+        pal.setColor(QPalette::Link, t.focusBorder);
+        pal.setColor(QPalette::Disabled, QPalette::WindowText, t.textMuted);
+        pal.setColor(QPalette::Disabled, QPalette::Text, t.textMuted);
+        pal.setColor(QPalette::Disabled, QPalette::ButtonText, t.textMuted);
+        qApp->setPalette(pal);
         qApp->setStyleSheet(styleSheet());
     }
     emit changed();
@@ -487,11 +588,12 @@ QString Theme::styleSheet() const
         "QPushButton#SceneStop { background: %1; color: %2; border: none; }\n"
         "QLineEdit#PadName { background: transparent; border: none; color: %2; padding: 0; }\n"
         "QLineEdit#PadName:focus { background: %3; border: 1px solid %4; }\n"
-        "QLabel#PadVolumeValue { background: transparent; color: %2; padding: 0; }\n"
+        "QLabel#PadVolumeValue { background: transparent; color: %9; padding: 0; }\n"
         "QSlider#PadVolume::groove:horizontal { height: 6px; background: %5; border-radius: 3px; }\n"
         "QSlider#PadVolume::handle:horizontal { background: %6; width: 12px; margin: -4px 0; border-radius: 6px; }\n")
         .arg(hex(p.stopArmed), hex(p.text), hex(p.fieldBackground), hex(p.focusBorder),
-            hex(p.sliderGroove), hex(p.sliderHandle), hex(p.sceneFill), hex(p.sceneText));
+            hex(p.sliderGroove), hex(p.sliderHandle), hex(p.sceneFill), hex(p.sceneText),
+            hex(p.textMuted));
 
     qss += QStringLiteral(
         "QWidget#SceneRow { background: transparent; color: %1; border: none; }\n"
@@ -592,5 +694,34 @@ QString Theme::styleSheet() const
         "QLabel#SampleInfo { color: %3; }\n")
         .arg(hex(p.background), hex(p.panelBackground), hex(p.text), hex(p.panelBorder),
             hex(p.tabBackground), hex(p.tabText), hex(p.tabBorder));
+
+    qss += QStringLiteral(
+        "QPushButton {\n"
+        "    background: %1;\n"
+        "    color: %2;\n"
+        "    border: 1px solid %3;\n"
+        "    border-radius: 6px;\n"
+        "    padding: 5px 12px;\n"
+        "}\n"
+        "QPushButton:hover { border-color: %4; }\n"
+        "QPushButton:pressed { background: %3; }\n"
+        "QPushButton:disabled { color: %5; }\n"
+        "QMenuBar::item { background: transparent; padding: 4px 10px; }\n"
+        "QMenuBar::item:selected { background: %1; border-radius: 4px; }\n"
+        "QMenu { padding: 4px; }\n"
+        "QMenu::item { padding: 5px 20px; border-radius: 4px; }\n"
+        "QToolTip { background: %1; color: %2; border: 1px solid %3; padding: 4px 6px; }\n"
+        "QScrollBar:vertical { background: transparent; width: 10px; margin: 0; }\n"
+        "QScrollBar:horizontal { background: transparent; height: 10px; margin: 0; }\n"
+        "QScrollBar::handle:vertical, QScrollBar::handle:horizontal { background: %3; border-radius: 4px; margin: 2px; }\n"
+        "QScrollBar::handle:vertical { min-height: 24px; }\n"
+        "QScrollBar::handle:horizontal { min-width: 24px; }\n"
+        "QScrollBar::handle:hover { background: %5; }\n"
+        "QScrollBar::add-line, QScrollBar::sub-line { width: 0; height: 0; }\n"
+        "QScrollBar::add-page, QScrollBar::sub-page { background: transparent; }\n"
+        "QWidget#SceneRow QPushButton, QPushButton#AddScene, QPushButton#AddSample { padding: 0; }\n"
+        "QPushButton#BottomTab { border-top-left-radius: 6px; border-top-right-radius: 6px;"
+        " border-bottom-left-radius: 0; border-bottom-right-radius: 0; }\n")
+        .arg(hex(p.fieldBackground), hex(p.text), hex(p.fieldBorder), hex(p.focusBorder), hex(p.textMuted));
     return qss;
 }
