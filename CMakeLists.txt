@@ -41,6 +41,7 @@ set(FEEDRA_SOURCES
     src/widgets/SceneRowWidget.cpp
     src/widgets/SampleRowWidget.cpp
     src/widgets/ReorderListHost.cpp
+    src/widgets/WaveformWidget.cpp
     resources/resources.qrc
 )
 

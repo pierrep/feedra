@@ -67,6 +67,13 @@ struct DecodedAudio {
     int mp3BufferSize = 0;
 };
 
+// Min/max envelope of a whole file, one pair per bin, for waveform displays.
+struct WaveformPeaks {
+    bool ok = false;
+    std::vector<float> mins;
+    std::vector<float> maxs;
+};
+
 void OpenALSoundUpdate();
 
 class OpenALSoundPlayer {
@@ -99,6 +106,11 @@ public:
     void setMultiPlay(bool bMp);
     void setPosition(float pct);
     void setPositionMS(int ms);
+    // Jump to `pct` (0..1) of the file without ever blocking the stream thread.
+    // While streaming, the request is handed to the stream thread, which drops the queued
+    // audio and restarts from the new spot within a millisecond or two. When stopped or paused, the
+    // queue is rebuilt at the new spot so the next play starts there.
+    void seekTo(float pct);
 
     float getPosition() const;
     int getPositionMS() const;
@@ -115,6 +127,19 @@ public:
 
     float * getSpectrum(int bands);
     static float * getSystemSpectrum(int bands);
+
+    // Frame (0..total) the listener is hearing right now, compensating for queued stream
+    // buffers and device latency. Returns -1 when unknown. Never takes the stream mutex.
+    double getAudibleFrame() const;
+    // getAudibleFrame() as 0..1 of the file, or -1 when unknown.
+    float getAudiblePosition() const;
+    int64_t getTotalFrames() const { return totalFrames; }
+    const std::filesystem::path& getFilePath() const { return fileName; }
+
+    // Decodes the whole file on the calling thread (use a background thread) and returns
+    // `bins` min/max pairs. Independent of any player, so it never touches playback state.
+    static WaveformPeaks computePeaks(const std::filesystem::path& fileName, int bins,
+                                      const std::atomic<bool>* cancel = nullptr);
 
     float getDuration() const { return duration; }
     int getSampleRate() const { return samplerate; }
@@ -172,10 +197,25 @@ private:
     static void notifyPlaybackEnded(OpenALSoundPlayer* player);
 
     // Refills the stream queue from the start of the file; the stream thread must not be running.
-    bool primeStream();
+    bool primeStream(int64_t startFrame = 0);
+    // Stops the sources, drops their queued buffers and refills them from `startFrame`.
+    // Caller holds `mutex`. Leaves the sources stopped.
+    bool rebuildQueueLocked(int64_t startFrame);
+    // Moves the stream decoder; caller must own the stream (thread's lock or thread stopped).
+    void seekDecoder(int64_t frame);
     void haltPlayback();
     bool attachDecodedStream(const DecodedAudio& decoded);
     void rebuildFftBuffers();
+
+    // Stream queue tracking for getAudibleFrame(). The ring is only touched by whichever
+    // thread is feeding the queue; the UI reads the published copy through a seqlock.
+    int64_t decoderFramePosition() const;
+    void resetQueueTracking();
+    void pushQueuedChunk(int64_t start, int64_t frames);
+    void popQueuedChunk();
+    void publishQueue();
+    void beginQueueChange() { queueSeq.fetch_add(1, std::memory_order_acq_rel); }
+    void endQueueChange() { queueSeq.fetch_add(1, std::memory_order_release); }
 
     bool sfReadFile(const std::filesystem::path& path);
     bool sfStream(const std::filesystem::path& path);
@@ -246,6 +286,26 @@ private:
     bool streamPrimed = false;
 
     bool spatialisedStereo = false;
+
+    int64_t totalFrames = 0;
+    struct QueuedChunk { int64_t start = 0; int64_t frames = 0; };
+    static constexpr int kQueueRing = 8;
+    QueuedChunk queuedChunks[kQueueRing];
+    int queuedHead = 0;
+    int queuedCount = 0;
+    // Start frame of the current run (since the last load, prime or seek) and how many frames
+    // of it have been unqueued, so the latency correction never reaches back past the run start.
+    bool runPending = true;
+    int64_t runStartFrame = 0;
+    int64_t runUnqueued = 0;
+    std::atomic<uint32_t> queueSeq{0};
+    std::atomic<int64_t> pubStart0{0};
+    std::atomic<int64_t> pubFrames0{0};
+    std::atomic<int64_t> pubStart1{0};
+    std::atomic<int> pubCount{0};
+    std::atomic<int64_t> pubRunStart{0};
+    std::atomic<int64_t> pubRunUnqueued{0};
+    std::atomic<int64_t> pendingSeekFrame{-1};
 
     ALuint filters[2] = { 0, 0 };
     float reverbSend = 0.0f;

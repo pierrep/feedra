@@ -46,7 +46,7 @@ SampleRowWidget::SampleRowWidget(int sampleId, const QString& path, QWidget* par
     m_progress->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Fixed);
     m_progress->setAttribute(Qt::WA_TransparentForMouseEvents);
 
-    m_text = QFileInfo(path).fileName() + QString("  id = %1").arg(sampleId);
+    m_text = QFileInfo(path).fileName();
     m_label = new QLabel(m_text, this);
     m_label->setAttribute(Qt::WA_TransparentForMouseEvents);
     m_label->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);

@@ -6,6 +6,7 @@
 #include "widgets/ReorderListHost.h"
 #include "widgets/SampleRowWidget.h"
 #include "widgets/SoundPadWidget.h"
+#include "widgets/WaveformWidget.h"
 
 #include <QAction>
 #include <QApplication>
@@ -401,6 +402,9 @@ void MainWindow::buildUi()
     m_padTab = new QPushButton(tr("Pad"), tabBar);
     m_padTab->setObjectName(QStringLiteral("BottomTab"));
     m_padTab->setFocusPolicy(Qt::NoFocus);
+    m_waveTab = new QPushButton(tr("Waveform"), tabBar);
+    m_waveTab->setObjectName(QStringLiteral("BottomTab"));
+    m_waveTab->setFocusPolicy(Qt::NoFocus);
     m_collapseBottom = new QPushButton(QStringLiteral("\u25B4"), tabBar);
     m_collapseBottom->setObjectName(QStringLiteral("BottomCollapse"));
     m_collapseBottom->setFocusPolicy(Qt::NoFocus);
@@ -408,6 +412,7 @@ void MainWindow::buildUi()
     m_collapseBottom->setToolTip(tr("Hide panel"));
     tabRow->addWidget(m_sampleTab, 0, Qt::AlignBottom);
     tabRow->addWidget(m_padTab, 0, Qt::AlignBottom);
+    tabRow->addWidget(m_waveTab, 0, Qt::AlignBottom);
     tabRow->addStretch();
     tabRow->addWidget(m_collapseBottom, 0, Qt::AlignBottom);
 
@@ -462,6 +467,20 @@ void MainWindow::buildUi()
 
     m_bottomStack->addWidget(samplePage);
     m_bottomStack->addWidget(padPage);
+    m_waveform = new WaveformWidget(m_bottomStack);
+    m_bottomStack->addWidget(m_waveform);
+    connect(m_waveform, &WaveformWidget::seekRequested, this, [this](float pct) {
+        // Same sample the waveform is showing: the selected pad's current one.
+        auto* pad = activePad();
+        if (!pad || !pad->isLoaded() || pad->soundPlayer().player.empty()) {
+            return;
+        }
+        const SoundPlayer& player = pad->soundPlayer();
+        const int cur = std::clamp(player.getCurSound(), 0, static_cast<int>(player.player.size()) - 1);
+        if (OpenALSoundPlayer* audio = player.player[static_cast<size_t>(cur)]->audioPlayer) {
+            audio->seekTo(pct);
+        }
+    });
     m_bottomPageHeight = std::max(m_infoLabel->minimumHeight() + 16, 148);
     m_bottomStack->setFixedHeight(m_bottomPageHeight);
 
@@ -482,6 +501,13 @@ void MainWindow::buildUi()
             return;
         }
         setBottomTab(1);
+    });
+    connect(m_waveTab, &QPushButton::clicked, this, [this]() {
+        if (!m_bottomCollapsed && m_bottomStack->currentIndex() == 2) {
+            setBottomCollapsed(true);
+            return;
+        }
+        setBottomTab(2);
     });
     connect(m_collapseBottom, &QPushButton::clicked, this, [this]() {
         setBottomCollapsed(!m_bottomCollapsed);
@@ -850,6 +876,36 @@ void MainWindow::refreshSampleInfo()
         .arg(player.getTotalDelay(), 0, 'f', 2));
 }
 
+void MainWindow::refreshWaveform()
+{
+    // Only does work while the tab is on screen. Reads positions the same way the
+    // sample rows do (no stream locks), so it cannot hold up playback.
+    if (!m_waveform || m_bottomCollapsed || !m_bottomStack || m_bottomStack->currentWidget() != m_waveform) {
+        return;
+    }
+    auto* pad = activePad();
+    if (!pad || !pad->isLoaded() || pad->soundPlayer().player.empty()) {
+        m_waveform->setSample(QString(), 0.0f);
+        return;
+    }
+    const SoundPlayer& player = pad->soundPlayer();
+    const int cur = std::clamp(player.getCurSound(), 0, static_cast<int>(player.player.size()) - 1);
+    const OpenALSoundPlayer* audio = player.player[static_cast<size_t>(cur)]->audioPlayer;
+    if (!audio || !audio->isLoaded()) {
+        m_waveform->setSample(QString(), 0.0f);
+        return;
+    }
+    QString path;
+    if (cur < static_cast<int>(pad->soundPaths().size())) {
+        path = QString::fromStdString(pad->soundPaths()[static_cast<size_t>(cur)]);
+    } else {
+        path = QString::fromStdString(audio->getFilePath().string());
+    }
+    m_waveform->setSample(path, audio->getDuration());
+    const bool playing = player.isPlaying() && !player.isPlayingDelay();
+    m_waveform->setPlayhead(audio->getAudiblePosition(), playing);
+}
+
 void MainWindow::setBottomTab(int index)
 {
     if (!m_bottomStack) {
@@ -858,6 +914,7 @@ void MainWindow::setBottomTab(int index)
     m_bottomStack->setCurrentIndex(index);
     refreshTabButton(m_sampleTab, index == 0);
     refreshTabButton(m_padTab, index == 1);
+    refreshTabButton(m_waveTab, index == 2);
     if (m_bottomCollapsed) {
         setBottomCollapsed(false);
     }
@@ -880,9 +937,11 @@ void MainWindow::setBottomCollapsed(bool collapsed, bool resizeWindow)
     if (collapsed) {
         refreshTabButton(m_sampleTab, false);
         refreshTabButton(m_padTab, false);
+        refreshTabButton(m_waveTab, false);
     } else if (m_bottomStack) {
         refreshTabButton(m_sampleTab, m_bottomStack->currentIndex() == 0);
         refreshTabButton(m_padTab, m_bottomStack->currentIndex() == 1);
+        refreshTabButton(m_waveTab, m_bottomStack->currentIndex() == 2);
     }
 }
 
@@ -1578,7 +1637,7 @@ void MainWindow::restoreWindowLayout(const QJsonObject& global)
     }
 
     if (global.contains(QStringLiteral("bottomtab"))) {
-        const int tab = std::clamp(global.value(QStringLiteral("bottomtab")).toInt(0), 0, 1);
+        const int tab = std::clamp(global.value(QStringLiteral("bottomtab")).toInt(0), 0, 2);
         setBottomTab(tab);
     }
     if (global.contains(QStringLiteral("bottomcollapsed"))) {
@@ -1718,6 +1777,7 @@ void MainWindow::tick()
     }
     if (m_page == Page::Main) {
         refreshSampleInfo();
+        refreshWaveform();
     }
     if (m_page == Page::Main && m_sidebar == SidebarView::Editor) {
         auto* pad = activePad();

@@ -10,6 +10,7 @@ class Scene;
 class SoundPadWidget;
 class SampleRowWidget;
 class SampleLoadQueue;
+class WaveformWidget;
 class QAction;
 class QProgressBar;
 class QCheckBox;
@@ -63,6 +64,7 @@ private:
     bool handleReorderKey(QKeyEvent* event);
     void updateMainControls();
     void refreshSampleInfo();
+    void refreshWaveform();
     void updateEditControls();
     void updatePanControl(AudioSample* sample);
     void rebuildEditSamples();
@@ -118,6 +120,8 @@ private:
     QStackedWidget* m_bottomStack = nullptr;
     QPushButton* m_sampleTab = nullptr;
     QPushButton* m_padTab = nullptr;
+    QPushButton* m_waveTab = nullptr;
+    WaveformWidget* m_waveform = nullptr;
     QPushButton* m_collapseBottom = nullptr;
     int m_bottomPageHeight = 0;
     QSpinBox* m_minDelay = nullptr;

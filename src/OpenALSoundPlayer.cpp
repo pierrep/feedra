@@ -1512,13 +1512,27 @@ bool OpenALSoundPlayer::mpg123Stream(const std::filesystem::path& path){
 	if(speed>1) curr_buffer_size *= (int)round(speed);
     buffer_short.resize(curr_buffer_size);
     buffer_float.resize(buffer_short.size());
-	size_t done=0;
-    if(mpg123_read(mp3streamf,(unsigned char*)&buffer_short[0],curr_buffer_size*2,&done)==MPG123_DONE){
-        //set to start of stream
+    // Fill the chunk from what mpg123 actually produced. A format notice or short read
+    // must never leave stale samples from the previous chunk in the buffer.
+    const size_t want = static_cast<size_t>(curr_buffer_size) * 2;
+    size_t filled = 0;
+    int code = MPG123_OK;
+    while (filled < want) {
+        size_t got = 0;
+        code = mpg123_read(mp3streamf, reinterpret_cast<unsigned char*>(buffer_short.data()) + filled, want - filled, &got);
+        filled += got;
+        if (code == MPG123_NEW_FORMAT) {
+            continue;
+        }
+        if (code != MPG123_OK || got == 0) {
+            break;
+        }
+    }
+    buffer_short.resize(filled / 2);
+    buffer_float.resize(filled / 2);
+    if (code != MPG123_OK && code != MPG123_NEW_FORMAT) {
+        // End of file (or a decode error, treated the same way): back to the start.
         mpg123_seek(mp3streamf,0,SEEK_SET);
-
-        buffer_short.resize(done/2);
-        buffer_float.resize(done/2);
 		if(!bLoop) stopThread();
 		stream_end = true;
 	}
@@ -1900,6 +1914,92 @@ DecodedAudio OpenALSoundPlayer::decodeFile(const std::filesystem::path& fileName
     return out;
 }
 
+WaveformPeaks OpenALSoundPlayer::computePeaks(const std::filesystem::path& fileName, int bins, const std::atomic<bool>* cancel)
+{
+    WaveformPeaks out;
+    if (bins <= 0) {
+        return out;
+    }
+    std::string ext = fileName.extension().string();
+    for (char& c : ext) {
+        c = static_cast<char>(tolower(static_cast<unsigned char>(c)));
+    }
+
+    // A private decoder: separate file handle, nothing shared with any playing source.
+    DecodeStream stream;
+    if (!stream.open(fileName, ext, true)) {
+        return out;
+    }
+    const int channels = stream.channels;
+    int64_t expected = 0;
+    if (!stream.mp3) {
+        expected = static_cast<int64_t>(stream.info.frames);
+    }
+    if (expected <= 0) {
+        expected = static_cast<int64_t>(std::llround(double(stream.duration) * stream.sampleRate));
+    }
+    if (channels <= 0 || expected <= 0) {
+        return out;
+    }
+
+    out.mins.assign(static_cast<size_t>(bins), 0.0f);
+    out.maxs.assign(static_cast<size_t>(bins), 0.0f);
+    std::vector<unsigned char> touched(static_cast<size_t>(bins), 0);
+    std::vector<short> shorts;
+    std::vector<float> floats;
+    int64_t frame = 0;
+    // Guards against decoders that never report the end of the file.
+    const int64_t frameLimit = expected * 2 + 1;
+
+    while (frame < frameLimit) {
+        if (cancel && cancel->load(std::memory_order_relaxed)) {
+            return WaveformPeaks{};
+        }
+        if (!stream.readChunk(shorts, floats)) {
+            break;
+        }
+        const int64_t frames = static_cast<int64_t>(floats.size()) / channels;
+        for (int64_t f = 0; f < frames; ++f, ++frame) {
+            const int64_t bin64 = std::min<int64_t>(bins - 1, frame * bins / expected);
+            const size_t bin = static_cast<size_t>(bin64);
+            float lo = out.mins[bin];
+            float hi = out.maxs[bin];
+            if (!touched[bin]) {
+                lo = 1.0f;
+                hi = -1.0f;
+                touched[bin] = 1;
+            }
+            const float* sample = &floats[static_cast<size_t>(f * channels)];
+            for (int c = 0; c < channels; ++c) {
+                lo = std::min(lo, sample[c]);
+                hi = std::max(hi, sample[c]);
+            }
+            out.mins[bin] = lo;
+            out.maxs[bin] = hi;
+        }
+        if (stream.ended) {
+            break;
+        }
+    }
+    if (frame <= 0) {
+        return WaveformPeaks{};
+    }
+    // Normalise so quiet files are still readable; clipping files stay at full height.
+    float peak = 0.0f;
+    for (int i = 0; i < bins; ++i) {
+        peak = std::max(peak, std::max(std::fabs(out.mins[static_cast<size_t>(i)]), std::fabs(out.maxs[static_cast<size_t>(i)])));
+    }
+    if (peak > 1e-6f) {
+        const float gain = 1.0f / peak;
+        for (int i = 0; i < bins; ++i) {
+            out.mins[static_cast<size_t>(i)] *= gain;
+            out.maxs[static_cast<size_t>(i)] *= gain;
+        }
+    }
+    out.ok = true;
+    return out;
+}
+
 bool OpenALSoundPlayer::attachDecodedStream(const DecodedAudio& decoded)
 {
 #ifdef FEEDRA_USING_MPG123
@@ -1915,6 +2015,20 @@ bool OpenALSoundPlayer::attachDecodedStream(const DecodedAudio& decoded)
             }
             return false;
         }
+        {
+            // Reading the format here consumes mpg123's "new format" notice. Otherwise the
+            // first read after loading returns it with no audio, and the first chunk of the
+            // first play would be stale data from the previous buffer.
+            long rate = 0;
+            int fmtChannels = 0;
+            int encoding = 0;
+            mpg123_getformat(mp3streamf, &rate, &fmtChannels, &encoding);
+        }
+        {
+            const off_t len = mpg123_length(mp3streamf);
+            totalFrames = len > 0 ? static_cast<int64_t>(len)
+                                  : static_cast<int64_t>(std::llround(double(decoded.duration) * decoded.sampleRate));
+        }
         mpg123_seek(mp3streamf, static_cast<off_t>(decoded.resumeFrames), SEEK_SET);
         stream_end = decoded.streamEnded;
         return true;
@@ -1927,6 +2041,7 @@ bool OpenALSoundPlayer::attachDecodedStream(const DecodedAudio& decoded)
         qCritical() << "OpenALSoundPlayer" << "attachDecodedStream(): couldn't read" << decoded.path.string().c_str();
         return false;
     }
+    totalFrames = static_cast<int64_t>(sfInfo.frames);
     if (decoded.resumeFrames > 0) {
         sf_seek(streamf, static_cast<sf_count_t>(decoded.resumeFrames), SEEK_SET);
     }
@@ -1992,6 +2107,7 @@ bool OpenALSoundPlayer::uploadDecoded(DecodedAudio decoded)
     stream_scale = decoded.streamScale;
     mp3_buffer_size = decoded.mp3BufferSize;
     stream_end = false;
+    totalFrames = 0;
 
     if (channels <= 0 || samplerate <= 0) {
         qCritical() << "Sound file load failed - wrong file type or empty file";
@@ -2013,6 +2129,7 @@ bool OpenALSoundPlayer::uploadDecoded(DecodedAudio decoded)
             qCritical() << "Sound file load failed - wrong file type or empty file";
             return false;
         }
+        totalFrames = static_cast<int64_t>(std::max(buffer_short.size(), buffer_float.size()) / static_cast<size_t>(channels));
     }
     rebuildFftBuffers();
 
@@ -2181,18 +2298,59 @@ bool OpenALSoundPlayer::uploadDecoded(DecodedAudio decoded)
 
     setPan(pan);
 
+    // The two initial chunks were decoded from the start of the file, in order.
+    beginQueueChange();
+    resetQueueTracking();
+    if (isStreaming) {
+        int64_t start = 0;
+        const size_t chunkCount = std::min<size_t>(2, decoded.initialChunks.size());
+        for (size_t c = 0; c < chunkCount; ++c) {
+            const DecodedChunk& chunk = decoded.initialChunks[c];
+            const int64_t frames = static_cast<int64_t>(std::max(chunk.pcmShort.size(), chunk.pcmFloat.size()) / static_cast<size_t>(channels));
+            if (frames <= 0) {
+                break;
+            }
+            pushQueuedChunk(start, frames);
+            start += frames;
+            if (totalFrames > 0) {
+                start %= totalFrames;
+            }
+        }
+    }
+    publishQueue();
+    endQueueChange();
+
     streamPrimed = isStreaming;
     bLoadedOk = true;
     return bLoadedOk;
 }
 
 //------------------------------------------------------------
-bool OpenALSoundPlayer::primeStream()
+bool OpenALSoundPlayer::primeStream(int64_t startFrame)
 {
     if (!isStreaming || sources.empty() || buffers.size() < sources.size() * 2) {
         return false;
     }
     std::unique_lock<std::mutex> lock(mutex);
+    pendingSeekFrame.store(-1);
+    if (!rebuildQueueLocked(startFrame)) {
+        return false;
+    }
+    streamPrimed = true;
+    return true;
+}
+
+//------------------------------------------------------------
+bool OpenALSoundPlayer::rebuildQueueLocked(int64_t startFrame)
+{
+    // Publishes the rebuilt queue on every exit path.
+    struct QueueChangeGuard {
+        OpenALSoundPlayer* p;
+        ~QueueChangeGuard() { p->publishQueue(); p->endQueueChange(); }
+    };
+    beginQueueChange();
+    QueueChangeGuard queueGuard{this};
+    resetQueueTracking();
 
     alSourceStopv(static_cast<ALsizei>(sources.size()), &sources[0]);
     alSourceRewindv(static_cast<ALsizei>(sources.size()), &sources[0]);
@@ -2210,11 +2368,16 @@ bool OpenALSoundPlayer::primeStream()
     }
     stream_samples_read = 0;
     stream_end = false;
+    if (startFrame > 0) {
+        seekDecoder(startFrame);
+    }
 
     for (int s = 0; s < 2; ++s) {
+        const int64_t chunkStart = decoderFramePosition();
         if (stream(fileName) == 0) {
             return false;
         }
+        pushQueuedChunk(chunkStart, static_cast<int64_t>(buffer_short.size()) / channels);
         if (sources.size() == 1) {
             ALuint buffer = buffers[static_cast<size_t>(s)];
             if (uploadPcm(buffer, openALformat, samplerate, buffer_short, buffer_float)) {
@@ -2237,8 +2400,6 @@ bool OpenALSoundPlayer::primeStream()
             }
         }
     }
-
-    streamPrimed = true;
     return true;
 }
 
@@ -2261,6 +2422,27 @@ void OpenALSoundPlayer::threadedFunction(){
 	while(isThreadRunning()){
         sleepMs(1);
 		std::unique_lock<std::mutex> lock(mutex);
+
+        // A seek from the UI is applied here, by the thread that owns the decoder, so the
+        // UI never waits on this lock. The queued audio is dropped and refilled from the new
+        // spot, then restarted straight away: the gap is only the time to decode two chunks.
+        {
+            const int64_t seek = pendingSeekFrame.exchange(-1);
+            if (seek >= 0) {
+                const bool ok = rebuildQueueLocked(seek);
+                // Pause/stop take this lock before stopping the thread, so this sees them.
+                if (ok && !sources.empty() && !bPaused && isThreadRunning()) {
+                    alSourcePlayv(static_cast<ALsizei>(sources.size()), &sources[0]);
+                }
+                if (stream_end) {
+                    // Jumped into the last chunk or two of a one-shot: report the end the same
+                    // way a normal refill does, so the pad moves on as usual.
+                    playerPtr = this;
+                    notifyPlaybackEnded(playerPtr);
+                }
+                continue;
+            }
+        }
 
         int loop;
         if(bMultiPlay) {
@@ -2287,7 +2469,10 @@ void OpenALSoundPlayer::threadedFunction(){
             while(processed)
 			{
                 processed--;
+                const int64_t chunkStart = decoderFramePosition();
                 stream("");
+                // Brackets the unqueue/queue so the UI never pairs a stale queue head with a new offset.
+                beginQueueChange();
 
                 if((channels > 1) && spatialisedStereo){
 					for(int j=0;j<channels;j++){
@@ -2323,6 +2508,12 @@ void OpenALSoundPlayer::threadedFunction(){
                     }
 					alSourceQueueBuffers(sources[i], 1, &albuffer);
 				}
+                if(i == 0) {
+                    popQueuedChunk();
+                    pushQueuedChunk(chunkStart, static_cast<int64_t>(buffer_short.size()) / channels);
+                    publishQueue();
+                }
+                endQueueChange();
                 if(stream_end && !(state == AL_STOPPED)){
                     //cout << "threadedFunction() - stream end! state: " << state << endl;
                     playerPtr = this;
@@ -2441,6 +2632,12 @@ void OpenALSoundPlayer::unload(){
 	}
 	streamf = 0;
     file_extension = "";
+
+    beginQueueChange();
+    resetQueueTracking();
+    publishQueue();
+    endQueueChange();
+    totalFrames = 0;
 
 	bLoadedOk = false;
 }
@@ -2767,6 +2964,192 @@ void OpenALSoundPlayer::haltPlayback(){
         setPosition(0);
 
 	}
+}
+
+// ----------------------------------------------------------------------------
+void OpenALSoundPlayer::seekDecoder(int64_t frame)
+{
+    if (totalFrames > 0) {
+        frame = std::clamp<int64_t>(frame, 0, totalFrames - 1);
+    }
+    frame = std::max<int64_t>(0, frame);
+#ifdef FEEDRA_USING_MPG123
+    if (mp3streamf) {
+        mpg123_seek(mp3streamf, static_cast<off_t>(frame), SEEK_SET);
+        stream_end = false;
+        return;
+    }
+#endif
+    if (streamf) {
+        const sf_count_t pos = sf_seek(streamf, static_cast<sf_count_t>(frame), SEEK_SET);
+        stream_samples_read = pos >= 0 ? static_cast<size_t>(pos) * static_cast<size_t>(channels) : 0;
+        stream_end = false;
+    }
+}
+
+void OpenALSoundPlayer::seekTo(float pct)
+{
+    if (!bLoadedOk || sources.empty() || totalFrames <= 0) {
+        return;
+    }
+    pct = std::clamp(pct, 0.0f, 1.0f);
+    const int64_t frame = std::min<int64_t>(totalFrames - 1, static_cast<int64_t>(double(pct) * double(totalFrames)));
+
+    if (!isStreaming) {
+        // Whole file is already in an OpenAL buffer; no stream thread involved.
+        for (ALuint source : sources) {
+            alSourcei(source, AL_SAMPLE_OFFSET, static_cast<ALint>(frame));
+        }
+        return;
+    }
+    if (isThreadRunning()) {
+        // Latest request wins, so dragging just overwrites it.
+        pendingSeekFrame.store(frame);
+        return;
+    }
+    // Stopped or paused: the stream thread is not running, so the queue can be rebuilt
+    // here without contention. Leaves the sources stopped with the new audio queued.
+    waitForThread();
+    if (primeStream(frame)) {
+        streamPrimed = true;
+    }
+}
+
+// ----------------------------------------------------------------------------
+int64_t OpenALSoundPlayer::decoderFramePosition() const
+{
+#ifdef FEEDRA_USING_MPG123
+    if (mp3streamf) {
+        const off_t pos = mpg123_tell(mp3streamf);
+        return pos > 0 ? static_cast<int64_t>(pos) : 0;
+    }
+#endif
+    if (streamf && channels > 0) {
+        return static_cast<int64_t>(stream_samples_read) / channels;
+    }
+    return 0;
+}
+
+void OpenALSoundPlayer::resetQueueTracking()
+{
+    queuedHead = 0;
+    queuedCount = 0;
+    runPending = true;
+    runStartFrame = 0;
+    runUnqueued = 0;
+}
+
+void OpenALSoundPlayer::pushQueuedChunk(int64_t start, int64_t frames)
+{
+    if (runPending) {
+        runStartFrame = start;
+        runPending = false;
+    }
+    if (queuedCount == kQueueRing) {
+        popQueuedChunk();
+    }
+    queuedChunks[(queuedHead + queuedCount) % kQueueRing] = QueuedChunk{ start, std::max<int64_t>(0, frames) };
+    ++queuedCount;
+}
+
+void OpenALSoundPlayer::popQueuedChunk()
+{
+    if (queuedCount == 0) {
+        return;
+    }
+    runUnqueued += queuedChunks[queuedHead].frames;
+    queuedHead = (queuedHead + 1) % kQueueRing;
+    --queuedCount;
+}
+
+void OpenALSoundPlayer::publishQueue()
+{
+    const QueuedChunk& a = queuedChunks[queuedHead];
+    const QueuedChunk& b = queuedChunks[(queuedHead + 1) % kQueueRing];
+    pubStart0.store(queuedCount > 0 ? a.start : 0, std::memory_order_relaxed);
+    pubFrames0.store(queuedCount > 0 ? a.frames : 0, std::memory_order_relaxed);
+    pubStart1.store(queuedCount > 1 ? b.start : 0, std::memory_order_relaxed);
+    pubCount.store(std::min(queuedCount, 2), std::memory_order_relaxed);
+    pubRunStart.store(runStartFrame, std::memory_order_relaxed);
+    pubRunUnqueued.store(runUnqueued, std::memory_order_relaxed);
+}
+
+// ----------------------------------------------------------------------------
+double OpenALSoundPlayer::getAudibleFrame() const
+{
+    if (sources.empty() || !bLoadedOk || totalFrames <= 0 || samplerate <= 0) {
+        return -1.0;
+    }
+    // Streams play from sources[0]; for static buffers the newest (multiplay) source is last.
+    const ALuint src = isStreaming ? sources[0] : sources.back();
+
+    ALint state = AL_STOPPED;
+    double offset = 0.0;
+    double latencyFrames = 0.0;
+    int count = 0;
+    int64_t runStart = 0, runUnqueuedFrames = 0;
+    bool consistent = false;
+
+    for (int attempt = 0; attempt < 3 && !consistent; ++attempt) {
+        const uint32_t seqBefore = queueSeq.load(std::memory_order_acquire);
+        if (isStreaming && (seqBefore & 1u)) {
+            std::this_thread::yield();
+            continue;
+        }
+        count = pubCount.load(std::memory_order_relaxed);
+        runStart = pubRunStart.load(std::memory_order_relaxed);
+        runUnqueuedFrames = pubRunUnqueued.load(std::memory_order_relaxed);
+
+        alGetSourcei(src, AL_SOURCE_STATE, &state);
+        if (alGetSourcedvSOFT) {
+            ALdouble values[2] = { 0.0, 0.0 };
+            alGetSourcedvSOFT(src, AL_SEC_OFFSET_LATENCY_SOFT, values);
+            offset = values[0] * samplerate;
+            latencyFrames = values[1] * samplerate * std::max(0.0f, speed);
+        } else {
+            ALint sampleOffset = 0;
+            alGetSourcei(src, AL_SAMPLE_OFFSET, &sampleOffset);
+            offset = sampleOffset;
+            latencyFrames = 0.0;
+        }
+
+        std::atomic_thread_fence(std::memory_order_acquire);
+        consistent = !isStreaming || queueSeq.load(std::memory_order_relaxed) == seqBefore;
+    }
+    if (!consistent) {
+        return -1.0;
+    }
+
+    // Position = where this run (play or seek) started + audio played since, less what is
+    // still on its way to the speakers. Counting only frames the player itself queued keeps
+    // this independent of the decoder's own position reports, which lag at stream start.
+    double played = offset;
+    double frame = offset;
+    if (isStreaming) {
+        if (count <= 0) {
+            return -1.0;
+        }
+        played = double(runUnqueuedFrames) + offset;
+        frame = double(runStart) + played;
+    }
+    if (state == AL_PLAYING) {
+        // Until the output delay has passed nothing from this run is audible: hold at its start
+        // rather than stepping back past it (which would wrap to the end of the file).
+        frame -= std::min(latencyFrames, played);
+    }
+
+    const double total = double(totalFrames);
+    frame = std::fmod(std::max(0.0, frame), total);
+    return frame;
+}
+
+float OpenALSoundPlayer::getAudiblePosition() const
+{
+    const double frame = getAudibleFrame();
+    if (frame < 0.0 || totalFrames <= 0) {
+        return -1.0f;
+    }
+    return static_cast<float>(frame / double(totalFrames));
 }
 
 // ----------------------------------------------------------------------------
