@@ -886,7 +886,7 @@ void SoundPadWidget::layoutContents()
     // Qt drops a radius larger than half the handle, so size the handle from the groove.
     const int handle = groove + 2 * margin;
     const Theme::Palette& theme = Theme::instance().palette();
-    m_volume->setStyleSheet(QStringLiteral(
+    const QString volumeStyle = QStringLiteral(
         "QSlider#PadVolume { background: transparent; }"
         "QSlider#PadVolume::groove:horizontal {"
         " height: %1px; background: %2; border-radius: %3px; }"
@@ -901,7 +901,13 @@ void SoundPadWidget::layoutContents()
         .arg(theme.sliderHandle.name(QColor::HexRgb))
         .arg(handle)
         .arg(margin)
-        .arg(handle / 2));
+        .arg(handle / 2);
+    // Re-polishing a stylesheet is slow; during a window resize every pad lands here many
+    // times with the same result, so only apply it when it actually changes.
+    if (volumeStyle != m_volumeStyle) {
+        m_volumeStyle = volumeStyle;
+        m_volume->setStyleSheet(volumeStyle);
+    }
 }
 
 void SoundPadWidget::resizeEvent(QResizeEvent* event)

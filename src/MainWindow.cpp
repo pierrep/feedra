@@ -39,6 +39,7 @@
 #include <QMessageBox>
 #include <QProgressBar>
 #include <QPushButton>
+#include <QResizeEvent>
 #include <QThread>
 #include <QSaveFile>
 #include <QScrollArea>
@@ -975,10 +976,24 @@ void MainWindow::setBottomCollapsed(bool collapsed, bool resizeWindow)
 {
     const bool changed = m_bottomCollapsed != collapsed;
     m_bottomCollapsed = collapsed;
+    const bool resizing = changed && resizeWindow && m_bottomPageHeight > 0 && isVisible()
+        && !isMaximized() && !isFullScreen();
+    if (resizing) {
+        // Toggling the panel first hands its height to the pad grid, then the window resize
+        // takes it back: two different grid sizes in a row, seen as a flicker. Hold painting
+        // until the window has its new size (released in resizeEvent, or by the timer if the
+        // window manager doesn't resize us).
+        m_holdGridPaint = true;
+        centralWidget()->setUpdatesEnabled(false);
+        QTimer::singleShot(250, this, &MainWindow::releaseGridPaint);
+    }
     if (m_bottomStack) {
         m_bottomStack->setVisible(!collapsed);
     }
-    if (changed && resizeWindow && m_bottomPageHeight > 0 && !isMaximized() && !isFullScreen()) {
+    if (resizing) {
+        // Apply the panel change to the layout now, while painting is held, so the window
+        // resize below is the only layout pass anyone sees.
+        settleLayouts();
         resize(width(), height() + (collapsed ? -m_bottomPageHeight : m_bottomPageHeight));
     }
     if (m_collapseBottom) {
@@ -2276,6 +2291,40 @@ Scene* MainWindow::activeScene() const
         return nullptr;
     }
     return m_scenes[m_config.activeSceneIdx];
+}
+
+void MainWindow::resizeEvent(QResizeEvent* event)
+{
+    QMainWindow::resizeEvent(event);
+    if (m_holdGridPaint) {
+        // The window has its new size: settle every layout at it, then paint once.
+        settleLayouts();
+        releaseGridPaint();
+    }
+}
+
+// Hiding a widget only posts a layout request, so a resize that follows would still lay
+// out with the old panel height. Push the change up through the layouts right away.
+void MainWindow::settleLayouts()
+{
+    if (m_bottomPanel && m_bottomPanel->layout()) {
+        m_bottomPanel->layout()->invalidate();
+        m_bottomPanel->layout()->activate();
+        m_bottomPanel->updateGeometry();
+    }
+    if (QLayout* layout = centralWidget()->layout()) {
+        layout->invalidate();
+        layout->activate();
+    }
+}
+
+void MainWindow::releaseGridPaint()
+{
+    if (!m_holdGridPaint) {
+        return;
+    }
+    m_holdGridPaint = false;
+    centralWidget()->setUpdatesEnabled(true);
 }
 
 void MainWindow::closeEvent(QCloseEvent* event)

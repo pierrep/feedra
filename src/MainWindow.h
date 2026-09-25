@@ -38,6 +38,7 @@ public:
 
 protected:
     void closeEvent(QCloseEvent* event) override;
+    void resizeEvent(QResizeEvent* event) override;
     bool eventFilter(QObject* watched, QEvent* event) override;
 
 private:
@@ -137,6 +138,11 @@ private:
     SoundPadWidget* m_infoPad = nullptr;
     int m_infoSound = -1;
     bool m_bottomCollapsed = false;
+    // Set while the panel toggles and the window resizes to match, so the pad grid
+    // isn't painted at the in-between size.
+    bool m_holdGridPaint = false;
+    void releaseGridPaint();
+    void settleLayouts();
 
     QSlider* m_pan = nullptr;
     QDoubleSpinBox* m_panValue = nullptr;

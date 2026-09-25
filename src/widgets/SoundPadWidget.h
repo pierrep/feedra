@@ -202,6 +202,7 @@ private:
     bool m_uiDelay = false;
     QString m_timeText;
     QString m_peakPath;
+    QString m_volumeStyle;
     std::vector<std::string> m_soundPaths;
 
     QWidget* m_card = nullptr;
