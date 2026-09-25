@@ -32,6 +32,9 @@ public:
     void setPaused(bool bP);
     void setLoop(bool bLp);
     void setVolume(float vol);
+    // Pad-level volume (pad x master x fades), before each sample's own gain. Stored so a
+    // sample can be given its correct volume *before* it starts, not a UI tick later.
+    void setBaseVolume(float vol);
     void setPosition(float pct);
     void setPositionMS(int ms);
     void setMinDelay(int delay);
@@ -85,6 +88,7 @@ signals:
 
 private:
     void applyRandomPanOnStart();
+    void applyVolumeToCurrent();
     void onPlaybackEnded(OpenALSoundPlayer* ended);
     float randomRange(float minV, float maxV) const;
     float randomF() const;
@@ -92,4 +96,5 @@ private:
     QElapsedTimer clock;
     qint64 prevMs = 0;
     bool bStartFromBeginning = true;
+    float baseVolume = -1.0f; // unknown until the pad sets it
 };

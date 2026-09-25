@@ -76,6 +76,7 @@ void SoundPlayer::update()
         if (player[curSound]->curDelay <= 0) {
             player[curSound]->curDelay = 0;
             applyRandomPanOnStart();
+            applyVolumeToCurrent();
             player[curSound]->audioPlayer->setPaused(false);
             bCheckPlayBackEnded = true;
             bPlayingDelay = false;
@@ -90,6 +91,7 @@ void SoundPlayer::play()
         return;
     }
     applyRandomPanOnStart();
+    applyVolumeToCurrent();
     player[curSound]->audioPlayer->play();
     bCheckPlayBackEnded = true;
 }
@@ -169,10 +171,28 @@ void SoundPlayer::setPaused(bool pause)
     } else {
         if (!bPaused) {
             applyRandomPanOnStart();
+            // A sample that has never been the current one still has OpenAL's default
+            // gain of 1.0; without this it would start at full volume until the next tick.
+            applyVolumeToCurrent();
         }
         player[curSound]->audioPlayer->setPaused(bPaused);
         bCheckPlayBackEnded = !bPaused;
     }
+}
+
+void SoundPlayer::setBaseVolume(float vol)
+{
+    baseVolume = vol;
+    applyVolumeToCurrent();
+}
+
+void SoundPlayer::applyVolumeToCurrent()
+{
+    if (player.empty() || baseVolume < 0.0f || curSound < 0 || curSound >= static_cast<int>(player.size())) {
+        return;
+    }
+    AudioSample* sample = player[static_cast<size_t>(curSound)];
+    sample->audioPlayer->setVolume(baseVolume * sample->getGain());
 }
 
 void SoundPlayer::setVolume(float vol)

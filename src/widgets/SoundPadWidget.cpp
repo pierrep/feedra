@@ -1099,9 +1099,9 @@ void SoundPadWidget::applyVolume()
     if (!m_player.isLoaded() || m_player.player.empty()) {
         return;
     }
-    const int cur = std::clamp(m_player.getCurSound(), 0, static_cast<int>(m_player.player.size()) - 1);
-    const float gain = m_player.player.at(cur)->getGain();
-    m_player.setVolume(padVolume() * m_config->masterVolume() * m_config->masterFade() * m_fadeVolume * gain);
+    // SoundPlayer multiplies in each sample's own gain, and also applies this to a sample
+    // right before it starts, so a newly selected sample never starts at the wrong volume.
+    m_player.setBaseVolume(padVolume() * m_config->masterVolume() * m_config->masterFade() * m_fadeVolume);
 }
 
 void SoundPadWidget::updateVolumeLabel()
