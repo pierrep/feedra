@@ -95,6 +95,18 @@ void SampleRowWidget::mousePressEvent(QMouseEvent* event)
     QWidget::mousePressEvent(event);
 }
 
+void SampleRowWidget::mouseDoubleClickEvent(QMouseEvent* event)
+{
+    if (event->button() == Qt::LeftButton) {
+        m_pressPos = event->pos();
+        m_dragging = false;
+        emit doubleClicked(m_id);
+        event->accept();
+        return;
+    }
+    QWidget::mouseDoubleClickEvent(event);
+}
+
 void SampleRowWidget::mouseMoveEvent(QMouseEvent* event)
 {
     if (!(event->buttons() & Qt::LeftButton)) {

@@ -146,7 +146,9 @@ public:
 
     int getNumSources() { return static_cast<int>(sources.size()); }
     bool isSpatialisedStereo() { return spatialisedStereo; }
-    void setSpatialisedStereo(bool val);
+    // Stereo files are split into one mono source per channel when spatialised.
+    bool uploadDecoded(DecodedAudio decoded, bool spatialise);
+    bool canPan() const { return channels == 1 || (channels == 2 && spatialisedStereo); }
 
     static void addPlaybackEndedListener(void* owner, PlaybackEndedCallback cb);
     static void removePlaybackEndedListener(void* owner);
@@ -169,6 +171,9 @@ private:
     static void initSystemFFT(int bands);
     static void notifyPlaybackEnded(OpenALSoundPlayer* player);
 
+    // Refills the stream queue from the start of the file; the stream thread must not be running.
+    bool primeStream();
+    void haltPlayback();
     bool attachDecodedStream(const DecodedAudio& decoded);
     void rebuildFftBuffers();
 
@@ -238,6 +243,7 @@ private:
     std::vector<float> buffer_float;
 
     std::atomic<bool> stream_end{false};
+    bool streamPrimed = false;
 
     bool spatialisedStereo = false;
 

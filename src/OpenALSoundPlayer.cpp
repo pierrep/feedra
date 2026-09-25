@@ -1576,21 +1576,10 @@ size_t OpenALSoundPlayer::readFile(const std::filesystem::path& fileName){
 }
 
 //------------------------------------------------------------
-void OpenALSoundPlayer::setSpatialisedStereo(bool val)
+bool OpenALSoundPlayer::uploadDecoded(DecodedAudio decoded, bool spatialise)
 {
-    if(bLoadedOk)
-    {
-        if(channels == 2)
-        {
-            if(spatialisedStereo != val)
-            {
-                setPaused(true);
-                bLoadedOk = false;
-                spatialisedStereo = val;
-                load(fileName,isStreaming);
-            }
-        }
-    }
+    spatialisedStereo = spatialise;
+    return uploadDecoded(std::move(decoded));
 }
 
 //------------------------------------------------------------
@@ -1897,16 +1886,12 @@ DecodedAudio OpenALSoundPlayer::decodeFile(const std::filesystem::path& fileName
         return out;
     }
 
-    std::vector<short> discardedShort;
-    std::vector<float> discardedFloat;
-    if (!stream.readChunk(discardedShort, discardedFloat)) {
+    out.initialChunks.resize(2);
+    if (!stream.readChunk(out.initialChunks[0].pcmShort, out.initialChunks[0].pcmFloat)) {
         qCritical() << "Sound file load failed - wrong file type or empty file";
         return out;
     }
-    out.initialChunks.resize(2);
-    for (DecodedChunk& chunk : out.initialChunks) {
-        stream.readChunk(chunk.pcmShort, chunk.pcmFloat);
-    }
+    stream.readChunk(out.initialChunks[1].pcmShort, out.initialChunks[1].pcmFloat);
     out.streamEnded = stream.ended;
     out.streamSamplesRead = static_cast<int64_t>(stream.samplesRead);
     out.resumeFrames = stream.framePosition();
@@ -2194,8 +2179,67 @@ bool OpenALSoundPlayer::uploadDecoded(DecodedAudio decoded)
         bUseFilter = true;
     }
 
+    setPan(pan);
+
+    streamPrimed = isStreaming;
     bLoadedOk = true;
     return bLoadedOk;
+}
+
+//------------------------------------------------------------
+bool OpenALSoundPlayer::primeStream()
+{
+    if (!isStreaming || sources.empty() || buffers.size() < sources.size() * 2) {
+        return false;
+    }
+    std::unique_lock<std::mutex> lock(mutex);
+
+    alSourceStopv(static_cast<ALsizei>(sources.size()), &sources[0]);
+    alSourceRewindv(static_cast<ALsizei>(sources.size()), &sources[0]);
+    for (ALuint source : sources) {
+        alSourcei(source, AL_BUFFER, 0);
+    }
+
+#ifdef FEEDRA_USING_MPG123
+    if (mp3streamf) {
+        mpg123_seek(mp3streamf, 0, SEEK_SET);
+    } else
+#endif
+    if (streamf) {
+        sf_seek(streamf, 0, SEEK_SET);
+    }
+    stream_samples_read = 0;
+    stream_end = false;
+
+    for (int s = 0; s < 2; ++s) {
+        if (stream(fileName) == 0) {
+            return false;
+        }
+        if (sources.size() == 1) {
+            ALuint buffer = buffers[static_cast<size_t>(s)];
+            if (uploadPcm(buffer, openALformat, samplerate, buffer_short, buffer_float)) {
+                alSourceQueueBuffers(sources[0], 1, &buffer);
+            }
+            continue;
+        }
+        const int frames = static_cast<int>(buffer_short.size()) / channels;
+        std::vector<short> channelShort(static_cast<size_t>(frames));
+        std::vector<float> channelFloat(static_cast<size_t>(frames));
+        for (int i = 0; i < channels; ++i) {
+            for (int j = 0; j < frames; ++j) {
+                const size_t src = static_cast<size_t>(j * channels + i);
+                channelShort[static_cast<size_t>(j)] = buffer_short[src];
+                channelFloat[static_cast<size_t>(j)] = buffer_float[src];
+            }
+            ALuint buffer = buffers[static_cast<size_t>(s * channels + i)];
+            if (uploadPcm(buffer, openALformat, samplerate, channelShort, channelFloat)) {
+                alSourceQueueBuffers(sources[static_cast<size_t>(i)], 1, &buffer);
+            }
+        }
+    }
+
+    streamPrimed = true;
+    return true;
 }
 
 //------------------------------------------------------------
@@ -2309,6 +2353,15 @@ void OpenALSoundPlayer::threadedFunction(){
 void OpenALSoundPlayer::update(){
     if(sources.empty()) return;
 
+    if(isStreaming && bLoadedOk && !streamPrimed && !isThreadRunning()) {
+        ALint state = AL_STOPPED;
+        alGetSourcei(sources[0], AL_SOURCE_STATE, &state);
+        if(state == AL_STOPPED) {
+            waitForThread();
+            primeStream();
+        }
+    }
+
     if(bMultiPlay) {
         for(int i=1; i<int(sources.size())/channels; ){
             ALint state;
@@ -2341,7 +2394,7 @@ void OpenALSoundPlayer::update(){
 
 //------------------------------------------------------------
 void OpenALSoundPlayer::unload(){
-	stop();
+	haltPlayback();
     waitForThread();
 
     if(bUseEffects)
@@ -2514,14 +2567,14 @@ int OpenALSoundPlayer::getPositionMS() const{
 
 //------------------------------------------------------------
 void OpenALSoundPlayer::setPan(float p){
+	p = std::clamp(p, -1.f, 1.f);
+	pan = p;
 	if(sources.empty()) return;
-    if(!spatialisedStereo) {
-        //Panning does nothing, so exit
+    if(!canPan()) {
+        //Non-spatialised stereo plays through a single stereo source, so panning does nothing
         return;
     }
 
-	p = std::clamp(p, -1.f, 1.f);
-	pan = p;
     if(channels==1){
         float pos[3] = {pan, 0, -sqrtf(1.0f - pan*pan)};
         alSourcefv(sources[sources.size()-1],AL_POSITION,pos);
@@ -2551,6 +2604,14 @@ void OpenALSoundPlayer::setPan(float p){
 void OpenALSoundPlayer::setPaused(bool bP){
 	if(sources.empty()) return;
     if(!bLoadedOk) return;
+    if(isStreaming && !bP && !streamPrimed && !isThreadRunning()) {
+        ALint state = AL_STOPPED;
+        alGetSourcei(sources[0], AL_SOURCE_STATE, &state);
+        if(state == AL_STOPPED) {
+            waitForThread();
+            primeStream();
+        }
+    }
     {
         std::unique_lock<std::mutex> lock(mutex);
         bPaused = bP;
@@ -2565,6 +2626,7 @@ void OpenALSoundPlayer::setPaused(bool bP){
             stopThread();
             waitForThread();
         }else{
+            streamPrimed = false;
             stream_end = false;
             startThread();
         }
@@ -2615,6 +2677,11 @@ void OpenALSoundPlayer::play(){
     if(sources.empty()) return;
     if(!bLoadedOk) return;
 
+    if(isStreaming && !streamPrimed) {
+        waitForThread();
+        primeStream();
+    }
+
     int err = AL_NO_ERROR;
     {
     std::unique_lock<std::mutex> lock(mutex);
@@ -2662,7 +2729,7 @@ void OpenALSoundPlayer::play(){
     }
 
 	if(isStreaming){
-		setPosition(0);
+		streamPrimed = false;
 		stream_end = false;
 		startThread();
 	}
@@ -2671,6 +2738,15 @@ void OpenALSoundPlayer::play(){
 
 // ----------------------------------------------------------------------------
 void OpenALSoundPlayer::stop(){
+    haltPlayback();
+    if(isStreaming && bLoadedOk){
+        waitForThread();
+        primeStream();
+    }
+}
+
+// ----------------------------------------------------------------------------
+void OpenALSoundPlayer::haltPlayback(){
     if(sources.empty()) return;
     if(!bLoadedOk) return;
 

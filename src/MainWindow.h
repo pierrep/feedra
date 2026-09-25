@@ -5,6 +5,7 @@
 #include <QMainWindow>
 #include <QVector>
 
+class AudioSample;
 class Scene;
 class SoundPadWidget;
 class SampleRowWidget;
@@ -13,6 +14,7 @@ class QAction;
 class QProgressBar;
 class QCheckBox;
 class QComboBox;
+class QDoubleSpinBox;
 class QJsonObject;
 class QKeyEvent;
 class QLabel;
@@ -60,8 +62,11 @@ private:
     void updateSceneListLayout();
     bool handleReorderKey(QKeyEvent* event);
     void updateMainControls();
+    void refreshSampleInfo();
     void updateEditControls();
+    void updatePanControl(AudioSample* sample);
     void rebuildEditSamples();
+    void refreshEditorPage();
     void moveEditorSample(int fromIndex, int insertIndex);
     void setPage(Page page);
     void setSidebarView(SidebarView view);
@@ -98,12 +103,15 @@ private:
     QWidget* m_mainPage = nullptr;
     QWidget* m_scenesPage = nullptr;
     QWidget* m_editorPage = nullptr;
+    QWidget* m_sampleControls = nullptr;
     QWidget* m_settingsPage = nullptr;
     QWidget* m_themePage = nullptr;
     QPushButton* m_scenesTab = nullptr;
     QPushButton* m_editorTab = nullptr;
     QVBoxLayout* m_sampleListLayout = nullptr;
     QVector<SampleRowWidget*> m_sampleRows;
+    SoundPadWidget* m_followedPad = nullptr;
+    int m_followedSound = -1;
 
     QSlider* m_mainVolume = nullptr;
     QWidget* m_bottomPanel = nullptr;
@@ -118,11 +126,17 @@ private:
     QSlider* m_reverbSend2 = nullptr;
     QCheckBox* m_randomPlayback = nullptr;
     QLabel* m_infoLabel = nullptr;
+    SoundPadWidget* m_infoPad = nullptr;
+    int m_infoSound = -1;
     bool m_bottomCollapsed = false;
 
     QSlider* m_pan = nullptr;
+    QDoubleSpinBox* m_panValue = nullptr;
+    QLabel* m_panLabel = nullptr;
     QSlider* m_pitch = nullptr;
+    QDoubleSpinBox* m_pitchValue = nullptr;
     QSlider* m_gain = nullptr;
+    QDoubleSpinBox* m_gainValue = nullptr;
     QCheckBox* m_randomPan = nullptr;
     QCheckBox* m_spatialise = nullptr;
     QPushButton* m_addSample = nullptr;

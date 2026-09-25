@@ -22,6 +22,7 @@ public:
     void close();
     void play();
     void stop();
+    void playSample(int index);
     bool load(const std::filesystem::path& fileName, bool stream = false);
     bool load(const std::filesystem::path& fileName, int idx, bool stream = false);
     void unload();
@@ -63,8 +64,6 @@ public:
 
     void setRandomPan(bool val) { bRandomPan = val; }
     bool isRandomPan() const { return bRandomPan; }
-    bool isSpatialisedStereo(int index) const;
-    void setSpatialisedStereo(int index, bool val);
 
     AppConfig* config = nullptr;
     std::vector<AudioSample*> player;
@@ -81,11 +80,16 @@ public:
     bool bRandomPlayback = false;
     bool bRandomPan = false;
 
+signals:
+    void panRandomised(int sampleIndex, float pan);
+
 private:
+    void applyRandomPanOnStart();
     void onPlaybackEnded(OpenALSoundPlayer* ended);
     float randomRange(float minV, float maxV) const;
     float randomF() const;
 
     QElapsedTimer clock;
     qint64 prevMs = 0;
+    bool bStartFromBeginning = true;
 };

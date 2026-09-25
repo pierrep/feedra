@@ -18,6 +18,7 @@ class QLabel;
 class QLineEdit;
 class QSlider;
 class SampleLoadQueue;
+struct SampleLoadJob;
 
 class GlyphButton : public QAbstractButton
 {
@@ -94,7 +95,10 @@ public:
     void setLoadQueue(SampleLoadQueue* queue);
     bool isLoading() const;
     void submitDecoded(int index, int generation, DecodedAudio audio);
-    void loadFromJson(const QJsonObject& sceneObj);
+    void setSpatialisedStereo(int index, bool on);
+    bool isSpatialisedStereo(int index) const;
+    void submitReload(const SampleLoadJob& job, DecodedAudio audio);
+    void loadFromJson(const QJsonObject& root);
     void saveToJson(QJsonObject& sceneObj) const;
     void loadFiles(const QStringList& paths, bool clearExisting);
     void setReverbSend(float send);
@@ -117,6 +121,7 @@ signals:
     void loadingFinished();
 
 protected:
+    bool eventFilter(QObject* watched, QEvent* event) override;
     void paintEvent(QPaintEvent* event) override;
     void resizeEvent(QResizeEvent* event) override;
     void mousePressEvent(QMouseEvent* event) override;
@@ -131,12 +136,18 @@ private:
         float gain = 1.0f;
         float pan = 0.0f;
         bool panRandom = false;
+        bool spatialise = false;
         bool failed = false;
+    };
+
+    struct PendingReload {
+        int serial = 0;
+        bool spatialise = false;
     };
 
     void chooseFiles();
     void cancelLoading();
-    void enqueueSample(const QString& path, float pitch, float gain, float pan, bool panRandom);
+    void enqueueSample(const QString& path, float pitch, float gain, float pan, bool panRandom, bool spatialise);
     bool commitDecoded(int slotIndex, DecodedAudio audio);
     void flushIncoming();
     std::vector<LoadSlot> sampleSpecs() const;
@@ -154,6 +165,8 @@ private:
     std::shared_ptr<std::atomic<int>> m_loadGeneration = std::make_shared<std::atomic<int>>(0);
     std::vector<LoadSlot> m_slots;
     std::map<int, DecodedAudio> m_incoming;
+    std::map<int, PendingReload> m_reloads; // keyed by AudioSample::id
+    int m_reloadSerial = 0;
     int m_loadTotal = 0;
     int m_nextCommit = 0;
     bool m_finishSent = false;

@@ -16,6 +16,9 @@ struct SampleLoadJob {
     std::shared_ptr<std::atomic<int>> generationToken;
     QString path;
     bool stream = true;
+    // Set when re-decoding an already loaded sample (e.g. toggling spatialised stereo).
+    int reloadSampleId = -1;
+    int reloadSerial = 0;
 };
 
 struct SampleLoadResult {

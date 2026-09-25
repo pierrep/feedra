@@ -38,6 +38,7 @@ void SoundPlayer::setup(AppConfig* conf, int newId)
 void SoundPlayer::update()
 {
     if (bPlayBackEnded) {
+        bStartFromBeginning = true;
         if (curSound < static_cast<int>(player.size()) - 1) {
             if (bRandomPlayback && player.size() > 1) {
                 int idx = curSound;
@@ -48,9 +49,6 @@ void SoundPlayer::update()
                 curSound = idx;
             } else {
                 curSound++;
-            }
-            if (bRandomPan) {
-                player[curSound]->setPan(randomF());
             }
             recalculateDelay(curSound);
             setPaused(false);
@@ -77,6 +75,7 @@ void SoundPlayer::update()
         player[curSound]->curDelay -= diffTime;
         if (player[curSound]->curDelay <= 0) {
             player[curSound]->curDelay = 0;
+            applyRandomPanOnStart();
             player[curSound]->audioPlayer->setPaused(false);
             bCheckPlayBackEnded = true;
             bPlayingDelay = false;
@@ -90,6 +89,7 @@ void SoundPlayer::play()
     if (player.empty()) {
         return;
     }
+    applyRandomPanOnStart();
     player[curSound]->audioPlayer->play();
     bCheckPlayBackEnded = true;
 }
@@ -106,6 +106,23 @@ void SoundPlayer::stop()
     curSound = 0;
     recalculateDelay(curSound);
     bPaused = true;
+    bStartFromBeginning = true;
+}
+
+void SoundPlayer::playSample(int index)
+{
+    if (index < 0 || index >= static_cast<int>(player.size())) {
+        return;
+    }
+    if (index == curSound && isPlaying()) {
+        return;
+    }
+    setPaused(true);
+    player[curSound]->audioPlayer->stop();
+    curSound = index;
+    player[curSound]->audioPlayer->stop();
+    bStartFromBeginning = true;
+    setPaused(false);
 }
 
 bool SoundPlayer::load(const std::filesystem::path& fileName, bool stream)
@@ -150,6 +167,9 @@ void SoundPlayer::setPaused(bool pause)
     if (player[curSound]->curDelay > 0) {
         bPlayingDelay = !bPaused;
     } else {
+        if (!bPaused) {
+            applyRandomPanOnStart();
+        }
         player[curSound]->audioPlayer->setPaused(bPaused);
         bCheckPlayBackEnded = !bPaused;
     }
@@ -323,22 +343,6 @@ int SoundPlayer::getCurSound() const
     return curSound;
 }
 
-bool SoundPlayer::isSpatialisedStereo(int index) const
-{
-    if (index < 0 || index >= static_cast<int>(player.size())) {
-        return false;
-    }
-    return player[index]->audioPlayer->isSpatialisedStereo();
-}
-
-void SoundPlayer::setSpatialisedStereo(int index, bool val)
-{
-    if (index < 0 || index >= static_cast<int>(player.size())) {
-        return;
-    }
-    player[index]->audioPlayer->setSpatialisedStereo(val);
-}
-
 int SoundPlayer::getMinDelay() const
 {
     return minDelay;
@@ -385,6 +389,23 @@ void SoundPlayer::setReverbSend2(float send)
     for (AudioSample* sample : player) {
         sample->audioPlayer->setReverbSend2(send);
     }
+}
+
+void SoundPlayer::applyRandomPanOnStart()
+{
+    if (!bStartFromBeginning) {
+        return;
+    }
+    bStartFromBeginning = false;
+    if (!bRandomPan || player.empty()) {
+        return;
+    }
+    AudioSample* sample = player[curSound];
+    if (!sample->audioPlayer->canPan()) {
+        return;
+    }
+    sample->setPan(randomF());
+    emit panRandomised(curSound, sample->getPan());
 }
 
 void SoundPlayer::onPlaybackEnded(OpenALSoundPlayer* ended)
