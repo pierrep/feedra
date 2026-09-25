@@ -68,6 +68,13 @@ public:
 
     static Theme& instance();
 
+    // Icon colour that reads on top of `fill`: near-black on light fills, white on dark ones.
+    static QColor contrastOn(const QColor& fill)
+    {
+        const qreal luma = 0.2126 * fill.redF() + 0.7152 * fill.greenF() + 0.0722 * fill.blueF();
+        return luma > 0.45 ? QColor(0x16, 0x11, 0x0d) : QColor(0xff, 0xff, 0xff);
+    }
+
     Id id() const { return m_id; }
     QString idName() const;
     static QString idLabel(Id id);
@@ -79,7 +86,15 @@ public:
     static QString roleLabel(int index);
     QColor colorAt(int index) const;
 
+    static constexpr int kPresetCount = 5;
+    // A preset's colours without switching to it (for preview tiles).
+    static Palette presetPalette(Id id) { return preset(id); }
+    // The "live" colour: play buttons, loops, played waveform, progress and selection.
+    QColor accent() const { return m_palette.playLoaded; }
+    bool isModified() const;
+
     void setTheme(Id id);
+    void setAccent(const QColor& color);
     void setColorAt(int index, const QColor& color);
     void load(const QString& themeId, const QJsonObject& colors);
     QJsonObject colorsJson() const;

@@ -11,7 +11,9 @@ class SoundPadWidget;
 class SampleRowWidget;
 class SampleLoadQueue;
 class WaveformWidget;
+class QAbstractButton;
 class QAction;
+class QFrame;
 class QProgressBar;
 class QCheckBox;
 class QComboBox;
@@ -49,6 +51,7 @@ private:
     void syncSettingsPage();
     void applyImpulsePath(const QString& path);
     void refreshThemeSwatches();
+    QWidget* buildPageHeader(QWidget* page, const QString& title, const QString& subtitle);
     void applyAppSettings(const QJsonObject& global);
     void connectScene(Scene* scene);
     void drainLoads(int budgetMs);
@@ -157,7 +160,11 @@ private:
     QLabel* m_convolutionGainValue = nullptr;
     QLineEdit* m_impulsePath = nullptr;
     QPushButton* m_impulseBrowse = nullptr;
-    QComboBox* m_themePreset = nullptr;
+    QVector<QAbstractButton*> m_themeTiles;
+    QVector<QAbstractButton*> m_accentSwatches;
+    QWidget* m_advancedColors = nullptr;
+    QPushButton* m_advancedToggle = nullptr;
+    QPushButton* m_resetTheme = nullptr;
     struct ThemeSwatch {
         QPushButton* button = nullptr;
         QLabel* hex = nullptr;

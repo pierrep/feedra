@@ -4,7 +4,7 @@
 
 class QLineEdit;
 class QAbstractButton;
-class QPushButton;
+class QTimer;
 
 class SceneRowWidget : public QWidget
 {
@@ -29,6 +29,7 @@ signals:
     void nameChanged(int sceneId, const QString& name);
 
 protected:
+    bool event(QEvent* event) override;
     void paintEvent(QPaintEvent* event) override;
     void mousePressEvent(QMouseEvent* event) override;
     void mouseMoveEvent(QMouseEvent* event) override;
@@ -38,12 +39,15 @@ private:
     void beginEditing();
     void finishEditing();
     void startDragIfMoved(const QPoint& pos);
+    void refreshTools();
 
     int m_id = 0;
     QPoint m_pressPos;
     bool m_playing = false;
     QLineEdit* m_name = nullptr;
     QAbstractButton* m_play = nullptr;
-    QPushButton* m_stop = nullptr;
-    QPushButton* m_remove = nullptr;
+    QAbstractButton* m_stop = nullptr;
+    QAbstractButton* m_remove = nullptr;
+    QTimer* m_meterTimer = nullptr;
+    int m_meterFrame = 0;
 };

@@ -121,7 +121,7 @@ Theme::Palette midnightPalette()
     p.sceneActiveBorder = QColor(QStringLiteral("#7aa2ff"));
     p.sceneText = QColor(QStringLiteral("#e8eaf0"));
     p.sceneActiveText = QColor(QStringLiteral("#e8eaf0"));
-    p.scenePlayingText = QColor(QStringLiteral("#0f1115"));
+    p.scenePlayingText = QColor(QStringLiteral("#e8eaf0"));
     p.sceneEditingBackground = QColor(QStringLiteral("#262b35"));
     p.sceneEditingText = QColor(QStringLiteral("#e8eaf0"));
     p.sampleBackground = QColor(QStringLiteral("#171a21"));
@@ -140,10 +140,10 @@ Theme::Palette parchmentPalette()
     Theme::Palette p;
     p.background = QColor(QStringLiteral("#9a8e84"));
     p.text = QColor(QStringLiteral("#1c1410"));
-    p.textMuted = QColor(QStringLiteral("#5a4c42"));
+    p.textMuted = QColor(QStringLiteral("#3a2e26"));
     p.menuBackground = QColor(QStringLiteral("#7d7168"));
     p.menuText = QColor(QStringLiteral("#fbe9d8"));
-    p.panelBackground = QColor(QStringLiteral("#7d7168"));
+    p.panelBackground = QColor(QStringLiteral("#aa9f95"));
     p.panelBorder = QColor(QStringLiteral("#5a524c"));
     p.tabBackground = QColor(QStringLiteral("#685e56"));
     p.tabText = QColor(QStringLiteral("#fbe9d8"));
@@ -179,7 +179,7 @@ Theme::Palette parchmentPalette()
     p.sceneActiveBorder = QColor(QStringLiteral("#65aecd"));
     p.sceneText = QColor(QStringLiteral("#f2f2f2"));
     p.sceneActiveText = QColor(QStringLiteral("#f2f2f2"));
-    p.scenePlayingText = QColor(QStringLiteral("#1c1410"));
+    p.scenePlayingText = QColor(QStringLiteral("#f2f2f2"));
     p.sceneEditingBackground = QColor(QStringLiteral("#f4ebe3"));
     p.sceneEditingText = QColor(QStringLiteral("#1c1410"));
     p.sampleBackground = QColor(QStringLiteral("#404040"));
@@ -237,7 +237,7 @@ Theme::Palette nightPalette()
     p.sceneActiveBorder = QColor(QStringLiteral("#7ec4d6"));
     p.sceneText = QColor(QStringLiteral("#f2ebe4"));
     p.sceneActiveText = QColor(QStringLiteral("#f3e6d8"));
-    p.scenePlayingText = QColor(QStringLiteral("#1a1614"));
+    p.scenePlayingText = QColor(QStringLiteral("#f2ebe4"));
     p.sceneEditingBackground = QColor(QStringLiteral("#3a312b"));
     p.sceneEditingText = QColor(QStringLiteral("#f3e6d8"));
     p.sampleBackground = QColor(QStringLiteral("#2e2a27"));
@@ -256,10 +256,10 @@ Theme::Palette forestPalette()
     Theme::Palette p;
     p.background = QColor(QStringLiteral("#6d7b5e"));
     p.text = QColor(QStringLiteral("#172016"));
-    p.textMuted = QColor(QStringLiteral("#3e4c36"));
+    p.textMuted = QColor(QStringLiteral("#1f2a1b"));
     p.menuBackground = QColor(QStringLiteral("#3e4c36"));
     p.menuText = QColor(QStringLiteral("#f4f7ec"));
-    p.panelBackground = QColor(QStringLiteral("#3e4c36"));
+    p.panelBackground = QColor(QStringLiteral("#8a9779"));
     p.panelBorder = QColor(QStringLiteral("#2c3826"));
     p.tabBackground = QColor(QStringLiteral("#55664a"));
     p.tabText = QColor(QStringLiteral("#f4f7ec"));
@@ -295,7 +295,7 @@ Theme::Palette forestPalette()
     p.sceneActiveBorder = QColor(QStringLiteral("#2f7f86"));
     p.sceneText = QColor(QStringLiteral("#f4f7ec"));
     p.sceneActiveText = QColor(QStringLiteral("#172016"));
-    p.scenePlayingText = QColor(QStringLiteral("#172016"));
+    p.scenePlayingText = QColor(QStringLiteral("#f4f7ec"));
     p.sceneEditingBackground = QColor(QStringLiteral("#eef3e4"));
     p.sceneEditingText = QColor(QStringLiteral("#172016"));
     p.sampleBackground = QColor(QStringLiteral("#2f3b2a"));
@@ -314,10 +314,10 @@ Theme::Palette inkPalette()
     Theme::Palette p;
     p.background = QColor(QStringLiteral("#d7d2c8"));
     p.text = QColor(QStringLiteral("#1b1e24"));
-    p.textMuted = QColor(QStringLiteral("#5b6270"));
+    p.textMuted = QColor(QStringLiteral("#454b57"));
     p.menuBackground = QColor(QStringLiteral("#243044"));
     p.menuText = QColor(QStringLiteral("#f7f4ee"));
-    p.panelBackground = QColor(QStringLiteral("#243044"));
+    p.panelBackground = QColor(QStringLiteral("#cdc8bd"));
     p.panelBorder = QColor(QStringLiteral("#1a2333"));
     p.tabBackground = QColor(QStringLiteral("#31445e"));
     p.tabText = QColor(QStringLiteral("#f7f4ee"));
@@ -353,7 +353,7 @@ Theme::Palette inkPalette()
     p.sceneActiveBorder = QColor(QStringLiteral("#2b6cb0"));
     p.sceneText = QColor(QStringLiteral("#f7f4ee"));
     p.sceneActiveText = QColor(QStringLiteral("#1b1e24"));
-    p.scenePlayingText = QColor(QStringLiteral("#1b1e24"));
+    p.scenePlayingText = QColor(QStringLiteral("#f7f4ee"));
     p.sceneEditingBackground = QColor(QStringLiteral("#fbf9f4"));
     p.sceneEditingText = QColor(QStringLiteral("#1b1e24"));
     p.sampleBackground = QColor(QStringLiteral("#243044"));
@@ -463,6 +463,33 @@ void Theme::setTheme(Id id)
     apply();
 }
 
+void Theme::setAccent(const QColor& color)
+{
+    if (!color.isValid()) {
+        return;
+    }
+    Palette& p = m_palette;
+    p.playLoaded = color;
+    p.loopOn = color;
+    p.playhead = color;
+    p.progressChunk = color;
+    p.dropIndicator = color;
+    p.selection = color;
+    p.selectionText = contrastOn(color);
+    apply();
+}
+
+bool Theme::isModified() const
+{
+    const Palette base = preset(m_id);
+    for (const Role& role : kRoles) {
+        if (base.*(role.color) != m_palette.*(role.color)) {
+            return true;
+        }
+    }
+    return false;
+}
+
 void Theme::setColorAt(int index, const QColor& color)
 {
     if (!color.isValid() || index < 0 || index >= roleCount()) {
@@ -546,182 +573,194 @@ void Theme::apply()
 
 QString Theme::styleSheet() const
 {
+    // Written with {{role}} placeholders, filled from the palette below, so each rule reads
+    // as the colour it uses rather than as a numbered .arg().
+    static const char* const kTemplate = R"QSS(
+QMainWindow, QWidget#central, QStackedWidget,
+QScrollArea, QAbstractScrollArea::viewport,
+QWidget#PadGrid, QWidget#SceneListHost, QWidget#SampleListHost,
+QWidget#SettingsPage, QWidget#ThemePage {
+    background-color: {{background}};
+    color: {{text}};
+}
+QScrollArea { border: none; background-color: {{background}}; }
+QStackedWidget#SidebarPages QScrollArea, QStackedWidget#SidebarPages QAbstractScrollArea::viewport,
+QWidget#SceneListHost, QWidget#SampleListHost { background-color: {{panelBackground}}; }
+QLabel, QCheckBox { color: {{text}}; }
+QMessageBox { background-color: {{background}}; color: {{text}}; }
+QMessageBox QLabel { color: {{text}}; }
+QToolTip { background: {{panelBackground}}; color: {{text}}; border: 1px solid {{panelBorder}}; padding: 4px 6px; }
+
+/* Menus */
+QMenuBar { background: {{menuBackground}}; color: {{menuText}}; border-bottom: 1px solid {{panelBorder}}; padding: 2px 6px; }
+QMenuBar::item { background: transparent; padding: 4px 10px; border-radius: 4px; }
+QMenuBar::item:selected { background: {{fieldBackground}}; }
+QMenu { background: {{menuBackground}}; color: {{menuText}}; border: 1px solid {{panelBorder}}; padding: 4px; }
+QMenu::item { padding: 6px 22px; border-radius: 4px; }
+QMenu::item:selected { background: {{selection}}; color: {{selectionText}}; }
+QMenu::separator { height: 1px; background: {{panelBorder}}; margin: 4px 8px; }
+
+/* Buttons */
+QPushButton {
+    background: {{fieldBackground}};
+    color: {{text}};
+    border: 1px solid {{fieldBorder}};
+    border-radius: 6px;
+    padding: 5px 12px;
+}
+QPushButton:hover { border-color: {{focusBorder}}; }
+QPushButton:pressed { background: {{fieldBorder}}; }
+QPushButton:disabled { color: {{textMuted}}; }
+QPushButton#AddScene, QPushButton#AddSample {
+    background: transparent;
+    color: {{textMuted}};
+    border: 1px dashed {{fieldBorder}};
+    border-radius: 8px;
+    padding: 0 12px;
+    font-weight: 500;
+}
+QPushButton#AddScene:hover, QPushButton#AddSample:hover {
+    background: {{accentButton}};
+    color: {{accentButtonText}};
+    border: 1px solid {{accentButtonBorder}};
+}
+
+/* Header */
+QWidget#Header { background: {{background}}; }
+QLabel#HeaderLabel { color: {{textMuted}}; font-weight: 500; }
+QLabel#MainVolumeValue { color: {{text}}; font-family: "Geist Mono"; }
+QLabel#LoadProgressLabel { color: {{textMuted}}; }
+QProgressBar#LoadProgress { background: {{progressTrack}}; border: none; border-radius: 2px; }
+QProgressBar#LoadProgress::chunk { background: {{progressChunk}}; border-radius: 2px; }
+
+/* Sliders */
+QSlider::groove:horizontal { height: 4px; background: {{sliderGroove}}; border-radius: 2px; }
+QSlider::sub-page:horizontal { background: {{textMuted}}; border-radius: 2px; }
+QSlider::handle:horizontal { background: {{sliderHandle}}; width: 14px; margin: -5px 0; border-radius: 7px; }
+QSlider::handle:horizontal:hover { background: {{text}}; }
+QSlider::sub-page:horizontal:disabled { background: {{sliderGroove}}; }
+
+/* Fields */
+QLineEdit, QComboBox, QSpinBox, QDoubleSpinBox {
+    background: {{fieldBackground}};
+    color: {{fieldText}};
+    border: 1px solid {{fieldBorder}};
+    border-radius: 6px;
+    padding: 3px 8px;
+    min-height: 22px;
+    selection-background-color: {{selection}};
+    selection-color: {{selectionText}};
+}
+QLineEdit:focus, QComboBox:focus, QSpinBox:focus, QDoubleSpinBox:focus { border-color: {{focusBorder}}; }
+QSpinBox, QDoubleSpinBox { padding-right: 20px; }
+QSpinBox::up-button, QSpinBox::down-button,
+QDoubleSpinBox::up-button, QDoubleSpinBox::down-button { subcontrol-origin: border; width: 18px; border: none; background: transparent; }
+QSpinBox::up-button, QDoubleSpinBox::up-button { subcontrol-position: top right; }
+QSpinBox::down-button, QDoubleSpinBox::down-button { subcontrol-position: bottom right; }
+QComboBox::drop-down { border: none; width: 22px; }
+QComboBox QAbstractItemView {
+    background: {{fieldBackground}};
+    color: {{fieldText}};
+    border: 1px solid {{fieldBorder}};
+    selection-background-color: {{selection}};
+    selection-color: {{selectionText}};
+    outline: none;
+}
+QCheckBox { spacing: 8px; }
+QCheckBox::indicator { width: 16px; height: 16px; border-radius: 4px; border: 1px solid {{fieldBorder}}; background: {{fieldBackground}}; }
+QCheckBox::indicator:hover { border-color: {{focusBorder}}; }
+QCheckBox::indicator:checked { background: {{selection}}; border-color: {{selection}}; }
+
+/* Scroll bars */
+QScrollBar:vertical { background: transparent; width: 10px; margin: 0; }
+QScrollBar:horizontal { background: transparent; height: 10px; margin: 0; }
+QScrollBar::handle:vertical, QScrollBar::handle:horizontal { background: {{fieldBorder}}; border-radius: 3px; margin: 2px; }
+QScrollBar::handle:vertical { min-height: 24px; }
+QScrollBar::handle:horizontal { min-width: 24px; }
+QScrollBar::handle:hover { background: {{textMuted}}; }
+QScrollBar::add-line, QScrollBar::sub-line { width: 0; height: 0; }
+QScrollBar::add-page, QScrollBar::sub-page { background: transparent; }
+
+/* Pads */
+QWidget#SoundPad, QWidget#PadCard { background: transparent; border: none; }
+QLineEdit#PadName { background: transparent; border: none; color: {{text}}; padding: 0; min-height: 0; border-radius: 4px; }
+QLineEdit#PadName:focus { background: {{fieldBackground}}; border: 1px solid {{focusBorder}}; padding: 0 4px; }
+QLabel#PadVolumeValue { background: transparent; color: {{textMuted}}; padding: 0; }
+
+/* Scene list */
+QWidget#SceneRow { background: transparent; color: {{sceneText}}; border: none; }
+QLineEdit#SceneName { background: transparent; border: none; color: {{sceneText}}; padding: 0; min-height: 0; }
+QWidget#SceneRow[active="true"] QLineEdit#SceneName { color: {{sceneActiveText}}; font-weight: 600; }
+QWidget#SceneRow[playing="true"] QLineEdit#SceneName { color: {{scenePlayingText}}; }
+QLineEdit#SceneName[editing="true"],
+QWidget#SceneRow[active="true"] QLineEdit#SceneName[editing="true"],
+QWidget#SceneRow[playing="true"] QLineEdit#SceneName[editing="true"] {
+    background: {{sceneEditingBackground}};
+    border: 1px solid {{focusBorder}};
+    border-radius: 4px;
+    color: {{sceneEditingText}};
+    padding: 2px 6px;
+}
+
+/* Sample list */
+QWidget#SampleRow { background: {{sampleBackground}}; border: 1px solid {{sampleBorder}}; border-radius: 8px; }
+QWidget#SampleRow[selected="true"] { border: 1px solid {{sampleSelected}}; }
+QWidget#SampleRow QLabel { color: {{sampleText}}; background: transparent; }
+QWidget#SampleRow QLabel#SampleGrip { color: {{sampleGrip}}; font-size: 14px; }
+QWidget#SampleRow QProgressBar { background: transparent; border: none; border-radius: 6px; }
+QWidget#SampleRow QProgressBar::chunk { background: {{sampleProgress}}; border-radius: 6px; }
+QFrame#ListDropIndicator { background: {{dropIndicator}}; border: none; }
+
+/* Panels and tabs */
+QWidget#BottomPanel { background-color: {{panelBackground}}; border-top: 1px solid {{panelBorder}}; }
+QWidget#BottomTabBar { background-color: {{panelBackground}}; border-bottom: 1px solid {{panelBorder}}; }
+QStackedWidget#BottomPages { background-color: {{panelBackground}}; }
+QStackedWidget#SidebarPages { background-color: {{panelBackground}}; }
+QWidget#Sidebar { background-color: {{panelBackground}}; border-left: 1px solid {{panelBorder}}; }
+QPushButton#BottomTab {
+    background: transparent;
+    color: {{textMuted}};
+    border: none;
+    border-bottom: 2px solid transparent;
+    border-radius: 0;
+    padding: 9px 4px 7px 4px;
+    margin: 0 8px;
+    font-weight: 500;
+}
+QPushButton#BottomTab:hover { color: {{text}}; }
+QPushButton#BottomTab[active="true"] { color: {{text}}; border-bottom: 2px solid {{text}}; }
+QPushButton#BottomCollapse {
+    background: transparent;
+    color: {{textMuted}};
+    border: none;
+    border-radius: 6px;
+    padding: 0;
+    font-size: 13px;
+}
+QPushButton#BottomCollapse:hover { background: {{tabBackground}}; color: {{text}}; }
+QLabel#SampleInfo { color: {{textMuted}}; font-family: "Geist Mono"; }
+QLabel#EditTitle { color: {{text}}; font-weight: 600; }
+QLabel#SettingsTitle { font-size: 20px; font-weight: 600; }
+QLabel#ThemeSection { font-size: 12px; font-weight: 600; color: {{textMuted}}; margin-top: 14px; }
+
+/* Settings and Theme pages */
+QFrame#SettingsCard { background: {{fieldBackground}}; border: 1px solid {{panelBorder}}; border-radius: 12px; }
+QFrame#SettingsCard QLabel { background: transparent; }
+QLabel#CardTitle { font-size: 14px; font-weight: 600; color: {{text}}; }
+QLabel#CardHint, QLabel#FieldHint, QLabel#PageSubtitle { color: {{textMuted}}; }
+QLabel#SwatchHex { color: {{textMuted}}; font-family: "Geist Mono"; }
+QPushButton#DisclosureButton { background: transparent; border: none; color: {{text}}; font-size: 14px; font-weight: 600; text-align: left; padding: 0; }
+QPushButton#DisclosureButton:hover { color: {{focusBorder}}; }
+)QSS";
+
     const Palette& p = m_palette;
-    QString qss;
-    qss += QStringLiteral(
-        "QMainWindow, QWidget#central, QStackedWidget,\n"
-        "QScrollArea, QAbstractScrollArea::viewport,\n"
-        "QWidget#PadGrid, QWidget#SceneListHost, QWidget#SampleListHost,\n"
-        "QWidget#SettingsPage, QWidget#ThemePage {\n"
-        "    background-color: %1;\n"
-        "    color: %2;\n"
-        "}\n"
-        "QMenuBar, QMenu {\n"
-        "    background: %3;\n"
-        "    color: %4;\n"
-        "}\n"
-        "QMenu {\n"
-        "    border: 1px solid %5;\n"
-        "}\n"
-        "QMenu::item:selected {\n"
-        "    background: %6;\n"
-        "    color: %7;\n"
-        "}\n"
-        "QCheckBox { color: %2; }\n"
-        "QLabel { color: %2; }\n"
-        "QMessageBox {\n"
-        "    background-color: %1;\n"
-        "    color: %2;\n"
-        "}\n"
-        "QMessageBox QLabel { color: %2; }\n")
-        .arg(hex(p.background), hex(p.text), hex(p.menuBackground), hex(p.menuText),
-            hex(p.panelBorder), hex(p.selection), hex(p.selectionText));
-
-    qss += QStringLiteral(
-        "QWidget#SoundPad, QWidget#PadCard { background: transparent; border: none; }\n"
-        "QPushButton#ScenePlay, QPushButton#ScenePlay:hover, QPushButton#ScenePlay:pressed,\n"
-        "QPushButton#ScenePlay:checked, QPushButton#ScenePlay:focus {\n"
-        "    background: %7;\n"
-        "    color: %8;\n"
-        "    border: none;\n"
-        "}\n"
-        "QPushButton#SceneStop { background: %1; color: %2; border: none; }\n"
-        "QLineEdit#PadName { background: transparent; border: none; color: %2; padding: 0; }\n"
-        "QLineEdit#PadName:focus { background: %3; border: 1px solid %4; }\n"
-        "QLabel#PadVolumeValue { background: transparent; color: %9; padding: 0; }\n"
-        "QSlider#PadVolume::groove:horizontal { height: 6px; background: %5; border-radius: 3px; }\n"
-        "QSlider#PadVolume::handle:horizontal { background: %6; width: 12px; margin: -4px 0; border-radius: 6px; }\n")
-        .arg(hex(p.stopArmed), hex(p.text), hex(p.fieldBackground), hex(p.focusBorder),
-            hex(p.sliderGroove), hex(p.sliderHandle), hex(p.sceneFill), hex(p.sceneText),
-            hex(p.textMuted));
-
-    qss += QStringLiteral(
-        "QWidget#SceneRow { background: transparent; color: %1; border: none; }\n"
-        "QLineEdit#SceneName { background: transparent; border: none; color: %1; padding: 0; }\n"
-        "QWidget#SceneRow[active=\"true\"] QLineEdit#SceneName { color: %2; }\n"
-        "QWidget#SceneRow[playing=\"true\"] QLineEdit#SceneName { color: %6; }\n"
-        "QLineEdit#SceneName[editing=\"true\"],\n"
-        "QWidget#SceneRow[active=\"true\"] QLineEdit#SceneName[editing=\"true\"],\n"
-        "QWidget#SceneRow[playing=\"true\"] QLineEdit#SceneName[editing=\"true\"] {\n"
-            "    background: %3;\n"
-            "    border: 1px solid %4;\n"
-            "    color: %5;\n"
-            "    padding: 2px 4px;\n"
-            "}\n")
-        .arg(hex(p.sceneText), hex(p.sceneActiveText), hex(p.sceneEditingBackground),
-            hex(p.fieldBorder), hex(p.sceneEditingText), hex(p.scenePlayingText));
-
-    qss += QStringLiteral(
-        "QPushButton#AddScene, QPushButton#AddSample, QPushButton#SceneDelete {\n"
-        "    background: %1;\n"
-        "    color: %2;\n"
-        "    border: 1px solid %3;\n"
-        "    font-size: 20px;\n"
-        "}\n"
-        "QWidget#SampleRow { background: %4; border: 1px solid %5; border-radius: 4px; }\n"
-        "QWidget#SampleRow QLabel { color: %6; background: transparent; }\n")
-        .arg(hex(p.accentButton), hex(p.accentButtonText), hex(p.accentButtonBorder),
-            hex(p.sampleBackground), hex(p.sampleBorder), hex(p.sampleText));
-    qss += QStringLiteral(
-        "QWidget#SampleRow QLabel#SampleGrip { color: %1; font-size: 14px; }\n"
-        "QFrame#ListDropIndicator { background: %2; border: none; }\n"
-        "QWidget#SampleRow QProgressBar { background: %3; border: none; border-radius: 3px; }\n"
-        "QWidget#SampleRow QProgressBar::chunk { background: %4; border-radius: 3px; }\n"
-        "QProgressBar#LoadProgress { background: %3; border: none; border-radius: 3px; }\n"
-        "QProgressBar#LoadProgress::chunk { background: %4; border-radius: 3px; }\n"
-        "QWidget#SampleRow[selected=\"true\"] { border: 2px solid %5; }\n")
-        .arg(hex(p.sampleGrip), hex(p.dropIndicator), hex(p.progressTrack),
-            hex(p.progressChunk), hex(p.sampleSelected));
-
-    qss += QStringLiteral(
-        "QSlider::groove:horizontal { height: 8px; background: %1; border-radius: 4px; }\n"
-        "QSlider::handle:horizontal { background: %2; width: 14px; margin: -4px 0; border-radius: 7px; }\n"
-        "QLineEdit, QComboBox {\n"
-        "    background: %3;\n"
-        "    border: 1px solid %4;\n"
-        "    padding: 2px 4px;\n"
-        "    color: %5;\n"
-        "}\n"
-        "QSpinBox, QDoubleSpinBox {\n"
-        "    background: %3;\n"
-        "    border: 1px solid %4;\n"
-        "    padding: 2px 18px 2px 4px;\n"
-        "    color: %5;\n"
-        "    min-height: 22px;\n"
-        "}\n"
-        "QSpinBox::up-button, QSpinBox::down-button,\n"
-        "QDoubleSpinBox::up-button, QDoubleSpinBox::down-button { subcontrol-origin: border; width: 16px; }\n"
-        "QSpinBox::up-button, QDoubleSpinBox::up-button { subcontrol-position: top right; }\n"
-        "QSpinBox::down-button, QDoubleSpinBox::down-button { subcontrol-position: bottom right; }\n"
-        "QComboBox QAbstractItemView {\n"
-        "    background: %3;\n"
-        "    color: %5;\n"
-        "    selection-background-color: %6;\n"
-        "    selection-color: %7;\n"
-        "}\n")
-        .arg(hex(p.sliderGroove), hex(p.sliderHandle), hex(p.fieldBackground), hex(p.fieldBorder),
-            hex(p.fieldText), hex(p.selection), hex(p.selectionText));
-
-    qss += QStringLiteral(
-        "QScrollArea { border: none; background-color: %1; }\n"
-        "QWidget#BottomPanel, QWidget#BottomTabBar, QStackedWidget#BottomPages {\n"
-        "    background-color: %2;\n"
-        "    color: %3;\n"
-        "}\n"
-        "QStackedWidget#BottomPages, QStackedWidget#SidebarPages {\n"
-        "    background-color: %1;\n"
-        "    border-top: 1px solid %4;\n"
-        "}\n"
-        "QLabel#LoadProgressLabel { color: %3; }\n"
-        "QLabel#SettingsTitle { font-size: 18px; }\n"
-        "QLabel#ThemeSection { font-size: 15px; margin-top: 10px; }\n"
-        "QPushButton#BottomTab {\n"
-        "    background: %1;\n"
-        "    color: %3;\n"
-        "    border: 1px solid %7;\n"
-        "    border-bottom: none;\n"
-        "    padding: 4px 14px;\n"
-        "    min-width: 72px;\n"
-        "}\n"
-        "QPushButton#BottomTab[active=\"true\"] { background: %5; color: %6; }\n"
-        "QPushButton#BottomCollapse {\n"
-        "    background: %5;\n"
-        "    color: %6;\n"
-        "    border: 1px solid %7;\n"
-        "    padding: 0;\n"
-        "    font-size: 14px;\n"
-        "}\n"
-        "QLabel#SampleInfo { color: %3; }\n")
-        .arg(hex(p.background), hex(p.panelBackground), hex(p.text), hex(p.panelBorder),
-            hex(p.tabBackground), hex(p.tabText), hex(p.tabBorder));
-
-    qss += QStringLiteral(
-        "QPushButton {\n"
-        "    background: %1;\n"
-        "    color: %2;\n"
-        "    border: 1px solid %3;\n"
-        "    border-radius: 6px;\n"
-        "    padding: 5px 12px;\n"
-        "}\n"
-        "QPushButton:hover { border-color: %4; }\n"
-        "QPushButton:pressed { background: %3; }\n"
-        "QPushButton:disabled { color: %5; }\n"
-        "QMenuBar::item { background: transparent; padding: 4px 10px; }\n"
-        "QMenuBar::item:selected { background: %1; border-radius: 4px; }\n"
-        "QMenu { padding: 4px; }\n"
-        "QMenu::item { padding: 5px 20px; border-radius: 4px; }\n"
-        "QToolTip { background: %1; color: %2; border: 1px solid %3; padding: 4px 6px; }\n"
-        "QScrollBar:vertical { background: transparent; width: 10px; margin: 0; }\n"
-        "QScrollBar:horizontal { background: transparent; height: 10px; margin: 0; }\n"
-        "QScrollBar::handle:vertical, QScrollBar::handle:horizontal { background: %3; border-radius: 4px; margin: 2px; }\n"
-        "QScrollBar::handle:vertical { min-height: 24px; }\n"
-        "QScrollBar::handle:horizontal { min-width: 24px; }\n"
-        "QScrollBar::handle:hover { background: %5; }\n"
-        "QScrollBar::add-line, QScrollBar::sub-line { width: 0; height: 0; }\n"
-        "QScrollBar::add-page, QScrollBar::sub-page { background: transparent; }\n"
-        "QWidget#SceneRow QPushButton, QPushButton#AddScene, QPushButton#AddSample { padding: 0; }\n"
-        "QPushButton#BottomTab { border-top-left-radius: 6px; border-top-right-radius: 6px;"
-        " border-bottom-left-radius: 0; border-bottom-right-radius: 0; }\n")
-        .arg(hex(p.fieldBackground), hex(p.text), hex(p.fieldBorder), hex(p.focusBorder), hex(p.textMuted));
+    QString qss = QString::fromUtf8(kTemplate);
+    for (int i = 0; i < roleCount(); ++i) {
+        qss.replace(QStringLiteral("{{%1}}").arg(roleKey(i)), hex(colorAt(i)));
+    }
+    // A translucent tint of the progress colour for the sample rows' playback fill.
+    const QColor chunk = p.progressChunk;
+    qss.replace(QStringLiteral("{{sampleProgress}}"),
+        QStringLiteral("rgba(%1, %2, %3, 70)").arg(chunk.red()).arg(chunk.green()).arg(chunk.blue()));
     return qss;
 }

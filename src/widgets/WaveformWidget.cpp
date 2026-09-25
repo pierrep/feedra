@@ -17,9 +17,9 @@
 namespace {
 constexpr int kPeakBins = 4096;   // resolution kept per file; ~32 KB each
 constexpr int kCacheLimit = 48;   // files kept in the peak cache
-constexpr int kMarginX = 12;
-constexpr int kHeaderHeight = 22;
-constexpr int kMarginBottom = 8;
+constexpr int kMarginX = 20;
+constexpr int kHeaderHeight = 32;
+constexpr int kMarginBottom = 12;
 }
 
 WaveformWidget::WaveformWidget(QWidget* parent)
@@ -189,6 +189,7 @@ void WaveformWidget::rebuildPixmap()
     const auto it = m_cache.constFind(m_path);
     if (area.width() <= 0 || area.height() <= 0 || it == m_cache.constEnd() || !(*it) || !(*it)->ok) {
         m_wave = QPixmap();
+        m_waveDim = QPixmap();
         return;
     }
     const Peaks& peaks = **it;
@@ -197,12 +198,17 @@ void WaveformWidget::rebuildPixmap()
     const int h = std::max(1, static_cast<int>(std::lround(area.height() * dpr)));
     QPixmap pix(w, h);
     pix.fill(Qt::transparent);
+    QPixmap dim(w, h);
+    dim.fill(Qt::transparent);
 
     const int bins = static_cast<int>(peaks.mins.size());
     const float mid = h * 0.5f;
     const float half = h * 0.5f - 1.0f;
+    // Two copies: the accent one is drawn behind the playhead, the neutral one ahead of it.
     QPainter p(&pix);
-    p.setPen(QPen(Theme::instance().palette().progressChunk, 1.0));
+    QPainter pd(&dim);
+    p.setPen(QPen(Theme::instance().palette().playhead, 1.0));
+    pd.setPen(QPen(Theme::instance().palette().playheadDelay, 1.0));
     for (int x = 0; x < w; ++x) {
         const int b0 = static_cast<int>(static_cast<int64_t>(x) * bins / w);
         const int b1 = std::max(b0 + 1, static_cast<int>(static_cast<int64_t>(x + 1) * bins / w));
@@ -215,10 +221,14 @@ void WaveformWidget::rebuildPixmap()
         const int y0 = static_cast<int>(std::floor(mid - hi * half));
         const int y1 = static_cast<int>(std::ceil(mid - lo * half));
         p.drawLine(x, y0, x, std::max(y0, y1));
+        pd.drawLine(x, y0, x, std::max(y0, y1));
     }
     p.end();
+    pd.end();
     pix.setDevicePixelRatio(dpr);
+    dim.setDevicePixelRatio(dpr);
     m_wave = pix;
+    m_waveDim = dim;
 }
 
 QString WaveformWidget::formatTime(float seconds)
@@ -238,7 +248,7 @@ void WaveformWidget::paintEvent(QPaintEvent* event)
     const QRect area = waveRect();
 
     // Header: file name on the left, position / length on the right.
-    p.setPen(pal.text);
+    p.setPen(m_path.isEmpty() ? pal.textMuted : pal.text);
     const QRect header(kMarginX, 0, width() - 2 * kMarginX, kHeaderHeight);
     QString timeText;
     if (!m_path.isEmpty() && m_duration > 0.0f) {
@@ -250,13 +260,20 @@ void WaveformWidget::paintEvent(QPaintEvent* event)
         p.fontMetrics().elidedText(m_path.isEmpty() ? tr("No sample on the selected pad") : QFileInfo(m_path).fileName(),
             Qt::ElideMiddle, std::max(0, header.width() - timeWidth)));
     if (!timeText.isEmpty()) {
+        QFont mono(QStringLiteral("Geist Mono"));
+        mono.setStyleHint(QFont::Monospace);
+        mono.setPixelSize(std::max(9, font().pixelSize() > 0 ? font().pixelSize() - 1 : 12));
+        p.save();
+        p.setFont(mono);
+        p.setPen(pal.textMuted);
         p.drawText(header, Qt::AlignRight | Qt::AlignVCenter, timeText);
+        p.restore();
     }
 
     p.setRenderHint(QPainter::Antialiasing, true);
     p.setPen(Qt::NoPen);
     p.setBrush(pal.progressTrack);
-    p.drawRoundedRect(area, 3, 3);
+    p.drawRoundedRect(area, 8, 8);
     p.setRenderHint(QPainter::Antialiasing, false);
 
     if (m_path.isEmpty()) {
@@ -264,23 +281,21 @@ void WaveformWidget::paintEvent(QPaintEvent* event)
     }
     const auto it = m_cache.constFind(m_path);
     if (m_wave.isNull()) {
-        p.setPen(pal.text);
+        p.setPen(pal.textMuted);
         const bool failed = it != m_cache.constEnd() && (!(*it) || !(*it)->ok);
         p.drawText(area, Qt::AlignCenter, failed ? tr("Waveform unavailable") : tr("Reading waveform…"));
         return;
     }
 
     // Centre line, then the waveform: dimmed ahead of the playhead, full strength behind it.
-    QColor centre = pal.progressChunk;
-    centre.setAlphaF(0.35);
+    QColor centre = pal.playheadBorder;
     p.setPen(centre);
     p.drawLine(area.left(), area.center().y(), area.right(), area.center().y());
 
     const int headX = m_playhead >= 0.0f ? area.left() + static_cast<int>(std::lround(m_playhead * area.width())) : area.left();
     p.save();
     p.setClipRect(QRect(headX, area.top(), area.right() - headX + 1, area.height()));
-    p.setOpacity(0.45);
-    p.drawPixmap(area.topLeft(), m_wave);
+    p.drawPixmap(area.topLeft(), m_waveDim);
     p.restore();
     if (headX > area.left()) {
         p.save();
@@ -290,7 +305,7 @@ void WaveformWidget::paintEvent(QPaintEvent* event)
     }
 
     if (m_playhead >= 0.0f) {
-        QColor head = m_playing ? pal.playhead : pal.playheadDelay;
+        QColor head = m_playing ? pal.playheadText : pal.playheadDelay;
         p.setPen(QPen(head, 2.0));
         p.drawLine(headX, area.top(), headX, area.bottom());
     }

@@ -65,6 +65,7 @@ private:
     QStringList m_pending;
 
     QPixmap m_wave;
+    QPixmap m_waveDim;
     bool m_waveDirty = true;
 
     QThreadPool* m_pool = nullptr;

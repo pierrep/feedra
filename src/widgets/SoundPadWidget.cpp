@@ -16,6 +16,7 @@
 #include <QFileDialog>
 #include <QFileInfo>
 #include <QFont>
+#include <QFontMetrics>
 #include <QHash>
 #include <QJsonObject>
 #include <QLabel>
@@ -367,7 +368,7 @@ void GlyphButton::paintEvent(QPaintEvent*)
         p.drawEllipse(r);
         p.setBrush(hover ? theme.playLoaded.lighter(110) : theme.playLoaded);
         p.drawEllipse(circle);
-        drawPauseIcon(p, circle.adjusted(d * 0.3, d * 0.3, -d * 0.3, -d * 0.3), theme.background);
+        drawPauseIcon(p, circle.adjusted(d * 0.3, d * 0.3, -d * 0.3, -d * 0.3), Theme::contrastOn(theme.playLoaded));
     } else {
         p.setBrush(hover ? theme.playOutline : theme.playEmpty);
         p.setPen(QPen(hover ? theme.textMuted : theme.playOutline, 1.0));
@@ -703,7 +704,8 @@ void SoundPadWidget::refreshChrome()
     m_loop->setVisible(hasSound);
     m_stop->setArmed(hasSound && (m_uiPlaying || m_selected));
     m_volume->setVisible(hasSound);
-    m_volumeValue->setVisible(hasSound);
+    // Small pads drop the dB readout so the time has room; the volume line still shows the level.
+    m_volumeValue->setVisible(hasSound && contentScale() >= 0.9);
     layoutContents();
 }
 
@@ -773,10 +775,10 @@ void SoundPadWidget::paintEvent(QPaintEvent*)
     p.drawEllipse(at(14, 22, 8, 8));
 
     QFont captionFont = font();
-    captionFont.setPixelSize(std::max(7, qRound(12 * s)));
+    captionFont.setPixelSize(std::max(9, qRound(12 * s)));
     QFont monoFont(QStringLiteral("Geist Mono"));
     monoFont.setStyleHint(QFont::Monospace);
-    monoFont.setPixelSize(std::max(7, qRound(11 * s)));
+    monoFont.setPixelSize(std::max(9, qRound(11 * s)));
 
     if (empty) {
         p.setFont(captionFont);
@@ -806,7 +808,9 @@ void SoundPadWidget::paintEvent(QPaintEvent*)
     if (!m_timeText.isEmpty()) {
         p.setFont(monoFont);
         p.setPen(live ? theme.text : (m_uiDelay ? accent : theme.textMuted));
-        p.drawText(at(14, 150, 96, 16), Qt::AlignLeft | Qt::AlignVCenter, m_timeText);
+        const QRectF timeRect = m_volumeValue->isVisible() ? at(14, 150, 96, 16) : at(14, 150, 148, 16);
+        p.drawText(timeRect, Qt::AlignLeft | Qt::AlignVCenter,
+            QFontMetrics(monoFont).elidedText(m_timeText, Qt::ElideRight, qRound(timeRect.width())));
     }
 }
 
@@ -865,7 +869,7 @@ void SoundPadWidget::layoutContents()
     m_volumeValue->raise();
 
     QFont nameFont = m_name->font();
-    nameFont.setPixelSize(std::max(7, qRound(13 * s)));
+    nameFont.setPixelSize(std::max(10, qRound(13 * s)));
     nameFont.setWeight(QFont::DemiBold);
     m_name->setFont(nameFont);
     if (!m_name->hasFocus()) {
@@ -874,12 +878,13 @@ void SoundPadWidget::layoutContents()
 
     QFont volFont(QStringLiteral("Geist Mono"));
     volFont.setStyleHint(QFont::Monospace);
-    volFont.setPixelSize(std::max(7, qRound(11 * s)));
+    volFont.setPixelSize(std::max(9, qRound(11 * s)));
     m_volumeValue->setFont(volFont);
 
     const int groove = std::max(2, qRound(3 * s));
-    const int handle = std::max(8, qRound(10 * s));
-    const int margin = (handle - groove) / 2;
+    const int margin = std::max(3, qRound(3.5 * s));
+    // Qt drops a radius larger than half the handle, so size the handle from the groove.
+    const int handle = groove + 2 * margin;
     const Theme::Palette& theme = Theme::instance().palette();
     m_volume->setStyleSheet(QStringLiteral(
         "QSlider#PadVolume { background: transparent; }"
@@ -902,7 +907,7 @@ void SoundPadWidget::layoutContents()
 void SoundPadWidget::resizeEvent(QResizeEvent* event)
 {
     QWidget::resizeEvent(event);
-    layoutContents();
+    refreshChrome(); // visibility depends on size as well as state; this also lays out
 }
 
 QRect SoundPadWidget::padCardRect() const

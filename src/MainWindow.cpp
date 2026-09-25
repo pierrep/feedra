@@ -22,6 +22,10 @@
 #include <QFileDialog>
 #include <QFileInfo>
 #include <QGridLayout>
+#include <QAbstractButton>
+#include <QPolygonF>
+#include <QPainter>
+#include <QFrame>
 #include <QHBoxLayout>
 #include <QJsonDocument>
 #include <QJsonObject>
@@ -178,28 +182,41 @@ void MainWindow::buildUi()
     central->setObjectName(QStringLiteral("central"));
     setCentralWidget(central);
     auto* outer = new QVBoxLayout(central);
+    outer->setContentsMargins(0, 0, 0, 0);
+    outer->setSpacing(0);
 
     m_pages = new QStackedWidget(central);
 
     m_mainPage = new QWidget(m_pages);
     auto* mainLayout = new QVBoxLayout(m_mainPage);
+    mainLayout->setContentsMargins(0, 0, 0, 0);
+    mainLayout->setSpacing(0);
     m_mainVolume = new QSlider(Qt::Horizontal, m_mainPage);
     m_mainVolume->setRange(0, VolumeDb::sliderSpan(VolumeDb::kFloorDb, VolumeDb::kUnityDb));
     m_mainVolume->setValue(VolumeDb::sliderSpan(VolumeDb::kFloorDb, VolumeDb::kUnityDb));
-    m_mainVolume->setMaximumWidth(260);
+    m_mainVolume->setObjectName(QStringLiteral("MasterVolume"));
+    m_mainVolume->setFixedWidth(240);
     m_mainVolumeValue = new QLabel(m_mainPage);
+    m_mainVolumeValue->setObjectName(QStringLiteral("MainVolumeValue"));
     m_mainVolumeValue->setMinimumWidth(72);
     m_mainVolumeValue->setAlignment(Qt::AlignLeft | Qt::AlignVCenter);
     m_mainVolumeValue->setText(VolumeDb::format(VolumeDb::kUnityDb));
-    auto* volumeRow = new QHBoxLayout();
-    volumeRow->addWidget(new QLabel(tr("Main Volume"), m_mainPage));
+    auto* header = new QWidget(m_mainPage);
+    header->setObjectName(QStringLiteral("Header"));
+    header->setAttribute(Qt::WA_StyledBackground, true);
+    auto* volumeRow = new QHBoxLayout(header);
+    volumeRow->setContentsMargins(20, 12, 20, 10);
+    volumeRow->setSpacing(12);
+    auto* volumeCaption = new QLabel(tr("Main Volume"), header);
+    volumeCaption->setObjectName(QStringLiteral("HeaderLabel"));
+    volumeRow->addWidget(volumeCaption);
     volumeRow->addWidget(m_mainVolume);
     volumeRow->addWidget(m_mainVolumeValue);
     m_loadBar = new QProgressBar(m_mainPage);
     m_loadBar->setObjectName(QStringLiteral("LoadProgress"));
     m_loadBar->setTextVisible(false);
-    m_loadBar->setFixedWidth(180);
-    m_loadBar->setFixedHeight(14);
+    m_loadBar->setFixedWidth(160);
+    m_loadBar->setFixedHeight(4);
     m_loadBar->setRange(0, 1);
     m_loadBar->hide();
     m_loadLabel = new QLabel(m_mainPage);
@@ -209,14 +226,18 @@ void MainWindow::buildUi()
     volumeRow->addWidget(m_loadBar);
     volumeRow->addWidget(m_loadLabel);
     volumeRow->addStretch();
-    mainLayout->addLayout(volumeRow);
+    mainLayout->addWidget(header);
 
     auto* body = new QHBoxLayout();
+    body->setContentsMargins(12, 0, 0, 0);
+    body->setSpacing(12);
     m_padStack = new QStackedWidget(m_mainPage);
     body->addWidget(m_padStack, 1);
 
     auto* side = new QWidget(m_mainPage);
-    side->setMinimumWidth(320);
+    side->setObjectName(QStringLiteral("Sidebar"));
+    side->setAttribute(Qt::WA_StyledBackground, true);
+    side->setMinimumWidth(300);
     auto* sideLayout = new QVBoxLayout(side);
     sideLayout->setContentsMargins(0, 0, 0, 0);
     sideLayout->setSpacing(0);
@@ -225,8 +246,8 @@ void MainWindow::buildUi()
     sideTabBar->setObjectName(QStringLiteral("BottomTabBar"));
     sideTabBar->setAttribute(Qt::WA_StyledBackground, true);
     auto* sideTabRow = new QHBoxLayout(sideTabBar);
-    sideTabRow->setContentsMargins(8, 4, 8, 0);
-    sideTabRow->setSpacing(4);
+    sideTabRow->setContentsMargins(8, 0, 8, 0);
+    sideTabRow->setSpacing(0);
     m_scenesTab = new QPushButton(tr("Scenes"), sideTabBar);
     m_scenesTab->setObjectName(QStringLiteral("BottomTab"));
     m_scenesTab->setFocusPolicy(Qt::NoFocus);
@@ -243,7 +264,8 @@ void MainWindow::buildUi()
 
     m_scenesPage = new QWidget(m_sidebarStack);
     auto* scenesLayout = new QVBoxLayout(m_scenesPage);
-    scenesLayout->setContentsMargins(8, 8, 0, 8);
+    scenesLayout->setContentsMargins(12, 12, 4, 12);
+    scenesLayout->setSpacing(10);
     auto* sceneScroll = new QScrollArea(m_scenesPage);
     sceneScroll->setFrameShape(QFrame::NoFrame);
     sceneScroll->setWidgetResizable(true);
@@ -255,6 +277,7 @@ void MainWindow::buildUi()
     m_sceneListHost = sceneHost;
     m_sceneListLayout = new QVBoxLayout(m_sceneListHost);
     m_sceneListLayout->setContentsMargins(0, 0, 8, 0);
+    m_sceneListLayout->setSpacing(6);
     m_sceneListLayout->addStretch();
     sceneScroll->setWidget(m_sceneListHost);
     connect(sceneHost, &ReorderListHost::itemReordered, this, [this](int sceneId, int insertIndex) {
@@ -265,25 +288,29 @@ void MainWindow::buildUi()
             }
         }
     }, Qt::QueuedConnection); // after QDrag::exec returns, so the source row is still alive
-    m_addScene = new QPushButton(QStringLiteral("+"), m_scenesPage);
+    m_addScene = new QPushButton(tr("+  New scene"), m_scenesPage);
     m_addScene->setObjectName(QStringLiteral("AddScene"));
-    m_addScene->setFixedSize(44, 44);
+    m_addScene->setMinimumHeight(38);
+    m_addScene->setCursor(Qt::PointingHandCursor);
     scenesLayout->addWidget(sceneScroll, 1);
     auto* addSceneRow = new QHBoxLayout();
     addSceneRow->setContentsMargins(0, 0, 8, 0);
-    addSceneRow->addWidget(m_addScene, 0, Qt::AlignLeft);
-    addSceneRow->addStretch();
+    addSceneRow->addWidget(m_addScene, 1);
     scenesLayout->addLayout(addSceneRow);
 
     m_editorPage = new QWidget(m_sidebarStack);
     auto* editLayout = new QVBoxLayout(m_editorPage);
-    editLayout->setContentsMargins(8, 8, 0, 8);
+    editLayout->setContentsMargins(12, 12, 4, 12);
+    editLayout->setSpacing(10);
     m_editTitle = new QLabel(m_editorPage);
+    m_editTitle->setObjectName(QStringLiteral("EditTitle"));
     m_editTitle->setWordWrap(true);
     m_editTitle->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
-    m_addSample = new QPushButton(QStringLiteral("+"), m_editorPage);
+    m_addSample = new QPushButton(tr("+  Add"), m_editorPage);
     m_addSample->setObjectName(QStringLiteral("AddSample"));
-    m_addSample->setFixedSize(50, 50);
+    m_addSample->setFixedHeight(32);
+    m_addSample->setCursor(Qt::PointingHandCursor);
+    m_addSample->setToolTip(tr("Add samples to this pad"));
     auto* editTop = new QHBoxLayout();
     editTop->setContentsMargins(0, 0, 8, 0);
     editTop->addWidget(m_editTitle, 1);
@@ -406,8 +433,8 @@ void MainWindow::buildUi()
     tabBar->setObjectName(QStringLiteral("BottomTabBar"));
     tabBar->setAttribute(Qt::WA_StyledBackground, true);
     auto* tabRow = new QHBoxLayout(tabBar);
-    tabRow->setContentsMargins(8, 4, 8, 0);
-    tabRow->setSpacing(4);
+    tabRow->setContentsMargins(8, 0, 8, 0);
+    tabRow->setSpacing(0);
     m_sampleTab = new QPushButton(tr("Sample"), tabBar);
     m_sampleTab->setObjectName(QStringLiteral("BottomTab"));
     m_sampleTab->setFocusPolicy(Qt::NoFocus);
@@ -420,20 +447,20 @@ void MainWindow::buildUi()
     m_collapseBottom = new QPushButton(QStringLiteral("\u25B4"), tabBar);
     m_collapseBottom->setObjectName(QStringLiteral("BottomCollapse"));
     m_collapseBottom->setFocusPolicy(Qt::NoFocus);
-    m_collapseBottom->setFixedSize(28, 22);
+    m_collapseBottom->setFixedSize(28, 24);
     m_collapseBottom->setToolTip(tr("Hide panel"));
     tabRow->addWidget(m_sampleTab, 0, Qt::AlignBottom);
     tabRow->addWidget(m_padTab, 0, Qt::AlignBottom);
     tabRow->addWidget(m_waveTab, 0, Qt::AlignBottom);
     tabRow->addStretch();
-    tabRow->addWidget(m_collapseBottom, 0, Qt::AlignBottom);
+    tabRow->addWidget(m_collapseBottom, 0, Qt::AlignVCenter);
 
     m_bottomStack = new QStackedWidget(m_bottomPanel);
     m_bottomStack->setObjectName(QStringLiteral("BottomPages"));
 
     auto* samplePage = new QWidget(m_bottomStack);
     auto* sampleLayout = new QVBoxLayout(samplePage);
-    sampleLayout->setContentsMargins(12, 8, 12, 8);
+    sampleLayout->setContentsMargins(20, 12, 20, 12);
     m_infoLabel = new QLabel(samplePage);
     m_infoLabel->setObjectName(QStringLiteral("SampleInfo"));
     m_infoLabel->setWordWrap(true);
@@ -444,19 +471,23 @@ void MainWindow::buildUi()
 
     auto* padPage = new QWidget(m_bottomStack);
     auto* padGrid = new QGridLayout(padPage);
-    padGrid->setContentsMargins(12, 8, 12, 8);
-    padGrid->setHorizontalSpacing(10);
-    padGrid->setVerticalSpacing(8);
+    padGrid->setContentsMargins(20, 12, 20, 12);
+    padGrid->setHorizontalSpacing(14);
+    padGrid->setVerticalSpacing(10);
     m_minDelay = new QSpinBox(padPage);
     m_minDelay->setRange(0, 600);
     m_minDelay->setButtonSymbols(QAbstractSpinBox::UpDownArrows);
     m_minDelay->setAlignment(Qt::AlignRight);
     m_minDelay->setMinimumWidth(72);
+    m_minDelay->setMaximumWidth(140);
+    m_minDelay->setSuffix(tr(" s"));
     m_maxDelay = new QSpinBox(padPage);
     m_maxDelay->setRange(0, 600);
     m_maxDelay->setButtonSymbols(QAbstractSpinBox::UpDownArrows);
     m_maxDelay->setAlignment(Qt::AlignRight);
     m_maxDelay->setMinimumWidth(72);
+    m_maxDelay->setMaximumWidth(140);
+    m_maxDelay->setSuffix(tr(" s"));
     m_reverbSend = new QSlider(Qt::Horizontal, padPage);
     m_reverbSend->setRange(0, 1000);
     m_reverbSend2 = new QSlider(Qt::Horizontal, padPage);
@@ -475,7 +506,11 @@ void MainWindow::buildUi()
     padGrid->addWidget(m_randomPlayback, 3, 0, 1, 4);
     padGrid->setRowStretch(4, 1);
     padGrid->setColumnStretch(1, 1);
-    padGrid->setColumnStretch(3, 1);
+    // Keep the controls together on the left; the spare width goes to an empty last column.
+    padGrid->setColumnStretch(4, 1);
+    padGrid->setColumnMinimumWidth(0, 130);
+    m_reverbSend->setMinimumWidth(360);
+    m_reverbSend2->setMinimumWidth(360);
 
     m_bottomStack->addWidget(samplePage);
     m_bottomStack->addWidget(padPage);
@@ -493,7 +528,8 @@ void MainWindow::buildUi()
             audio->seekTo(pct);
         }
     });
-    m_bottomPageHeight = std::max(m_infoLabel->minimumHeight() + 16, 148);
+    // Tall enough for every page, so nothing (like the Random Playback box) is clipped.
+    m_bottomPageHeight = std::max({m_infoLabel->minimumHeight() + 24, padPage->sizeHint().height(), 148});
     m_bottomStack->setFixedHeight(m_bottomPageHeight);
 
     bottomLayout->addWidget(tabBar);
@@ -1056,113 +1092,398 @@ void MainWindow::rebuildEditSamples()
     updateMainControls();
 }
 
+namespace {
+// A rounded "card" grouping related settings: title, optional one-line hint, then
+// label/field rows in a two-column grid.
+struct SettingsCard {
+    QFrame* frame = nullptr;
+    QGridLayout* grid = nullptr;
+    int row = 0;
+
+    void addRow(const QString& label, QWidget* field, const QString& hint = QString())
+    {
+        auto* caption = new QLabel(label, frame);
+        grid->addWidget(caption, row, 0, Qt::AlignLeft | Qt::AlignVCenter);
+        grid->addWidget(field, row, 1);
+        ++row;
+        if (!hint.isEmpty()) {
+            auto* note = new QLabel(hint, frame);
+            note->setObjectName(QStringLiteral("FieldHint"));
+            note->setWordWrap(true);
+            grid->addWidget(note, row, 1);
+            ++row;
+        }
+    }
+
+    void addFullRow(QWidget* widget)
+    {
+        grid->addWidget(widget, row, 0, 1, 2);
+        ++row;
+    }
+};
+
+SettingsCard makeCard(QWidget* parent, const QString& title, const QString& hint = QString())
+{
+    SettingsCard card;
+    card.frame = new QFrame(parent);
+    card.frame->setObjectName(QStringLiteral("SettingsCard"));
+    card.frame->setAttribute(Qt::WA_StyledBackground, true);
+    auto* layout = new QVBoxLayout(card.frame);
+    layout->setContentsMargins(20, 18, 20, 20);
+    layout->setSpacing(4);
+    auto* heading = new QLabel(title, card.frame);
+    heading->setObjectName(QStringLiteral("CardTitle"));
+    layout->addWidget(heading);
+    if (!hint.isEmpty()) {
+        auto* note = new QLabel(hint, card.frame);
+        note->setObjectName(QStringLiteral("CardHint"));
+        note->setWordWrap(true);
+        layout->addWidget(note);
+    }
+    layout->addSpacing(12);
+    card.grid = new QGridLayout();
+    card.grid->setContentsMargins(0, 0, 0, 0);
+    card.grid->setHorizontalSpacing(16);
+    card.grid->setVerticalSpacing(12);
+    card.grid->setColumnMinimumWidth(0, 150);
+    card.grid->setColumnStretch(1, 1);
+    layout->addLayout(card.grid);
+    return card;
+}
+
+// A scrolling column of cards, kept to a readable width and left-aligned.
+QVBoxLayout* makeCardColumn(QWidget* page, QVBoxLayout* pageLayout)
+{
+    auto* scroll = new QScrollArea(page);
+    scroll->setWidgetResizable(true);
+    scroll->setFrameShape(QFrame::NoFrame);
+    auto* wrapper = new QWidget(scroll);
+    wrapper->setObjectName(QStringLiteral("SettingsPage"));
+    wrapper->setAttribute(Qt::WA_StyledBackground, true);
+    auto* row = new QHBoxLayout(wrapper);
+    row->setContentsMargins(0, 0, 12, 0);
+    auto* column = new QWidget(wrapper);
+    column->setObjectName(QStringLiteral("SettingsPage"));
+    column->setMaximumWidth(760);
+    auto* cards = new QVBoxLayout(column);
+    cards->setContentsMargins(0, 4, 0, 16);
+    cards->setSpacing(16);
+    row->addWidget(column, 1);
+    row->addStretch(0);
+    scroll->setWidget(wrapper);
+    pageLayout->addWidget(scroll, 1);
+    return cards;
+}
+
+// Preview of a theme preset: a tiny window with pads and a scene list in that preset's
+// colours, named underneath. Checked when it is the current preset.
+class ThemeTile : public QAbstractButton
+{
+public:
+    ThemeTile(Theme::Id id, QWidget* parent)
+        : QAbstractButton(parent)
+        , m_id(id)
+    {
+        setCheckable(true);
+        setFixedSize(132, 120);
+        setCursor(Qt::PointingHandCursor);
+        setAttribute(Qt::WA_Hover);
+        setText(Theme::idLabel(id));
+        setToolTip(tr("Use the %1 theme").arg(Theme::idLabel(id)));
+    }
+
+    Theme::Id themeId() const { return m_id; }
+
+protected:
+    void paintEvent(QPaintEvent*) override
+    {
+        QPainter p(this);
+        p.setRenderHint(QPainter::Antialiasing, true);
+        const Theme::Palette& ui = Theme::instance().palette();
+        const Theme::Palette t = Theme::presetPalette(m_id);
+        const QRectF tile = QRectF(rect()).adjusted(2, 2, -2, -2);
+
+        p.setPen(QPen(isChecked() ? ui.focusBorder : (underMouse() ? ui.textMuted : ui.panelBorder),
+            isChecked() ? 2.0 : 1.0));
+        p.setBrush(ui.fieldBackground);
+        p.drawRoundedRect(tile, 12, 12);
+
+        // Mini window in the preset's own colours.
+        const QRectF win(tile.left() + 8, tile.top() + 8, tile.width() - 16, 76);
+        p.setPen(QPen(t.panelBorder, 1.0));
+        p.setBrush(t.background);
+        p.drawRoundedRect(win, 7, 7);
+
+        const QRectF side(win.right() - 35, win.top() + 1, 34, win.height() - 2);
+        p.setPen(Qt::NoPen);
+        p.setBrush(t.panelBackground);
+        p.drawRoundedRect(side, 6, 6);
+        for (int i = 0; i < 3; ++i) {
+            const QRectF sceneRow(side.left() + 4, side.top() + 7 + i * 14, side.width() - 8, 9);
+            p.setBrush(i == 0 ? t.sceneActiveFill : t.sceneFill);
+            p.setPen(QPen(i == 0 ? t.sceneActiveBorder : t.sceneBorder, 1.0));
+            p.drawRoundedRect(sceneRow, 3, 3);
+        }
+
+        const qreal padW = 24;
+        const qreal padH = 28;
+        for (int i = 0; i < 4; ++i) {
+            const int col = i % 2;
+            const int r = i / 2;
+            const QRectF pad(win.left() + 7 + col * (padW + 6), win.top() + 7 + r * (padH + 6), padW, padH);
+            const bool live = i == 0;
+            p.setBrush(t.padFill);
+            p.setPen(QPen(live ? t.playLoaded : t.padBorder, live ? 1.4 : 1.0));
+            p.drawRoundedRect(pad, 4, 4);
+            p.setPen(Qt::NoPen);
+            p.setBrush(live ? t.playLoaded : t.playEmpty);
+            p.drawEllipse(QPointF(pad.center().x(), pad.top() + 11), 5.0, 5.0);
+            p.setBrush(live ? t.playhead : t.playheadBorder);
+            p.drawRoundedRect(QRectF(pad.left() + 4, pad.bottom() - 7, live ? padW * 0.55 : padW - 8, 2.5), 1, 1);
+        }
+        // Accent chip, so presets with similar grounds are easy to tell apart.
+        p.setBrush(t.playLoaded);
+        p.drawEllipse(QPointF(win.left() + 68, win.top() + 13), 3.5, 3.5);
+
+        QFont f = font();
+        f.setWeight(isChecked() ? QFont::DemiBold : QFont::Medium);
+        p.setFont(f);
+        p.setPen(ui.text);
+        const QRectF label(tile.left() + 12, win.bottom() + 6, tile.width() - 24, tile.bottom() - win.bottom() - 10);
+        p.drawText(label, Qt::AlignLeft | Qt::AlignVCenter, text());
+        if (isChecked()) {
+            p.setBrush(ui.focusBorder);
+            p.setPen(Qt::NoPen);
+            const QPointF c(label.right() - 6, label.center().y());
+            p.drawEllipse(c, 7, 7);
+            p.setPen(QPen(Theme::contrastOn(ui.focusBorder), 1.6, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
+            QPolygonF tick;
+            tick << QPointF(c.x() - 3, c.y()) << QPointF(c.x() - 0.8, c.y() + 2.3) << QPointF(c.x() + 3.2, c.y() - 2.2);
+            p.drawPolyline(tick);
+        }
+    }
+
+private:
+    Theme::Id m_id;
+};
+
+// Round colour swatch for the accent picker. With no colour it draws a dashed "custom" circle.
+class AccentSwatch : public QAbstractButton
+{
+public:
+    AccentSwatch(const QColor& color, const QString& name, QWidget* parent)
+        : QAbstractButton(parent)
+        , m_color(color)
+    {
+        setCheckable(true);
+        setFixedSize(34, 34);
+        setCursor(Qt::PointingHandCursor);
+        setAttribute(Qt::WA_Hover);
+        setToolTip(name);
+        setAccessibleName(name);
+    }
+
+    QColor color() const { return m_color; }
+    void setColor(const QColor& color)
+    {
+        m_color = color;
+        update();
+    }
+
+protected:
+    void paintEvent(QPaintEvent*) override
+    {
+        QPainter p(this);
+        p.setRenderHint(QPainter::Antialiasing, true);
+        const Theme::Palette& ui = Theme::instance().palette();
+        const QRectF outer = QRectF(rect()).adjusted(1, 1, -1, -1);
+        const QRectF inner = outer.adjusted(4, 4, -4, -4);
+        if (isChecked()) {
+            p.setPen(QPen(ui.focusBorder, 2.0));
+            p.setBrush(Qt::NoBrush);
+            p.drawEllipse(outer);
+        }
+        if (!m_color.isValid() && isChecked()) {
+            // Custom accent in use: show it, with a small plus to say "pick another".
+            p.setPen(Qt::NoPen);
+            p.setBrush(Theme::instance().accent());
+            p.drawEllipse(inner);
+            p.setPen(QPen(Theme::contrastOn(Theme::instance().accent()), 1.6, Qt::SolidLine, Qt::RoundCap));
+            const QPointF c = inner.center();
+            p.drawLine(QPointF(c.x() - 4, c.y()), QPointF(c.x() + 4, c.y()));
+            p.drawLine(QPointF(c.x(), c.y() - 4), QPointF(c.x(), c.y() + 4));
+            return;
+        }
+        if (!m_color.isValid()) {
+            QPen dashed(underMouse() ? ui.text : ui.textMuted, 1.2);
+            dashed.setDashPattern({2.5, 2.0});
+            p.setPen(dashed);
+            p.setBrush(Qt::NoBrush);
+            p.drawEllipse(inner);
+            p.setPen(QPen(underMouse() ? ui.text : ui.textMuted, 1.6, Qt::SolidLine, Qt::RoundCap));
+            const QPointF c = inner.center();
+            p.drawLine(QPointF(c.x() - 4, c.y()), QPointF(c.x() + 4, c.y()));
+            p.drawLine(QPointF(c.x(), c.y() - 4), QPointF(c.x(), c.y() + 4));
+            return;
+        }
+        p.setPen(underMouse() ? QPen(ui.text, 1.0) : Qt::NoPen);
+        p.setBrush(m_color);
+        p.drawEllipse(inner);
+    }
+
+private:
+    QColor m_color;
+};
+
+struct AccentChoice {
+    const char* name;
+    const char* hex;
+};
+
+constexpr AccentChoice kAccents[] = {
+    {"Ember", "#ff7a3d"},
+    {"Amber", "#f2c14e"},
+    {"Teal", "#4fb6a8"},
+    {"Sky", "#5aa9f0"},
+    {"Violet", "#a78bfa"},
+    {"Rose", "#ec6a8f"},
+};
+}
+
+QWidget* MainWindow::buildPageHeader(QWidget* page, const QString& title, const QString& subtitle)
+{
+    auto* header = new QWidget(page);
+    auto* row = new QHBoxLayout(header);
+    row->setContentsMargins(0, 0, 0, 0);
+    row->setSpacing(16);
+    auto* text = new QVBoxLayout();
+    text->setSpacing(2);
+    auto* heading = new QLabel(title, header);
+    heading->setObjectName(QStringLiteral("SettingsTitle"));
+    text->addWidget(heading);
+    auto* sub = new QLabel(subtitle, header);
+    sub->setObjectName(QStringLiteral("PageSubtitle"));
+    text->addWidget(sub);
+    row->addLayout(text, 1);
+    auto* back = new QPushButton(tr("Back to scenes"), header);
+    back->setCursor(Qt::PointingHandCursor);
+    back->setToolTip(tr("Return to the pad grid (Ctrl+1)"));
+    connect(back, &QPushButton::clicked, this, [this]() {
+        setPage(Page::Main);
+        setSidebarView(SidebarView::Scenes);
+    });
+    row->addWidget(back, 0, Qt::AlignTop);
+    return header;
+}
+
 void MainWindow::buildSettingsPage()
 {
     m_settingsPage = new QWidget(m_pages);
     m_settingsPage->setObjectName(QStringLiteral("SettingsPage"));
     m_settingsPage->setAttribute(Qt::WA_StyledBackground, true);
     auto* outer = new QVBoxLayout(m_settingsPage);
-    outer->setContentsMargins(16, 16, 16, 16);
-    auto* title = new QLabel(tr("Settings"), m_settingsPage);
-    title->setObjectName(QStringLiteral("SettingsTitle"));
-    outer->addWidget(title, 0, Qt::AlignLeft);
+    outer->setContentsMargins(32, 24, 20, 0);
+    outer->setSpacing(20);
+    outer->addWidget(buildPageHeader(m_settingsPage, tr("Settings"),
+        tr("How new scenes and pads start out, where samples live, and the reverb.")));
+    QVBoxLayout* cards = makeCardColumn(m_settingsPage, outer);
+    QWidget* host = cards->parentWidget();
 
-    auto* scroll = new QScrollArea(m_settingsPage);
-    scroll->setWidgetResizable(true);
-    scroll->setFrameShape(QFrame::NoFrame);
-    auto* host = new QWidget(scroll);
-    host->setObjectName(QStringLiteral("SettingsPage"));
-    host->setAttribute(Qt::WA_StyledBackground, true);
-    auto* grid = new QGridLayout(host);
-    grid->setContentsMargins(0, 8, 16, 8);
-    grid->setHorizontalSpacing(16);
-    grid->setVerticalSpacing(10);
-    int row = 0;
-    auto addRow = [&](const QString& label, QWidget* field) {
-        auto* caption = new QLabel(label, host);
-        caption->setMinimumWidth(120);
-        grid->addWidget(caption, row, 0, Qt::AlignLeft | Qt::AlignVCenter);
-        grid->addWidget(field, row, 1);
-        ++row;
-    };
+    // Scenes and pads
+    SettingsCard scenes = makeCard(host, tr("Scenes and pads"),
+        tr("Defaults for new scenes and pads. Existing scenes keep their grid."));
+    m_loopByDefault = new QCheckBox(tr("Loop new pads"), scenes.frame);
+    scenes.addRow(tr("New pads"), m_loopByDefault);
 
-    m_loopByDefault = new QCheckBox(tr("Loop new pads"), host);
-    grid->addWidget(m_loopByDefault, row, 0, 1, 2, Qt::AlignLeft);
-    ++row;
-
-    m_sceneLimit = new QSpinBox(host);
+    m_sceneLimit = new QSpinBox(scenes.frame);
     m_sceneLimit->setRange(1, 64);
     m_sceneLimit->setMaximumWidth(120);
-    addRow(tr("Scene limit"), m_sceneLimit);
+    scenes.addRow(tr("Scene limit"), m_sceneLimit);
 
-    m_gridColumns = new QSpinBox(host);
+    m_gridColumns = new QSpinBox(scenes.frame);
     m_gridColumns->setRange(1, 12);
     m_gridColumns->setMaximumWidth(120);
-    addRow(tr("Grid columns"), m_gridColumns);
-
-    m_gridRows = new QSpinBox(host);
+    m_gridColumns->setSuffix(tr(" columns"));
+    m_gridRows = new QSpinBox(scenes.frame);
     m_gridRows->setRange(1, 8);
     m_gridRows->setMaximumWidth(120);
-    addRow(tr("Grid rows"), m_gridRows);
+    m_gridRows->setSuffix(tr(" rows"));
+    auto* gridSize = new QWidget(scenes.frame);
+    auto* gridSizeRow = new QHBoxLayout(gridSize);
+    gridSizeRow->setContentsMargins(0, 0, 0, 0);
+    gridSizeRow->setSpacing(8);
+    gridSizeRow->addWidget(m_gridColumns);
+    auto* times = new QLabel(QStringLiteral("×"), gridSize);
+    times->setObjectName(QStringLiteral("FieldHint"));
+    gridSizeRow->addWidget(times);
+    gridSizeRow->addWidget(m_gridRows);
+    gridSizeRow->addStretch();
+    scenes.addRow(tr("Pad grid"), gridSize, tr("Applies to scenes added after the change."));
+    cards->addWidget(scenes.frame);
 
-    auto* gridNote = new QLabel(tr("Grid size applies to scenes added after the change."), host);
-    gridNote->setWordWrap(true);
-    grid->addWidget(gridNote, row, 0, 1, 2);
-    ++row;
-
-    m_libraryPath = new QLineEdit(host);
-    auto* browse = new QPushButton(tr("Browse..."), host);
-    auto* libraryRow = new QWidget(host);
+    // Library
+    SettingsCard library = makeCard(host, tr("Sample library"),
+        tr("Where the Load button starts looking for audio files."));
+    m_libraryPath = new QLineEdit(library.frame);
+    m_libraryPath->setPlaceholderText(tr("Choose a folder"));
+    auto* browse = new QPushButton(tr("Browse..."), library.frame);
+    auto* libraryRow = new QWidget(library.frame);
     auto* libraryLayout = new QHBoxLayout(libraryRow);
     libraryLayout->setContentsMargins(0, 0, 0, 0);
+    libraryLayout->setSpacing(8);
     libraryLayout->addWidget(m_libraryPath, 1);
     libraryLayout->addWidget(browse);
-    addRow(tr("Sample library"), libraryRow);
+    library.addRow(tr("Folder"), libraryRow);
+    cards->addWidget(library.frame);
 
-    m_reverbPreset = new QComboBox(host);
+    // Reverb
+    SettingsCard reverb = makeCard(host, tr("Reverb"),
+        tr("The two sends on each pad feed these effects."));
+    m_reverbPreset = new QComboBox(reverb.frame);
     m_reverbPreset->setMaxVisibleItems(24);
+    m_reverbPreset->setMaximumWidth(320);
     for (int i = 0; i < OpenALSoundPlayer::reverbPresetCount(); ++i) {
         m_reverbPreset->addItem(
             QString::fromStdString(OpenALSoundPlayer::reverbPresetLabel(i)),
             QString::fromStdString(OpenALSoundPlayer::reverbPresetId(i)));
     }
-    addRow(tr("Reverb preset"), m_reverbPreset);
+    reverb.addRow(tr("Reverb preset"), m_reverbPreset, tr("Used by each pad's Reverb send."));
 
-    m_convolutionGain = new QSlider(Qt::Horizontal, host);
+    m_convolutionGain = new QSlider(Qt::Horizontal, reverb.frame);
     m_convolutionGain->setRange(0, VolumeDb::sliderSpan(VolumeDb::kFloorDb, VolumeDb::kUnityDb));
     m_convolutionGain->setToolTip(tr("Output level of the convolution reverb. The bundled impulse is loud, so the default is low."));
-    m_convolutionGainValue = new QLabel(host);
+    m_convolutionGainValue = new QLabel(reverb.frame);
+    m_convolutionGainValue->setObjectName(QStringLiteral("MainVolumeValue"));
     m_convolutionGainValue->setMinimumWidth(72);
     m_convolutionGainValue->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
     m_convolutionGain->setValue(VolumeDb::toSliderClamped(
         OpenALSoundPlayer::convolutionGain(), VolumeDb::kFloorDb, VolumeDb::kUnityDb));
     m_convolutionGainValue->setText(VolumeDb::format(
         VolumeDb::fromSlider(m_convolutionGain->value(), VolumeDb::kFloorDb)));
-    auto* convolutionRow = new QWidget(host);
+    auto* convolutionRow = new QWidget(reverb.frame);
     auto* convolutionLayout = new QHBoxLayout(convolutionRow);
     convolutionLayout->setContentsMargins(0, 0, 0, 0);
     convolutionLayout->addWidget(m_convolutionGain, 1);
     convolutionLayout->addWidget(m_convolutionGainValue);
-    addRow(tr("Convolution gain"), convolutionRow);
+    reverb.addRow(tr("Convolution level"), convolutionRow);
 
-    m_impulsePath = new QLineEdit(host);
-    m_impulseBrowse = new QPushButton(tr("Browse..."), host);
-    auto* impulseRow = new QWidget(host);
+    m_impulsePath = new QLineEdit(reverb.frame);
+    m_impulseBrowse = new QPushButton(tr("Browse..."), reverb.frame);
+    auto* impulseRow = new QWidget(reverb.frame);
     auto* impulseLayout = new QHBoxLayout(impulseRow);
     impulseLayout->setContentsMargins(0, 0, 0, 0);
+    impulseLayout->setSpacing(8);
     impulseLayout->addWidget(m_impulsePath, 1);
     impulseLayout->addWidget(m_impulseBrowse);
-    addRow(tr("Impulse response"), impulseRow);
-
     const bool convolution = OpenALSoundPlayer::convolutionAvailable();
+    reverb.addRow(tr("Impulse response"), impulseRow,
+        convolution ? tr("A recording of a space. Used by each pad's Convolution send.")
+                    : tr("Convolution reverb isn't available with the current audio device."));
     m_convolutionGain->setEnabled(convolution);
     m_impulsePath->setEnabled(convolution);
     m_impulseBrowse->setEnabled(convolution);
-
-    grid->setColumnStretch(1, 1);
-    grid->setRowStretch(row, 1);
-    scroll->setWidget(host);
-    outer->addWidget(scroll, 1);
+    cards->addWidget(reverb.frame);
+    cards->addStretch(1);
 
     connect(m_loopByDefault, &QCheckBox::toggled, this, [this](bool on) {
         if (m_updatingControls) {
@@ -1243,57 +1564,109 @@ void MainWindow::buildThemePage()
     m_themePage->setObjectName(QStringLiteral("ThemePage"));
     m_themePage->setAttribute(Qt::WA_StyledBackground, true);
     auto* outer = new QVBoxLayout(m_themePage);
-    outer->setContentsMargins(16, 16, 16, 16);
-    auto* title = new QLabel(tr("Theme"), m_themePage);
-    title->setObjectName(QStringLiteral("SettingsTitle"));
-    outer->addWidget(title, 0, Qt::AlignLeft);
+    outer->setContentsMargins(32, 24, 20, 0);
+    outer->setSpacing(20);
+    outer->addWidget(buildPageHeader(m_themePage, tr("Theme"),
+        tr("Pick a look, then an accent colour for everything that is playing.")));
+    QVBoxLayout* cards = makeCardColumn(m_themePage, outer);
+    QWidget* host = cards->parentWidget();
 
-    auto* scroll = new QScrollArea(m_themePage);
-    scroll->setWidgetResizable(true);
-    scroll->setFrameShape(QFrame::NoFrame);
-    auto* host = new QWidget(scroll);
-    host->setObjectName(QStringLiteral("ThemePage"));
-    host->setAttribute(Qt::WA_StyledBackground, true);
-    auto* grid = new QGridLayout(host);
-    grid->setContentsMargins(0, 8, 16, 8);
+    // Presets
+    SettingsCard presets = makeCard(host, tr("Presets"));
+    auto* tiles = new QWidget(presets.frame);
+    auto* tileGrid = new QGridLayout(tiles);
+    tileGrid->setContentsMargins(0, 0, 0, 0);
+    tileGrid->setHorizontalSpacing(12);
+    tileGrid->setVerticalSpacing(12);
+    for (int i = 0; i < Theme::kPresetCount; ++i) {
+        auto* tile = new ThemeTile(static_cast<Theme::Id>(i), tiles);
+        tileGrid->addWidget(tile, 0, i);
+        m_themeTiles.append(tile);
+        connect(tile, &QAbstractButton::clicked, this, [this, i]() {
+            Theme::instance().setTheme(static_cast<Theme::Id>(i));
+        });
+    }
+    tileGrid->setColumnStretch(Theme::kPresetCount, 1);
+    presets.addFullRow(tiles);
+    cards->addWidget(presets.frame);
+
+    // Accent
+    SettingsCard accent = makeCard(host, tr("Accent colour"),
+        tr("Play buttons, loops, the played part of waveforms and progress bars."));
+    auto* swatches = new QWidget(accent.frame);
+    auto* swatchRow = new QHBoxLayout(swatches);
+    swatchRow->setContentsMargins(0, 0, 0, 0);
+    swatchRow->setSpacing(6);
+    for (const AccentChoice& choice : kAccents) {
+        auto* swatch = new AccentSwatch(QColor(QString::fromLatin1(choice.hex)), tr(choice.name), swatches);
+        swatchRow->addWidget(swatch);
+        m_accentSwatches.append(swatch);
+        connect(swatch, &QAbstractButton::clicked, this, [swatch]() {
+            Theme::instance().setAccent(swatch->color());
+        });
+    }
+    auto* custom = new AccentSwatch(QColor(), tr("Custom colour..."), swatches);
+    swatchRow->addWidget(custom);
+    m_accentSwatches.append(custom);
+    connect(custom, &QAbstractButton::clicked, this, [this]() {
+        const QColor picked = QColorDialog::getColor(Theme::instance().accent(), this, tr("Accent colour"));
+        if (picked.isValid()) {
+            Theme::instance().setAccent(picked);
+        } else {
+            refreshThemeSwatches(); // restore the checked state the click toggled
+        }
+    });
+    swatchRow->addStretch();
+    accent.addFullRow(swatches);
+    cards->addWidget(accent.frame);
+
+    // Advanced: every colour role, folded away by default.
+    SettingsCard advanced = makeCard(host, tr("All colours"),
+        tr("Fine-tune any single colour. Changes are saved with your settings."));
+    m_advancedToggle = new QPushButton(advanced.frame);
+    m_advancedToggle->setObjectName(QStringLiteral("DisclosureButton"));
+    m_advancedToggle->setCursor(Qt::PointingHandCursor);
+    m_advancedToggle->setCheckable(true);
+    m_resetTheme = new QPushButton(tr("Reset to preset"), advanced.frame);
+    m_resetTheme->setToolTip(tr("Undo accent and colour changes"));
+    auto* advancedBar = new QWidget(advanced.frame);
+    auto* advancedBarRow = new QHBoxLayout(advancedBar);
+    advancedBarRow->setContentsMargins(0, 0, 0, 0);
+    advancedBarRow->addWidget(m_advancedToggle);
+    advancedBarRow->addStretch();
+    advancedBarRow->addWidget(m_resetTheme);
+    advanced.addFullRow(advancedBar);
+
+    m_advancedColors = new QWidget(advanced.frame);
+    auto* grid = new QGridLayout(m_advancedColors);
+    grid->setContentsMargins(0, 4, 0, 0);
     grid->setHorizontalSpacing(16);
     grid->setVerticalSpacing(8);
-
-    m_themePreset = new QComboBox(host);
-    m_themePreset->addItem(Theme::idLabel(Theme::Id::Midnight));
-    m_themePreset->addItem(Theme::idLabel(Theme::Id::Parchment));
-    m_themePreset->addItem(Theme::idLabel(Theme::Id::Night));
-    m_themePreset->addItem(Theme::idLabel(Theme::Id::Forest));
-    m_themePreset->addItem(Theme::idLabel(Theme::Id::Ink));
-    m_themePreset->setMaximumWidth(280);
-    auto* themeCaption = new QLabel(tr("Theme"), host);
-    themeCaption->setMinimumWidth(160);
-    grid->addWidget(themeCaption, 0, 0, Qt::AlignLeft | Qt::AlignVCenter);
-    grid->addWidget(m_themePreset, 0, 1, Qt::AlignLeft);
-
     QString lastGroup;
-    int row = 1;
+    int row = 0;
     m_themeSwatches.resize(Theme::roleCount());
     for (int i = 0; i < Theme::roleCount(); ++i) {
         const QString group = Theme::roleGroup(i);
         if (group != lastGroup) {
-            auto* section = new QLabel(group, host);
+            auto* section = new QLabel(group, m_advancedColors);
             section->setObjectName(QStringLiteral("ThemeSection"));
             grid->addWidget(section, row, 0, 1, 2, Qt::AlignLeft);
             ++row;
             lastGroup = group;
         }
-        auto* caption = new QLabel(Theme::roleLabel(i), host);
-        auto* swatch = new QPushButton(host);
-        swatch->setFixedSize(56, 24);
+        auto* caption = new QLabel(Theme::roleLabel(i), m_advancedColors);
+        auto* swatch = new QPushButton(m_advancedColors);
+        swatch->setFixedSize(44, 22);
         swatch->setCursor(Qt::PointingHandCursor);
         swatch->setFocusPolicy(Qt::NoFocus);
-        auto* hex = new QLabel(host);
+        swatch->setToolTip(tr("Change %1").arg(Theme::roleLabel(i)));
+        auto* hex = new QLabel(m_advancedColors);
+        hex->setObjectName(QStringLiteral("SwatchHex"));
         hex->setMinimumWidth(72);
-        auto* field = new QWidget(host);
+        auto* field = new QWidget(m_advancedColors);
         auto* fieldLayout = new QHBoxLayout(field);
         fieldLayout->setContentsMargins(0, 0, 0, 0);
-        fieldLayout->setSpacing(8);
+        fieldLayout->setSpacing(10);
         fieldLayout->addWidget(swatch);
         fieldLayout->addWidget(hex);
         fieldLayout->addStretch();
@@ -1308,16 +1681,21 @@ void MainWindow::buildThemePage()
         });
         ++row;
     }
+    grid->setColumnMinimumWidth(0, 150);
     grid->setColumnStretch(1, 1);
-    grid->setRowStretch(row, 1);
-    scroll->setWidget(host);
-    outer->addWidget(scroll, 1);
+    m_advancedColors->setVisible(false);
+    advanced.addFullRow(m_advancedColors);
+    cards->addWidget(advanced.frame);
+    cards->addStretch(1);
 
-    connect(m_themePreset, qOverload<int>(&QComboBox::currentIndexChanged), this, [this](int index) {
-        if (m_updatingControls || index < 0) {
-            return;
-        }
-        Theme::instance().setTheme(static_cast<Theme::Id>(index));
+    auto updateToggle = [this](bool open) {
+        m_advancedToggle->setText(open ? tr("▾  Hide all colours") : tr("▸  Show all colours"));
+        m_advancedColors->setVisible(open);
+    };
+    updateToggle(false);
+    connect(m_advancedToggle, &QPushButton::toggled, this, updateToggle);
+    connect(m_resetTheme, &QPushButton::clicked, this, []() {
+        Theme::instance().setTheme(Theme::instance().id());
     });
     connect(&Theme::instance(), &Theme::changed, this, &MainWindow::refreshThemeSwatches);
 }
@@ -1350,7 +1728,6 @@ void MainWindow::syncSettingsPage()
     m_convolutionGain->setValue(VolumeDb::toSliderClamped(
         OpenALSoundPlayer::convolutionGain(), VolumeDb::kFloorDb, VolumeDb::kUnityDb));
     m_impulsePath->setText(fromImpulsePath(OpenALSoundPlayer::convolutionImpulsePath()));
-    m_themePreset->setCurrentIndex(static_cast<int>(Theme::instance().id()));
     m_updatingControls = false;
     refreshThemeSwatches();
     if (m_addScene) {
@@ -1360,14 +1737,30 @@ void MainWindow::syncSettingsPage()
 
 void MainWindow::refreshThemeSwatches()
 {
-    m_updatingControls = true;
-    m_themePreset->setCurrentIndex(static_cast<int>(Theme::instance().id()));
-    m_updatingControls = false;
-    const QString border = Theme::instance().palette().fieldBorder.name(QColor::HexRgb);
+    const Theme& theme = Theme::instance();
+    for (QAbstractButton* tile : m_themeTiles) {
+        tile->setChecked(static_cast<ThemeTile*>(tile)->themeId() == theme.id());
+        tile->update();
+    }
+    // A preset accent is checked when it matches; anything else lights the custom swatch.
+    bool matched = false;
+    for (int i = 0; i < m_accentSwatches.size(); ++i) {
+        auto* swatch = static_cast<AccentSwatch*>(m_accentSwatches[i]);
+        const bool isCustom = !swatch->color().isValid();
+        const bool on = isCustom ? !matched : swatch->color() == theme.accent();
+        matched = matched || on;
+        swatch->setChecked(on);
+        swatch->update();
+    }
+    if (m_resetTheme) {
+        m_resetTheme->setEnabled(theme.isModified());
+    }
+    const QString border = theme.palette().fieldBorder.name(QColor::HexRgb);
     for (int i = 0; i < m_themeSwatches.size(); ++i) {
-        const QString color = Theme::instance().colorAt(i).name(QColor::HexRgb);
+        const QString color = theme.colorAt(i).name(QColor::HexRgb);
         m_themeSwatches[i].button->setStyleSheet(
-            QStringLiteral("QPushButton { background: %1; border: 1px solid %2; }").arg(color, border));
+            QStringLiteral("QPushButton { background: %1; border: 1px solid %2; border-radius: 6px; padding: 0; }")
+                .arg(color, border));
         m_themeSwatches[i].hex->setText(color);
     }
 }
@@ -1418,6 +1811,10 @@ void MainWindow::applyAppSettings(const QJsonObject& global)
 void MainWindow::setPage(Page page)
 {
     m_page = page;
+    // The Sample / Pad / Waveform panel belongs to the pad grid, not to Settings or Theme.
+    if (m_bottomPanel) {
+        m_bottomPanel->setVisible(page == Page::Main);
+    }
     if (page == Page::Settings) {
         m_pages->setCurrentWidget(m_settingsPage);
     } else if (page == Page::Theme) {

@@ -75,8 +75,8 @@ class SoundPadWidget : public QWidget
     Q_OBJECT
 public:
     // Smallest size the grid gives a pad. Contents are laid out on a 176x204 canvas and scaled.
-    static constexpr int kDesignWidth = 132;
-    static constexpr int kDesignHeight = 153;
+    static constexpr int kDesignWidth = 112;
+    static constexpr int kDesignHeight = 130;
     static constexpr int kLayoutWidth = 176;
     static constexpr int kLayoutHeight = 204;
 
