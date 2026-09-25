@@ -7,6 +7,7 @@
 #include "widgets/SampleRowWidget.h"
 #include "widgets/SoundPadWidget.h"
 #include "widgets/WaveformWidget.h"
+#include "VolumeDb.h"
 
 #include <QAction>
 #include <QApplication>
@@ -50,6 +51,9 @@
 #include <filesystem>
 
 namespace {
+
+constexpr float kSampleGainMinDb = -6.0f;
+constexpr float kSampleGainMaxDb = 16.0f;
 
 QString defaultImpulsePath(const AppConfig& config)
 {
@@ -180,12 +184,17 @@ void MainWindow::buildUi()
     m_mainPage = new QWidget(m_pages);
     auto* mainLayout = new QVBoxLayout(m_mainPage);
     m_mainVolume = new QSlider(Qt::Horizontal, m_mainPage);
-    m_mainVolume->setRange(0, 1000);
-    m_mainVolume->setValue(1000);
+    m_mainVolume->setRange(0, VolumeDb::sliderSpan(VolumeDb::kFloorDb, VolumeDb::kUnityDb));
+    m_mainVolume->setValue(VolumeDb::sliderSpan(VolumeDb::kFloorDb, VolumeDb::kUnityDb));
     m_mainVolume->setMaximumWidth(260);
+    m_mainVolumeValue = new QLabel(m_mainPage);
+    m_mainVolumeValue->setMinimumWidth(72);
+    m_mainVolumeValue->setAlignment(Qt::AlignLeft | Qt::AlignVCenter);
+    m_mainVolumeValue->setText(VolumeDb::format(VolumeDb::kUnityDb));
     auto* volumeRow = new QHBoxLayout();
     volumeRow->addWidget(new QLabel(tr("Main Volume"), m_mainPage));
     volumeRow->addWidget(m_mainVolume);
+    volumeRow->addWidget(m_mainVolumeValue);
     m_loadBar = new QProgressBar(m_mainPage);
     m_loadBar->setObjectName(QStringLiteral("LoadProgress"));
     m_loadBar->setTextVisible(false);
@@ -316,8 +325,8 @@ void MainWindow::buildUi()
     m_pitch->setRange(0, 3000);
     m_pitch->setValue(1000);
     m_gain = new QSlider(Qt::Horizontal, m_editorPage);
-    m_gain->setRange(1000, 6000);
-    m_gain->setValue(1000);
+    m_gain->setRange(0, VolumeDb::sliderSpan(kSampleGainMinDb, kSampleGainMaxDb));
+    m_gain->setValue(VolumeDb::toSlider(VolumeDb::kUnityDb, kSampleGainMinDb));
     m_randomPan = new QCheckBox(tr("Random Pan"), m_editorPage);
     m_spatialise = new QCheckBox(tr("Spatialise Stereo"), m_editorPage);
 
@@ -342,7 +351,10 @@ void MainWindow::buildUi()
     };
     m_panValue = makeValueBox(m_pan, 0.002, -1.0);
     m_pitchValue = makeValueBox(m_pitch, 0.001, 0.0);
-    m_gainValue = makeValueBox(m_gain, 0.001, 0.0);
+    m_gainValue = makeValueBox(m_gain, 0.1, kSampleGainMinDb);
+    m_gainValue->setDecimals(1);
+    m_gainValue->setSuffix(QStringLiteral(" dB"));
+    m_gainValue->setMinimumWidth(88);
 
     m_sampleControls = new QWidget(m_editorPage);
     auto* controlsLayout = new QVBoxLayout(m_sampleControls);
@@ -522,7 +534,9 @@ void MainWindow::buildUi()
         setSidebarView(SidebarView::Editor);
     });
     connect(m_mainVolume, &QSlider::valueChanged, this, [this](int v) {
-        m_config.setMasterVolume(v / 1000.0f);
+        const float db = VolumeDb::fromSlider(v, VolumeDb::kFloorDb);
+        m_config.setMasterVolume(VolumeDb::toLinearMuted(db));
+        m_mainVolumeValue->setText(VolumeDb::format(db));
     });
     connect(m_minDelay, qOverload<int>(&QSpinBox::valueChanged), this, [this](int v) {
         if (m_updatingControls) return;
@@ -588,7 +602,8 @@ void MainWindow::buildUi()
     connect(m_gain, &QSlider::valueChanged, this, [this](int v) {
         if (m_updatingControls) return;
         if (auto* pad = activePad(); pad && pad->soundPlayer().player.size() > static_cast<size_t>(m_config.activeSampleIdx)) {
-            pad->soundPlayer().player.at(m_config.activeSampleIdx)->setGain(v / 1000.0f);
+            pad->soundPlayer().player.at(m_config.activeSampleIdx)->setGain(
+                VolumeDb::toLinear(VolumeDb::fromSlider(v, kSampleGainMinDb)));
         }
     });
     connect(m_randomPan, &QCheckBox::toggled, this, [this](bool on) {
@@ -969,7 +984,10 @@ void MainWindow::updateEditControls()
     m_spatialise->setChecked(pad->isSpatialisedStereo(m_config.activeSampleIdx));
     updatePanControl(sample);
     m_pitch->setValue(static_cast<int>(sample->getPitch() * 1000.0f));
-    m_gain->setValue(static_cast<int>(sample->getGain() * 1000.0f));
+    m_gain->setValue(std::clamp(
+        VolumeDb::toSlider(VolumeDb::toDb(sample->getGain()), kSampleGainMinDb),
+        m_gain->minimum(),
+        m_gain->maximum()));
     m_randomPan->setChecked(pad->soundPlayer().isRandomPan());
     m_editTitle->setText(pad->soundName().toUpper());
     m_updatingControls = false;
@@ -1111,9 +1129,21 @@ void MainWindow::buildSettingsPage()
     addRow(tr("Reverb preset"), m_reverbPreset);
 
     m_convolutionGain = new QSlider(Qt::Horizontal, host);
-    m_convolutionGain->setRange(0, 1000);
+    m_convolutionGain->setRange(0, VolumeDb::sliderSpan(VolumeDb::kFloorDb, VolumeDb::kUnityDb));
     m_convolutionGain->setToolTip(tr("Output level of the convolution reverb. The bundled impulse is loud, so the default is low."));
-    addRow(tr("Convolution gain"), m_convolutionGain);
+    m_convolutionGainValue = new QLabel(host);
+    m_convolutionGainValue->setMinimumWidth(72);
+    m_convolutionGainValue->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
+    m_convolutionGain->setValue(VolumeDb::toSliderClamped(
+        OpenALSoundPlayer::convolutionGain(), VolumeDb::kFloorDb, VolumeDb::kUnityDb));
+    m_convolutionGainValue->setText(VolumeDb::format(
+        VolumeDb::fromSlider(m_convolutionGain->value(), VolumeDb::kFloorDb)));
+    auto* convolutionRow = new QWidget(host);
+    auto* convolutionLayout = new QHBoxLayout(convolutionRow);
+    convolutionLayout->setContentsMargins(0, 0, 0, 0);
+    convolutionLayout->addWidget(m_convolutionGain, 1);
+    convolutionLayout->addWidget(m_convolutionGainValue);
+    addRow(tr("Convolution gain"), convolutionRow);
 
     m_impulsePath = new QLineEdit(host);
     m_impulseBrowse = new QPushButton(tr("Browse..."), host);
@@ -1181,8 +1211,10 @@ void MainWindow::buildSettingsPage()
         }
     });
     connect(m_convolutionGain, &QSlider::valueChanged, this, [this](int value) {
+        const float db = VolumeDb::fromSlider(value, VolumeDb::kFloorDb);
+        m_convolutionGainValue->setText(VolumeDb::format(db));
         if (!m_updatingControls) {
-            OpenALSoundPlayer::setConvolutionGain(value / 1000.0f);
+            OpenALSoundPlayer::setConvolutionGain(VolumeDb::toLinearMuted(db));
         }
     });
     connect(m_impulsePath, &QLineEdit::editingFinished, this, [this]() {
@@ -1314,7 +1346,8 @@ void MainWindow::syncSettingsPage()
     m_gridRows->setValue(m_config.gridHeight);
     m_libraryPath->setText(m_config.defaultLibraryLocation);
     m_reverbPreset->setCurrentIndex(OpenALSoundPlayer::reverbPresetIndex());
-    m_convolutionGain->setValue(static_cast<int>(OpenALSoundPlayer::convolutionGain() * 1000.0f + 0.5f));
+    m_convolutionGain->setValue(VolumeDb::toSliderClamped(
+        OpenALSoundPlayer::convolutionGain(), VolumeDb::kFloorDb, VolumeDb::kUnityDb));
     m_impulsePath->setText(fromImpulsePath(OpenALSoundPlayer::convolutionImpulsePath()));
     m_themePreset->setCurrentIndex(static_cast<int>(Theme::instance().id()));
     m_updatingControls = false;
@@ -1562,8 +1595,11 @@ void MainWindow::loadConfigFrom(const QString& path)
     const QJsonObject root = m_config.json();
     const QJsonObject global = root.value(QStringLiteral("global")).toObject();
     applyAppSettings(global);
-    m_mainVolume->setValue(static_cast<int>(global.value(QStringLiteral("mainvolume")).toDouble(1.0) * 1000.0));
-    m_config.setMasterVolume(m_mainVolume->value() / 1000.0f);
+    m_mainVolume->setValue(VolumeDb::toSliderClamped(
+        static_cast<float>(global.value(QStringLiteral("mainvolume")).toDouble(1.0)),
+        VolumeDb::kFloorDb,
+        VolumeDb::kUnityDb));
+    m_config.setMasterVolume(VolumeDb::toLinearMuted(VolumeDb::fromSlider(m_mainVolume->value(), VolumeDb::kFloorDb)));
     m_config.activeSceneIdx = global.value(QStringLiteral("activesceneid")).toInt();
     restoreWindowLayout(global);
 

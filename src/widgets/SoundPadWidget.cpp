@@ -4,6 +4,7 @@
 #include "OpenALSoundPlayer.h"
 #include "SampleLoadQueue.h"
 #include "Theme.h"
+#include "VolumeDb.h"
 
 #include <QApplication>
 #include <QColor>
@@ -249,8 +250,8 @@ SoundPadWidget::SoundPadWidget(AppConfig* config, int sceneId, int padId, QWidge
     m_player.setup(config, padId);
 
     m_volume = new QSlider(Qt::Horizontal, this);
-    m_volume->setRange(0, 1000);
-    m_volume->setValue(700);
+    m_volume->setRange(0, VolumeDb::sliderSpan(VolumeDb::kFloorDb, VolumeDb::kUnityDb));
+    m_volume->setValue(VolumeDb::toSliderClamped(0.7f, VolumeDb::kFloorDb, VolumeDb::kUnityDb));
     m_volume->setObjectName("PadVolume");
 
     m_volumeValue = new QLabel(this);
@@ -344,12 +345,13 @@ void SoundPadWidget::setSoundName(const QString& name)
 
 float SoundPadWidget::padVolume() const
 {
-    return m_volume->value() / 1000.0f;
+    return VolumeDb::toLinearMuted(VolumeDb::fromSlider(m_volume->value(), VolumeDb::kFloorDb));
 }
 
 void SoundPadWidget::setPadVolume(float value)
 {
-    m_volume->setValue(static_cast<int>(std::clamp(value, 0.0f, 1.0f) * 1000.0f));
+    const float linear = std::clamp(value, 0.0f, 1.0f);
+    m_volume->setValue(VolumeDb::toSliderClamped(linear, VolumeDb::kFloorDb, VolumeDb::kUnityDb));
 }
 
 bool SoundPadWidget::isLooping() const
@@ -454,8 +456,8 @@ void SoundPadWidget::layoutContents()
         return QRect(qRound(x * s), qRound(y * s), qRound(w * s), qRound(h * s));
     };
 
-    m_volume->setGeometry(scaled(2, 2, 92, 15));
-    m_volumeValue->setGeometry(scaled(96, 1, 26, 16));
+    m_volume->setGeometry(scaled(2, 2, 68, 15));
+    m_volumeValue->setGeometry(scaled(70, 1, 52, 16));
     m_card->setGeometry(scaled(2, 20, 120, 120));
     m_load->setGeometry(scaled(10, 10, 15, 15));
     m_loop->setGeometry(scaled(52, 10, 15, 15));
@@ -469,7 +471,7 @@ void SoundPadWidget::layoutContents()
     m_name->setFont(nameFont);
 
     QFont volFont = m_volumeValue->font();
-    volFont.setPixelSize(std::max(1, qRound(10 * s)));
+    volFont.setPixelSize(std::max(1, qRound(9 * s)));
     m_volumeValue->setFont(volFont);
 
     const int groove = std::max(2, qRound(6 * s));
@@ -1109,7 +1111,7 @@ void SoundPadWidget::updateVolumeLabel()
     if (!m_volumeValue) {
         return;
     }
-    m_volumeValue->setText(QString::number(padVolume(), 'f', 2));
+    m_volumeValue->setText(VolumeDb::format(VolumeDb::fromSlider(m_volume->value(), VolumeDb::kFloorDb)));
 }
 
 QString SoundPadWidget::remainingTimeText() const

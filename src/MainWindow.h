@@ -116,6 +116,7 @@ private:
     int m_followedSound = -1;
 
     QSlider* m_mainVolume = nullptr;
+    QLabel* m_mainVolumeValue = nullptr;
     QWidget* m_bottomPanel = nullptr;
     QStackedWidget* m_bottomStack = nullptr;
     QPushButton* m_sampleTab = nullptr;
@@ -153,6 +154,7 @@ private:
     QLineEdit* m_libraryPath = nullptr;
     QComboBox* m_reverbPreset = nullptr;
     QSlider* m_convolutionGain = nullptr;
+    QLabel* m_convolutionGainValue = nullptr;
     QLineEdit* m_impulsePath = nullptr;
     QPushButton* m_impulseBrowse = nullptr;
     QComboBox* m_themePreset = nullptr;
