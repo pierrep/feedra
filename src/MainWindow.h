@@ -79,7 +79,7 @@ private:
     void checkAudioDevice();
     void onPadClicked(int sceneId, int padId);
     void setBottomTab(int index);
-    void setBottomCollapsed(bool collapsed);
+    void setBottomCollapsed(bool collapsed, bool resizeWindow = true);
     void refreshTabButton(QPushButton* button, bool active);
     SoundPadWidget* activePad() const;
     Scene* activeScene() const;
@@ -111,7 +111,6 @@ private:
     QPushButton* m_sampleTab = nullptr;
     QPushButton* m_padTab = nullptr;
     QPushButton* m_collapseBottom = nullptr;
-    QWidget* m_collapseFill = nullptr;
     int m_bottomPageHeight = 0;
     QSpinBox* m_minDelay = nullptr;
     QSpinBox* m_maxDelay = nullptr;

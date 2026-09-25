@@ -1,7 +1,7 @@
 /* Colours are applied at runtime from Theme. This file records the parchment palette. */
 QMainWindow, QWidget#central, QStackedWidget,
 QScrollArea, QAbstractScrollArea::viewport,
-QWidget#PadGrid, QWidget#SceneListHost, QWidget#SampleListHost, QWidget#CollapseFill, QWidget#SettingsPage {
+QWidget#PadGrid, QWidget#SceneListHost, QWidget#SampleListHost, QWidget#SettingsPage {
     background-color: #9a8e84;
     color: #1c1410;
 }

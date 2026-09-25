@@ -450,7 +450,7 @@ QString Theme::styleSheet() const
     qss += QStringLiteral(
         "QMainWindow, QWidget#central, QStackedWidget,\n"
         "QScrollArea, QAbstractScrollArea::viewport,\n"
-        "QWidget#PadGrid, QWidget#SceneListHost, QWidget#SampleListHost, QWidget#CollapseFill,\n"
+        "QWidget#PadGrid, QWidget#SceneListHost, QWidget#SampleListHost,\n"
         "QWidget#SettingsPage, QWidget#ThemePage {\n"
         "    background-color: %1;\n"
         "    color: %2;\n"

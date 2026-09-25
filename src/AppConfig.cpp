@@ -22,30 +22,6 @@ void AppConfig::setup()
 
 QString AppConfig::dataDir() const
 {
-    auto findBinData = [](QDir dir, int maxUp) -> QString {
-        for (int i = 0; i < maxUp; ++i) {
-            if (dir.exists(QStringLiteral("bin/data"))) {
-                return dir.absoluteFilePath(QStringLiteral("bin/data"));
-            }
-            if (!dir.cdUp()) {
-                break;
-            }
-        }
-        return {};
-    };
-
-    // Prefer the project bin/data folder (same path the original OF app used).
-    // CMake copies data next to the exe, so applicationDir/data would otherwise
-    // win and Save would not update bin/data/settings/settings.json.
-    const QString fromApp = findBinData(QDir(QCoreApplication::applicationDirPath()), 8);
-    if (!fromApp.isEmpty()) {
-        return fromApp;
-    }
-    const QString fromCwd = findBinData(QDir::current(), 8);
-    if (!fromCwd.isEmpty()) {
-        return fromCwd;
-    }
-
     QDir appDir(QCoreApplication::applicationDirPath());
     if (appDir.exists(QStringLiteral("data"))) {
         return appDir.absoluteFilePath(QStringLiteral("data"));

@@ -994,7 +994,7 @@ int OpenALSoundPlayer::listDevices(bool printOutput)
     }
     int num_devices = getDevices("output",devices, printOutput);
     if(printOutput) {
-        qInfo() << "Default output device name: " << defaultDeviceName;
+        qInfo() << "Default output device name: " << defaultDeviceName.c_str();
     }
 
     if(printOutput)
@@ -1160,14 +1160,14 @@ void OpenALSoundPlayer::initialize(){
         alContext = alcCreateContext( alDevice, attrlist );
 		if( !alContext ){
 			ALCenum err = alcGetError( alDevice ); 
-			qCritical() << "OpenALSoundPlayer" << "initialize(): couldn't not create OpenAL context : "<< getALCErrorString( err );
+			qCritical() << "OpenALSoundPlayer" << "initialize(): couldn't not create OpenAL context : "<< getALCErrorString( err ).c_str();
 			close();
 			return;
 		}
 
 		if( alcMakeContextCurrent( alContext )==ALC_FALSE ){
 			ALCenum err = alcGetError( alDevice ); 
-			qCritical() << "OpenALSoundPlayer" << "initialize(): couldn't not make current the create OpenAL context : "<< getALCErrorString( err );
+			qCritical() << "OpenALSoundPlayer" << "initialize(): couldn't not make current the create OpenAL context : "<< getALCErrorString( err ).c_str();
 			close();
 			return;
 		};
@@ -1311,7 +1311,7 @@ bool OpenALSoundPlayer::sfReadFile(const std::filesystem::path& path){
 	SF_INFO sfInfo;
 	SNDFILE* f = sf_open(path.string().c_str(),SFM_READ,&sfInfo);
 	if(!f){
-		qCritical() << "OpenALSoundPlayer" << "sfReadFile(): couldn't read \"" << path.string() << "\"";
+		qCritical() << "OpenALSoundPlayer" << "sfReadFile(): couldn't read \"" << path.string().c_str() << "\"";
 		return false;
 	}
 
@@ -1330,7 +1330,7 @@ bool OpenALSoundPlayer::sfReadFile(const std::filesystem::path& path){
         sf_count_t samples_read = sf_read_float (f, &buffer_float[0], buffer_float.size());
         if(samples_read<(int)buffer_float.size()){
 			qWarning() << "OpenALSoundPlayer" << "sfReadFile(): read " << samples_read << " float samples, expected "
-            << buffer_float.size() << " for \"" << path.string() << "\"";
+            << buffer_float.size() << " for \"" << path.string().c_str() << "\"";
 		}
         for (int i = 0 ; i < int(buffer_float.size()) ; i++){
             //buffer_float[i] *= scale ;
@@ -1340,14 +1340,14 @@ bool OpenALSoundPlayer::sfReadFile(const std::filesystem::path& path){
         sf_count_t frames_read = sf_readf_short(f,&buffer_short[0],sfInfo.frames);
 		if(frames_read<sfInfo.frames){
 			qCritical() << "OpenALSoundPlayer" << "sfReadFile(): read " << frames_read << " frames from buffer, expected "
-			<< sfInfo.frames << " for \"" << path.string() << "\"";
+			<< sfInfo.frames << " for \"" << path.string().c_str() << "\"";
 			return false;
 		}
 		sf_seek(f,0,SEEK_SET);
         frames_read = sf_readf_float(f,&buffer_float[0],sfInfo.frames);
 		if(frames_read<sfInfo.frames){
 			qCritical() << "OpenALSoundPlayer" << "sfReadFile(): read " << frames_read << " frames from fft buffer, expected "
-			<< sfInfo.frames << " for \"" << path.string() << "\"";
+			<< sfInfo.frames << " for \"" << path.string().c_str() << "\"";
 			return false;
 		}
 	}
@@ -1365,7 +1365,7 @@ bool OpenALSoundPlayer::mpg123ReadFile(const std::filesystem::path& path){
 	int err = MPG123_OK;
 	mpg123_handle * f = mpg123_new(nullptr,&err);
 	if(mpg123_open(f,path.string().c_str())!=MPG123_OK){
-		qCritical() << "OpenALSoundPlayer" << "mpg123ReadFile(): couldn't read \"" << path.string() << "\"";
+		qCritical() << "OpenALSoundPlayer" << "mpg123ReadFile(): couldn't read \"" << path.string().c_str() << "\"";
 		return false;
 	}
 
@@ -1374,8 +1374,8 @@ bool OpenALSoundPlayer::mpg123ReadFile(const std::filesystem::path& path){
 	mpg123_getformat(f,&rate,&channels,(int*)&encoding);
     subformat_string = getMpg123EncodingString(encoding);
 	if(encoding!=MPG123_ENC_SIGNED_16){
-		qCritical() << "OpenALSoundPlayer" << "mpg123ReadFile(): " << getMpg123EncodingString(encoding)
-			<< " encoding for \"" << path.string() << "\"" << " unsupported, expecting MPG123_ENC_SIGNED_16";
+		qCritical() << "OpenALSoundPlayer" << "mpg123ReadFile(): " << getMpg123EncodingString(encoding).c_str()
+			<< " encoding for \"" << path.string().c_str() << "\"" << " unsupported, expecting MPG123_ENC_SIGNED_16";
 		return false;
 	}
 	samplerate = rate;
@@ -1405,7 +1405,7 @@ bool OpenALSoundPlayer::sfStream(const std::filesystem::path& path){
 		SF_INFO sfInfo;
 		streamf = sf_open(path.string().c_str(),SFM_READ,&sfInfo);
 		if(!streamf){
-            qCritical() << "OpenALSoundPlayer" << "sfStream(): couldn't read " << path.string();
+            qCritical() << "OpenALSoundPlayer" << "sfStream(): couldn't read " << path.string().c_str();
 			return false;
 		}
 
@@ -1486,7 +1486,7 @@ bool OpenALSoundPlayer::mpg123Stream(const std::filesystem::path& path){
 			mpg123_close(mp3streamf);
 			mpg123_delete(mp3streamf);
             mp3streamf = 0;
-            qCritical() << "OpenALSoundPlayer" << "mpg123Stream(): couldn't read " << path.string();
+            qCritical() << "OpenALSoundPlayer" << "mpg123Stream(): couldn't read " << path.string().c_str();
 			return false;
 		}
 
@@ -1494,8 +1494,8 @@ bool OpenALSoundPlayer::mpg123Stream(const std::filesystem::path& path){
 		mpg123_getformat(mp3streamf,&rate,&channels,(int*)&stream_encoding);
         subformat_string = getMpg123EncodingString(stream_encoding);
 		if(stream_encoding!=MPG123_ENC_SIGNED_16){
-			qCritical() << "OpenALSoundPlayer" << "mpg123Stream(): " << getMpg123EncodingString(stream_encoding)
-			<< " encoding for \"" << path.string() << "\"" << " unsupported, expecting MPG123_ENC_SIGNED_16";
+			qCritical() << "OpenALSoundPlayer" << "mpg123Stream(): " << getMpg123EncodingString(stream_encoding).c_str()
+			<< " encoding for \"" << path.string().c_str() << "\"" << " unsupported, expecting MPG123_ENC_SIGNED_16";
 			return false;
 		}
 		samplerate = rate;
@@ -2629,7 +2629,7 @@ void OpenALSoundPlayer::play(){
 		err = alGetError();
 		if (err != AL_NO_ERROR){
 			qCritical() << "OpenALSoundPlayer" << "play(): couldn't create multiplay stereo sources: "
-			<< (int) err << " " << getALErrorString(err);
+			<< (int) err << " " << getALErrorString(err).c_str();
 			return;
 		}
 		for(int i=0;i<channels;i++){
@@ -2649,7 +2649,7 @@ void OpenALSoundPlayer::play(){
 		err = alGetError();
 		if (err != AL_NO_ERROR){
 			qCritical() << "OpenALSoundPlayer" << "play(): couldn't assign multiplay buffers: "
-			<< (int) err << " " << getALErrorString(err);
+			<< (int) err << " " << getALErrorString(err).c_str();
 			return;
 		}
 	}

@@ -343,11 +343,6 @@ void MainWindow::buildUi()
     sideLayout->addWidget(m_sidebarStack, 1);
     body->addWidget(side);
     mainLayout->addLayout(body, 1);
-    m_collapseFill = new QWidget(m_mainPage);
-    m_collapseFill->setObjectName(QStringLiteral("CollapseFill"));
-    m_collapseFill->setAttribute(Qt::WA_StyledBackground, true);
-    m_collapseFill->setFixedHeight(0);
-    mainLayout->addWidget(m_collapseFill);
 
     buildSettingsPage();
     buildThemePage();
@@ -821,14 +816,15 @@ void MainWindow::setBottomTab(int index)
     }
 }
 
-void MainWindow::setBottomCollapsed(bool collapsed)
+void MainWindow::setBottomCollapsed(bool collapsed, bool resizeWindow)
 {
+    const bool changed = m_bottomCollapsed != collapsed;
     m_bottomCollapsed = collapsed;
     if (m_bottomStack) {
         m_bottomStack->setVisible(!collapsed);
     }
-    if (m_collapseFill) {
-        m_collapseFill->setFixedHeight(collapsed ? m_bottomPageHeight : 0);
+    if (changed && resizeWindow && m_bottomPageHeight > 0 && !isMaximized() && !isFullScreen()) {
+        resize(width(), height() + (collapsed ? -m_bottomPageHeight : m_bottomPageHeight));
     }
     if (m_collapseBottom) {
         m_collapseBottom->setText(collapsed ? QStringLiteral("\u25BE") : QStringLiteral("\u25B4"));
@@ -1514,7 +1510,7 @@ void MainWindow::restoreWindowLayout(const QJsonObject& global)
         setBottomTab(tab);
     }
     if (global.contains(QStringLiteral("bottomcollapsed"))) {
-        setBottomCollapsed(global.value(QStringLiteral("bottomcollapsed")).toBool());
+        setBottomCollapsed(global.value(QStringLiteral("bottomcollapsed")).toBool(), false);
     }
 }
 
