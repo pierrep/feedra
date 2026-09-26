@@ -1,13 +1,13 @@
 #pragma once
 
 #include "AppConfig.h"
+#include "widgets/SoundPadWidget.h"
 
 #include <QMainWindow>
 #include <QVector>
 
 class AudioSample;
 class Scene;
-class SoundPadWidget;
 class SampleRowWidget;
 class SampleLoadQueue;
 class WaveformWidget;
@@ -69,6 +69,10 @@ private:
     void moveScene(int fromIndex, int insertIndex);
     void updateSceneListLayout();
     bool handleReorderKey(QKeyEvent* event);
+    bool handlePadClipKey(QKeyEvent* event);
+    void copyActivePad();
+    void cutActivePad();
+    void pasteActivePad();
     void updateMainControls();
     void refreshSampleInfo();
     void refreshWaveform();
@@ -80,6 +84,7 @@ private:
     void setPage(Page page);
     void setSidebarView(SidebarView view);
     void refreshSettingsPathLabel();
+    QString currentSettingsFilePath() const;
     void saveConfig();
     void saveConfigAs();
     bool saveConfigTo(const QString& path, bool copyFiles);
@@ -102,6 +107,7 @@ private:
 
     AppConfig m_config;
     QVector<Scene*> m_scenes;
+    SoundPadWidget::PadClip m_padClip;
     Page m_page = Page::Main;
     SidebarView m_sidebar = SidebarView::Scenes;
 
@@ -161,6 +167,7 @@ private:
     QPushButton* m_addSample = nullptr;
     QLabel* m_editTitle = nullptr;
 
+    QCheckBox* m_loadLastSettings = nullptr;
     QCheckBox* m_loopByDefault = nullptr;
     QSpinBox* m_sceneLimit = nullptr;
     QSpinBox* m_gridColumns = nullptr;

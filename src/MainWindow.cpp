@@ -128,6 +128,25 @@ private:
     QString m_full;
 };
 
+// The startup choice lives in the default settings file, which is the only path known
+// before any project is opened.
+void readStartupFilePrefs(const QString& settingsPath, bool& loadLast, QString& lastPath)
+{
+    loadLast = false;
+    lastPath.clear();
+    QFile file(settingsPath);
+    if (!file.open(QIODevice::ReadOnly)) {
+        return;
+    }
+    const QJsonDocument doc = QJsonDocument::fromJson(file.readAll());
+    if (!doc.isObject()) {
+        return;
+    }
+    const QJsonObject global = doc.object().value(QStringLiteral("global")).toObject();
+    loadLast = global.value(QStringLiteral("loadlastsettings")).toBool(false);
+    lastPath = global.value(QStringLiteral("lastsettingspath")).toString();
+}
+
 }
 
 MainWindow::MainWindow(QWidget* parent)
@@ -148,11 +167,23 @@ MainWindow::MainWindow(QWidget* parent)
     buildUi();
 
     const QString settings = m_config.defaultSettingsPath();
+    bool loadLast = false;
+    QString lastPath;
+    readStartupFilePrefs(settings, loadLast, lastPath);
+    m_config.loadLastSettings = loadLast;
+    m_config.lastSettingsPath = lastPath;
+
+    QString toLoad = settings;
+    if (loadLast && !lastPath.isEmpty() && QFile::exists(lastPath)) {
+        toLoad = QFileInfo(lastPath).absoluteFilePath();
+    }
     if (QFile::exists(settings)) {
         const QString backup = QDir(m_config.dataDir()).filePath(QStringLiteral("settings/settings_backup.json"));
         QFile::remove(backup);
         QFile::copy(settings, backup);
-        loadConfigFrom(settings);
+    }
+    if (QFile::exists(toLoad)) {
+        loadConfigFrom(toLoad);
     } else {
         createDefaultScenes();
     }
@@ -180,6 +211,7 @@ MainWindow::MainWindow(QWidget* parent)
 MainWindow::~MainWindow()
 {
     waitForLoads();
+    m_config.lastSettingsPath = currentSettingsFilePath();
     saveConfigTo(m_config.defaultSettingsPath(), false);
     if (m_loads) {
         m_loads->shutdown();
@@ -1472,6 +1504,12 @@ void MainWindow::buildSettingsPage()
     QVBoxLayout* cards = makeCardColumn(m_settingsPage, outer);
     QWidget* host = cards->parentWidget();
 
+    SettingsCard startup = makeCard(host, tr("Settings file"),
+        tr("The file open when Feedra quits is remembered for the next launch."));
+    m_loadLastSettings = new QCheckBox(tr("Load the last settings file on startup"), startup.frame);
+    startup.addRow(tr("On startup"), m_loadLastSettings);
+    cards->addWidget(startup.frame);
+
     // Scenes and pads
     SettingsCard scenes = makeCard(host, tr("Scenes and pads"),
         tr("Defaults for new scenes and pads. Existing scenes keep their grid."));
@@ -1568,6 +1606,12 @@ void MainWindow::buildSettingsPage()
     cards->addWidget(reverb.frame);
     cards->addStretch(1);
 
+    connect(m_loadLastSettings, &QCheckBox::toggled, this, [this](bool on) {
+        if (m_updatingControls) {
+            return;
+        }
+        m_config.loadLastSettings = on;
+    });
     connect(m_loopByDefault, &QCheckBox::toggled, this, [this](bool on) {
         if (m_updatingControls) {
             return;
@@ -1800,6 +1844,7 @@ void MainWindow::applyImpulsePath(const QString& path)
 void MainWindow::syncSettingsPage()
 {
     m_updatingControls = true;
+    m_loadLastSettings->setChecked(m_config.loadLastSettings);
     m_loopByDefault->setChecked(m_config.loopByDefault);
     m_sceneLimit->setValue(static_cast<int>(m_config.maxScenes));
     m_gridColumns->setValue(m_config.gridWidth);
@@ -1943,10 +1988,15 @@ void MainWindow::refreshEditorPage()
     rebuildEditSamples();
 }
 
-void MainWindow::refreshSettingsPathLabel()
+QString MainWindow::currentSettingsFilePath() const
 {
     const QString path = m_config.settingsPath.isEmpty() ? m_config.defaultSettingsPath() : m_config.settingsPath;
-    const QString shown = QDir::toNativeSeparators(QFileInfo(path).absoluteFilePath());
+    return QFileInfo(path).absoluteFilePath();
+}
+
+void MainWindow::refreshSettingsPathLabel()
+{
+    const QString shown = QDir::toNativeSeparators(currentSettingsFilePath());
     static_cast<SettingsPathLabel*>(m_settingsPathLabel)->setFullText(shown);
 }
 
@@ -2002,6 +2052,10 @@ bool MainWindow::saveConfigTo(const QString& path, bool copyFiles)
     global.insert(QStringLiteral("gridwidth"), m_config.gridWidth);
     global.insert(QStringLiteral("gridheight"), m_config.gridHeight);
     global.insert(QStringLiteral("library"), m_config.defaultLibraryLocation);
+    if (QFileInfo(savePath).absoluteFilePath() == QFileInfo(m_config.defaultSettingsPath()).absoluteFilePath()) {
+        global.insert(QStringLiteral("loadlastsettings"), m_config.loadLastSettings);
+        global.insert(QStringLiteral("lastsettingspath"), m_config.lastSettingsPath);
+    }
     global.insert(QStringLiteral("reverb"),
         QString::fromStdString(OpenALSoundPlayer::reverbPresetId(OpenALSoundPlayer::reverbPresetIndex())));
     global.insert(QStringLiteral("convolutiongain"), static_cast<double>(OpenALSoundPlayer::convolutionGain()));
@@ -2312,6 +2366,79 @@ void MainWindow::clearActivePad()
     }
 }
 
+void MainWindow::copyActivePad()
+{
+    SoundPadWidget* pad = activePad();
+    if (!pad || pad->isLoading() || !pad->isLoaded()) {
+        return;
+    }
+    const SoundPadWidget::PadClip clip = pad->clip();
+    if (clip.valid) {
+        m_padClip = clip;
+    }
+}
+
+void MainWindow::cutActivePad()
+{
+    SoundPadWidget* pad = activePad();
+    if (!pad || pad->isLoading() || !pad->isLoaded()) {
+        return;
+    }
+    const SoundPadWidget::PadClip clip = pad->clip();
+    if (!clip.valid) {
+        return;
+    }
+    m_padClip = clip;
+    pad->clearPad();
+    updateMainControls();
+    if (m_sidebar == SidebarView::Editor) {
+        refreshEditorPage();
+    }
+}
+
+void MainWindow::pasteActivePad()
+{
+    SoundPadWidget* pad = activePad();
+    if (!pad || !m_padClip.valid) {
+        return;
+    }
+    pad->pasteClip(m_padClip);
+    updateMainControls();
+    if (m_sidebar == SidebarView::Editor) {
+        refreshEditorPage();
+    }
+}
+
+bool MainWindow::handlePadClipKey(QKeyEvent* event)
+{
+    if (m_page != Page::Main || event->isAutoRepeat()) {
+        return false;
+    }
+    if ((event->modifiers() & (Qt::ControlModifier | Qt::ShiftModifier | Qt::AltModifier | Qt::MetaModifier))
+        != Qt::ControlModifier) {
+        return false;
+    }
+    if (event->key() != Qt::Key_C && event->key() != Qt::Key_X && event->key() != Qt::Key_V) {
+        return false;
+    }
+    QWidget* focus = QApplication::focusWidget();
+    if (auto* edit = qobject_cast<QLineEdit*>(focus); edit && !edit->isReadOnly()) {
+        return false;
+    }
+    if (qobject_cast<QAbstractSpinBox*>(focus) || qobject_cast<QComboBox*>(focus)) {
+        return false;
+    }
+
+    if (event->key() == Qt::Key_C) {
+        copyActivePad();
+    } else if (event->key() == Qt::Key_X) {
+        cutActivePad();
+    } else {
+        pasteActivePad();
+    }
+    return true;
+}
+
 void MainWindow::copyPad(int fromIdx, int toIdx)
 {
     Scene* scene = activeScene();
@@ -2558,6 +2685,7 @@ void MainWindow::releaseGridPaint()
 void MainWindow::closeEvent(QCloseEvent* event)
 {
     waitForLoads();
+    m_config.lastSettingsPath = currentSettingsFilePath();
     saveConfig();
     QMainWindow::closeEvent(event);
 }
@@ -2565,9 +2693,11 @@ void MainWindow::closeEvent(QCloseEvent* event)
 bool MainWindow::eventFilter(QObject* watched, QEvent* event)
 {
     if (event->type() == QEvent::KeyPress && watched->isWidgetType()
-        && static_cast<QWidget*>(watched)->window() == this
-        && handleReorderKey(static_cast<QKeyEvent*>(event))) {
-        return true;
+        && static_cast<QWidget*>(watched)->window() == this) {
+        auto* key = static_cast<QKeyEvent*>(event);
+        if (handlePadClipKey(key) || handleReorderKey(key)) {
+            return true;
+        }
     }
     return QMainWindow::eventFilter(watched, event);
 }
@@ -2604,10 +2734,16 @@ bool MainWindow::handleReorderKey(QKeyEvent* event)
     }
     const int idx = m_config.activeSampleIdx;
     const int count = static_cast<int>(pad->soundPlayer().player.size());
+    int next = idx;
     if (up && idx > 0) {
-        moveEditorSample(idx, idx - 1);
+        next = idx - 1;
     } else if (!up && idx < count - 1) {
-        moveEditorSample(idx, idx + 2);
+        next = idx + 1;
+    }
+    if (next != idx) {
+        m_config.activeSampleIdx = next;
+        m_config.activeSampleId = pad->soundPlayer().player[static_cast<size_t>(next)]->id;
+        updateEditControls();
     }
     return true;
 }

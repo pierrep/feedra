@@ -1443,43 +1443,62 @@ void SoundPadWidget::setReverbSend2(float send)
     m_player.setReverbSend2(send);
 }
 
+SoundPadWidget::PadClip SoundPadWidget::clip() const
+{
+    PadClip clip;
+    clip.stream = m_stream;
+    clip.sampleRate = m_sampleRate;
+    clip.channels = m_channels;
+    clip.looping = isLooping();
+    clip.minDelay = m_player.minDelay;
+    clip.maxDelay = m_player.maxDelay;
+    clip.randomPlayback = m_player.bRandomPlayback;
+    clip.randomPan = m_player.isRandomPan();
+    clip.name = soundName();
+    clip.volume = padVolume();
+    clip.reverb = (isLoading() || m_player.player.empty()) ? m_reverb : m_player.getReverbSend();
+    clip.reverb2 = (isLoading() || m_player.player.empty()) ? m_reverb2 : m_player.getReverbSend2();
+    for (const LoadSlot& spec : sampleSpecs()) {
+        PadClip::Sample sample;
+        sample.path = spec.path;
+        sample.pitch = spec.pitch;
+        sample.gain = spec.gain;
+        sample.pan = spec.pan;
+        sample.panRandom = spec.panRandom || clip.randomPan;
+        sample.spatialise = spec.spatialise;
+        clip.samples.push_back(sample);
+    }
+    clip.valid = !clip.samples.empty();
+    return clip;
+}
+
+void SoundPadWidget::pasteClip(const PadClip& clip)
+{
+    if (!clip.valid) {
+        return;
+    }
+    clearPad();
+    m_stream = clip.stream;
+    m_sampleRate = clip.sampleRate;
+    m_channels = clip.channels;
+    setLooping(clip.looping);
+    m_player.minDelay = clip.minDelay;
+    m_player.maxDelay = clip.maxDelay;
+    m_player.bRandomPlayback = clip.randomPlayback;
+    m_player.setRandomPan(clip.randomPan);
+    setSoundName(clip.name);
+    setPadVolume(clip.volume);
+    m_reverb = clip.reverb;
+    m_reverb2 = clip.reverb2;
+    m_notifyWhenDone = true;
+    for (const PadClip::Sample& sample : clip.samples) {
+        enqueueSample(sample.path, sample.pitch, sample.gain, sample.pan, sample.panRandom, sample.spatialise);
+    }
+}
+
 void SoundPadWidget::copyFrom(SoundPadWidget& other)
 {
-    const std::vector<LoadSlot> specs = other.sampleSpecs();
-    const bool stream = other.m_stream;
-    const int sampleRate = other.m_sampleRate;
-    const int channels = other.m_channels;
-    const bool looping = other.isLooping();
-    const int minDelay = other.m_player.minDelay;
-    const int maxDelay = other.m_player.maxDelay;
-    const bool randomPlayback = other.m_player.bRandomPlayback;
-    const bool randomPan = other.m_player.isRandomPan();
-    const QString name = other.soundName();
-    const float volume = other.padVolume();
-    const float reverb = (other.isLoading() || other.m_player.player.empty())
-        ? other.m_reverb
-        : other.m_player.getReverbSend();
-    const float reverb2 = (other.isLoading() || other.m_player.player.empty())
-        ? other.m_reverb2
-        : other.m_player.getReverbSend2();
-
-    clearPad();
-    m_stream = stream;
-    m_sampleRate = sampleRate;
-    m_channels = channels;
-    setLooping(looping);
-    m_player.minDelay = minDelay;
-    m_player.maxDelay = maxDelay;
-    m_player.bRandomPlayback = randomPlayback;
-    m_player.setRandomPan(randomPan);
-    setSoundName(name);
-    setPadVolume(volume);
-    m_reverb = reverb;
-    m_reverb2 = reverb2;
-    m_notifyWhenDone = true;
-    for (const LoadSlot& spec : specs) {
-        enqueueSample(spec.path, spec.pitch, spec.gain, spec.pan, spec.panRandom || randomPan, spec.spatialise);
-    }
+    pasteClip(other.clip());
 }
 
 int SoundPadWidget::moveSample(int from, int insertIndex)

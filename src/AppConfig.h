@@ -32,6 +32,10 @@ public:
     QString lastPath;
     // The settings file the current scenes were loaded from, or last saved as.
     QString settingsPath;
+    // Written into the app settings file on quit. When loadLastSettings is set, the next
+    // launch opens lastSettingsPath instead of the default settings file.
+    bool loadLastSettings = false;
+    QString lastSettingsPath;
 
     int gridWidth = 6;
     int gridHeight = 4;

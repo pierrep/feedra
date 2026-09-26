@@ -128,6 +128,35 @@ public:
     void setReverbSend2(float send);
     void clearPad();
     void copyFrom(SoundPadWidget& other);
+
+    // Settings and samples copied from a pad. Independent of the source, so a cut can clear
+    // that pad and a paste can land on a pad in another scene.
+    struct PadClip {
+        bool valid = false;
+        bool stream = true;
+        int sampleRate = 0;
+        int channels = 0;
+        bool looping = false;
+        int minDelay = 0;
+        int maxDelay = 0;
+        bool randomPlayback = false;
+        bool randomPan = false;
+        QString name;
+        float volume = 0.7f;
+        float reverb = 0.0f;
+        float reverb2 = 0.0f;
+        struct Sample {
+            QString path;
+            float pitch = 1.0f;
+            float gain = 1.0f;
+            float pan = 0.0f;
+            bool panRandom = false;
+            bool spatialise = false;
+        };
+        std::vector<Sample> samples;
+    };
+    PadClip clip() const;
+    void pasteClip(const PadClip& clip);
     void removeSampleAt(int index);
     int moveSample(int from, int insertIndex);
 
