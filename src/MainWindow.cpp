@@ -664,10 +664,7 @@ void MainWindow::buildUi()
     });
     connect(m_addSample, &QPushButton::clicked, this, [this]() {
         if (auto* pad = activePad()) {
-            QString start = m_config.lastPath;
-            if (start.isEmpty()) {
-                start = m_config.libraryLocation();
-            }
+            const QString start = m_config.loadDialogDir(pad->currentSamplePath());
             const QStringList paths = QFileDialog::getOpenFileNames(this, tr("Load files"), start,
                 tr("Audio files (*.wav *.flac *.ogg *.mp3 *.aiff *.aif);;All files (*.*)"));
             if (!paths.isEmpty()) {
@@ -1545,14 +1542,12 @@ void MainWindow::buildSettingsPage()
         if (m_updatingControls) {
             return;
         }
-        const QString path = m_libraryPath->text().trimmed();
-        if (!path.isEmpty()) {
-            m_config.defaultLibraryLocation = path;
-        }
+        // Clearing the field is allowed: the load dialogs then fall back to the settings folder.
+        m_config.defaultLibraryLocation = m_libraryPath->text().trimmed();
     });
     connect(browse, &QPushButton::clicked, this, [this]() {
         const QString path = QFileDialog::getExistingDirectory(this, tr("Sample library"),
-            m_config.defaultLibraryLocation);
+            m_config.loadDialogDir());
         if (path.isEmpty()) {
             return;
         }
@@ -1813,9 +1808,8 @@ void MainWindow::applyAppSettings(const QJsonObject& global)
     if (global.contains(QStringLiteral("gridheight"))) {
         m_config.gridHeight = std::clamp(global.value(QStringLiteral("gridheight")).toInt(m_config.gridHeight), 1, 8);
     }
-    const QString library = global.value(QStringLiteral("library")).toString();
-    if (!library.isEmpty()) {
-        m_config.defaultLibraryLocation = library;
+    if (global.contains(QStringLiteral("library"))) {
+        m_config.defaultLibraryLocation = global.value(QStringLiteral("library")).toString().trimmed();
     }
     const QString reverb = global.value(QStringLiteral("reverb")).toString();
     if (!reverb.isEmpty()) {
@@ -1913,6 +1907,9 @@ void MainWindow::saveConfigAs()
     }
     if (!saveConfigTo(path, true)) {
         QMessageBox::warning(this, tr("Feedra"), tr("Could not save settings to:\n%1").arg(path));
+    } else {
+        // Save As copies the samples into a "files" folder beside the new file.
+        m_config.settingsPath = QFileInfo(path).absoluteFilePath();
     }
 }
 
@@ -2152,6 +2149,7 @@ void MainWindow::loadConfigFrom(const QString& path)
     if (!m_config.loadJson(path)) {
         return;
     }
+    m_config.settingsPath = QFileInfo(path).absoluteFilePath();
     const QJsonObject root = m_config.json();
     const QJsonObject global = root.value(QStringLiteral("global")).toObject();
     applyAppSettings(global);

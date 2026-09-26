@@ -14,6 +14,10 @@ public:
     QString dataDir() const;
     QString defaultSettingsPath() const;
     QString libraryLocation() const { return defaultLibraryLocation; }
+    // Where a "load files" dialog should open: the folder of samplePath if it has one,
+    // then the sample library from the settings, then the "files" folder next to the
+    // loaded settings file.
+    QString loadDialogDir(const QString& samplePath = QString()) const;
 
     float masterVolume() const { return m_masterVolume; }
     void setMasterVolume(float v) { m_masterVolume = v; }
@@ -26,6 +30,8 @@ public:
 
     QString defaultLibraryLocation;
     QString lastPath;
+    // The settings file the current scenes were loaded from, or last saved as.
+    QString settingsPath;
 
     int gridWidth = 6;
     int gridHeight = 4;

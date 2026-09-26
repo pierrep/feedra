@@ -3,6 +3,7 @@
 #include <QCoreApplication>
 #include <QDir>
 #include <QFile>
+#include <QFileInfo>
 #include <QIODevice>
 #include <QJsonDocument>
 #include <QStandardPaths>
@@ -11,10 +12,8 @@ AppConfig::AppConfig() = default;
 
 void AppConfig::setup()
 {
-    defaultLibraryLocation = QStandardPaths::writableLocation(QStandardPaths::MusicLocation);
-    if (defaultLibraryLocation.isEmpty()) {
-        defaultLibraryLocation = QDir::homePath();
-    }
+    // Empty until the user picks one, so the load dialogs can fall back to the settings folder.
+    defaultLibraryLocation.clear();
     m_masterVolume = 1.0f;
     m_masterFade = 1.0f;
     loopByDefault = false;
@@ -34,6 +33,32 @@ QString AppConfig::dataDir() const
 
     appDir.mkpath(QStringLiteral("data/settings"));
     return appDir.absoluteFilePath(QStringLiteral("data"));
+}
+
+QString AppConfig::loadDialogDir(const QString& samplePath) const
+{
+    const QString settingsFile = settingsPath.isEmpty() ? defaultSettingsPath() : settingsPath;
+    const QDir settingsDir = QFileInfo(settingsFile).absoluteDir();
+
+    if (!samplePath.isEmpty()) {
+        // Relative sample paths are stored relative to the settings file.
+        const QFileInfo sample(QDir::isRelativePath(samplePath) ? settingsDir.filePath(samplePath) : samplePath);
+        if (sample.absoluteDir().exists()) {
+            return sample.absolutePath();
+        }
+    }
+    if (!defaultLibraryLocation.isEmpty() && QDir(defaultLibraryLocation).exists()) {
+        return defaultLibraryLocation;
+    }
+    const QString files = settingsDir.filePath(QStringLiteral("files"));
+    if (QDir(files).exists()) {
+        return files;
+    }
+    if (settingsDir.exists()) {
+        return settingsDir.absolutePath();
+    }
+    const QString music = QStandardPaths::writableLocation(QStandardPaths::MusicLocation);
+    return music.isEmpty() ? QDir::homePath() : music;
 }
 
 QString AppConfig::defaultSettingsPath() const

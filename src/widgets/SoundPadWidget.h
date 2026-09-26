@@ -134,6 +134,9 @@ public:
     QSize sizeHint() const override;
     QSize minimumSizeHint() const override;
 
+    // Path of the sample the pad would play next, or empty if it has none.
+    QString currentSamplePath() const;
+
 signals:
     void padClicked(int padId);
     void padDragStarted(int padId);
@@ -182,7 +185,6 @@ private:
     void updateVolumeLabel();
     QString remainingTimeText() const;
     QString positionTimeText() const;
-    QString currentSamplePath() const;
     void refreshPeaks();
     void refreshChrome();
     void beginNameEdit();

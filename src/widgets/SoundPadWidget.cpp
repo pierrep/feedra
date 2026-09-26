@@ -1758,10 +1758,7 @@ void SoundPadWidget::dropEvent(QDropEvent* event)
 
 void SoundPadWidget::chooseFiles()
 {
-    QString start = m_config->lastPath;
-    if (start.isEmpty()) {
-        start = m_config->libraryLocation();
-    }
+    const QString start = m_config->loadDialogDir(currentSamplePath());
     const QStringList paths = QFileDialog::getOpenFileNames(this, tr("Load files"), start, audioNameFilters().join(QStringLiteral(";;")));
     if (!paths.isEmpty()) {
         loadFiles(paths, true);
