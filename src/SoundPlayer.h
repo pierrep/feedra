@@ -37,6 +37,9 @@ public:
     void setBaseVolume(float vol);
     void setPosition(float pct);
     void setPositionMS(int ms);
+    // Seek the current sample (or the delay countdown) the same way the Waveform tab does:
+    // flushes queued stream audio so the playhead and what you hear jump together.
+    void seekTo(float pct);
     void setMinDelay(int delay);
     void setMaxDelay(int delay);
 

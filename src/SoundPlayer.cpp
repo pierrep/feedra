@@ -248,6 +248,18 @@ void SoundPlayer::setPosition(float pct)
     }
 }
 
+void SoundPlayer::seekTo(float pct)
+{
+    if (player.empty()) {
+        return;
+    }
+    if (bPlayingDelay) {
+        player[curSound]->curDelay = player[curSound]->totalDelay * (1.0f - pct);
+    } else if (player[curSound]->audioPlayer) {
+        player[curSound]->audioPlayer->seekTo(pct);
+    }
+}
+
 void SoundPlayer::setPositionMS(int ms)
 {
     if (player.empty()) {

@@ -616,7 +616,9 @@ SoundPadWidget::SoundPadWidget(AppConfig* config, int sceneId, int padId, QWidge
     m_playhead->setVisible(false);
     m_playhead->m_onScrub = [this](float pct) {
         if (m_player.isLoaded()) {
-            m_player.setPosition(pct);
+            // seekTo, not setPosition: setPosition only moves the decoder, so streamed
+            // files kept playing the queued audio and the Waveform tab never saw the jump.
+            m_player.seekTo(pct);
         }
     };
 
