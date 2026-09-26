@@ -617,6 +617,7 @@ QPushButton#AddScene, QPushButton#AddSample {
     border: 1px dashed {{fieldBorder}};
     border-radius: 8px;
     padding: 0 12px;
+    font-size: 12px;
     font-weight: 500;
 }
 QPushButton#AddScene:hover, QPushButton#AddSample:hover {

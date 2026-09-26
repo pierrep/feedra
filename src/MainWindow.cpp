@@ -291,7 +291,7 @@ void MainWindow::buildUi()
     }, Qt::QueuedConnection); // after QDrag::exec returns, so the source row is still alive
     m_addScene = new QPushButton(tr("+  New scene"), m_scenesPage);
     m_addScene->setObjectName(QStringLiteral("AddScene"));
-    m_addScene->setMinimumHeight(38);
+    m_addScene->setFixedHeight(30); // matches the scene rows
     m_addScene->setCursor(Qt::PointingHandCursor);
     scenesLayout->addWidget(sceneScroll, 1);
     auto* addSceneRow = new QHBoxLayout();
@@ -309,7 +309,7 @@ void MainWindow::buildUi()
     m_editTitle->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
     m_addSample = new QPushButton(tr("+  Add"), m_editorPage);
     m_addSample->setObjectName(QStringLiteral("AddSample"));
-    m_addSample->setFixedHeight(32);
+    m_addSample->setFixedHeight(26); // matches the sample rows
     m_addSample->setCursor(Qt::PointingHandCursor);
     m_addSample->setToolTip(tr("Add samples to this pad"));
     auto* editTop = new QHBoxLayout();
