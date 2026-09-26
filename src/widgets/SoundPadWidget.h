@@ -18,6 +18,7 @@ class AppConfig;
 class QLabel;
 class QLineEdit;
 class QSlider;
+class QVariantAnimation;
 class SampleLoadQueue;
 struct SampleLoadJob;
 
@@ -26,19 +27,29 @@ class GlyphButton : public QAbstractButton
 public:
     enum class Kind { Load, Play, Stop, Loop };
     explicit GlyphButton(Kind kind, QWidget* parent = nullptr);
+    ~GlyphButton() override;
     void setLoaded(bool loaded);
     void setPlaying(bool playing);
     void setArmed(bool armed);
+    // Stop glyph opacity. Other kinds stay at 0. The load folder waits on this so it
+    // does not take clicks while the stop glyph is still fading out.
+    qreal fadeOpacity() const { return m_fadeOpacity; }
+    void setOnFadeSettled(std::function<void()> callback) { m_onFadeSettled = std::move(callback); }
 
 protected:
     void paintEvent(QPaintEvent* event) override;
     QSize sizeHint() const override;
 
 private:
+    void animateFade(qreal target);
+
     Kind m_kind;
     bool m_loaded = false;
     bool m_playing = false;
     bool m_armed = false;
+    qreal m_fadeOpacity = 0.0;
+    QVariantAnimation* m_fade = nullptr;
+    std::function<void()> m_onFadeSettled;
 };
 
 // The pad's waveform strip: one bar per peak bin, lit up to the playhead. Click or drag to seek.

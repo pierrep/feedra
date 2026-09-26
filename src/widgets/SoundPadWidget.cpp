@@ -38,6 +38,7 @@
 #include <QThread>
 #include <QThreadPool>
 #include <QUrl>
+#include <QVariantAnimation>
 #include <QValidator>
 #include <QWidget>
 #include <algorithm>
@@ -300,6 +301,15 @@ GlyphButton::GlyphButton(Kind kind, QWidget* parent)
     }
 }
 
+GlyphButton::~GlyphButton()
+{
+    // The fade emits finished() as it is destroyed. Block that so it cannot call back
+    // into the pad while this button is already going away.
+    if (m_fade) {
+        m_fade->blockSignals(true);
+    }
+}
+
 void GlyphButton::setLoaded(bool loaded)
 {
     if (m_loaded == loaded) {
@@ -324,11 +334,48 @@ void GlyphButton::setArmed(bool armed)
         return;
     }
     m_armed = armed;
-    // Unarmed stop is invisible, so let clicks fall through and select the pad.
     if (m_kind == Kind::Stop) {
+        // Clicks pass through as soon as playback stops. The glyph keeps fading after that.
         setAttribute(Qt::WA_TransparentForMouseEvents, !armed);
+        animateFade(armed ? 1.0 : 0.0);
+        return;
     }
     update();
+}
+
+void GlyphButton::animateFade(qreal target)
+{
+    if (std::abs(m_fadeOpacity - target) < 0.001) {
+        m_fadeOpacity = target;
+        update();
+        return;
+    }
+    if (!m_fade) {
+        m_fade = new QVariantAnimation(this);
+        connect(m_fade, &QVariantAnimation::valueChanged, this, [this](const QVariant& value) {
+            m_fadeOpacity = value.toReal();
+            update();
+        });
+        connect(m_fade, &QVariantAnimation::finished, this, [this]() {
+            // stop() also emits finished. Only a fade that actually arrived should reveal the folder.
+            const qreal targetOpacity = m_armed ? 1.0 : 0.0;
+            if (std::abs(m_fadeOpacity - targetOpacity) > 0.01) {
+                return;
+            }
+            if (m_onFadeSettled) {
+                m_onFadeSettled();
+            }
+        });
+    }
+    if (m_fade->state() == QAbstractAnimation::Running) {
+        m_fade->stop();
+    }
+    // Constant speed either way, so a reverse mid-fade does not restart the whole 150 ms.
+    const int duration = std::max(1, qRound(150.0 * std::abs(target - m_fadeOpacity)));
+    m_fade->setDuration(duration);
+    m_fade->setStartValue(m_fadeOpacity);
+    m_fade->setEndValue(target);
+    m_fade->start();
 }
 
 QSize GlyphButton::sizeHint() const
@@ -367,9 +414,10 @@ void GlyphButton::paintEvent(QPaintEvent*)
     }
 
     if (m_kind == Kind::Stop) {
-        if (!m_armed) {
+        if (m_fadeOpacity <= 0.001) {
             return;
         }
+        p.setOpacity(m_fadeOpacity);
         p.setPen(Qt::NoPen);
         p.setBrush(hover ? theme.playOutline : theme.loadButton);
         p.drawRoundedRect(r, radius, radius);
@@ -559,6 +607,7 @@ SoundPadWidget::SoundPadWidget(AppConfig* config, int sceneId, int padId, QWidge
     m_load = new GlyphButton(GlyphButton::Kind::Load, m_card);
     m_loop = new GlyphButton(GlyphButton::Kind::Loop, m_card);
     m_stop = new GlyphButton(GlyphButton::Kind::Stop, m_card);
+    m_stop->setOnFadeSettled([this]() { refreshChrome(); });
     m_play = new GlyphButton(GlyphButton::Kind::Play, m_card);
 
     m_playhead = new PadPlayhead(m_card);
@@ -765,10 +814,12 @@ void SoundPadWidget::refreshChrome()
     const bool empty = !loading && !m_uiLoaded;
     const bool hasSound = m_uiLoaded;
     // One tool slot beside play: stop while the pad plays (or counts down its delay),
-    // the folder to load sounds while it is stopped. Empty pads show the big drop circle.
-    m_load->setVisible(empty || (hasSound && !m_uiPlaying));
-    m_loop->setVisible(hasSound);
+    // the folder to load sounds once the pad is stopped and the stop glyph has faded.
+    // Empty pads show the big drop circle. While the glyph is still visible the folder
+    // stays hidden, so a follow-up click selects the pad.
     m_stop->setArmed(hasSound && m_uiPlaying);
+    m_load->setVisible((empty || (hasSound && !m_uiPlaying)) && m_stop->fadeOpacity() <= 0.001);
+    m_loop->setVisible(hasSound);
     m_volume->setVisible(hasSound);
     m_volumeValue->setVisible(hasSound);
     layoutContents();
