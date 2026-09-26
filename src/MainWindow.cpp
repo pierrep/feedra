@@ -278,7 +278,7 @@ void MainWindow::buildUi()
     m_sceneListHost = sceneHost;
     m_sceneListLayout = new QVBoxLayout(m_sceneListHost);
     m_sceneListLayout->setContentsMargins(0, 0, 8, 0);
-    m_sceneListLayout->setSpacing(6);
+    m_sceneListLayout->setSpacing(4);
     m_sceneListLayout->addStretch();
     sceneScroll->setWidget(m_sceneListHost);
     connect(sceneHost, &ReorderListHost::itemReordered, this, [this](int sceneId, int insertIndex) {
@@ -328,7 +328,7 @@ void MainWindow::buildUi()
     sampleHost->setObjectName(QStringLiteral("SampleListHost"));
     m_sampleListLayout = new QVBoxLayout(sampleHost);
     m_sampleListLayout->setContentsMargins(0, 4, 8, 4);
-    m_sampleListLayout->setSpacing(4);
+    m_sampleListLayout->setSpacing(3);
     m_sampleListLayout->addStretch();
     sampleScroll->setWidget(sampleHost);
     editLayout->addWidget(sampleScroll, 1);

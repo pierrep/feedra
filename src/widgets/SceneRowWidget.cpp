@@ -48,7 +48,7 @@ public:
         setObjectName(kind == Kind::Play ? QStringLiteral("ScenePlay")
             : kind == Kind::Stop         ? QStringLiteral("SceneStop")
                                          : QStringLiteral("SceneDelete"));
-        setFixedSize(28, 28);
+        setFixedSize(22, 22);
         setFocusPolicy(Qt::NoFocus);
         setCursor(Qt::PointingHandCursor);
         setAttribute(Qt::WA_Hover);
@@ -105,6 +105,11 @@ protected:
         }
 
         const QPointF c = r.center();
+        // The glyphs below are drawn for a 28px button; scale them to this smaller one.
+        const qreal k = width() / 28.0;
+        p.translate(c);
+        p.scale(k, k);
+        p.translate(-c);
         p.setPen(Qt::NoPen);
         p.setBrush(fg);
         if (m_kind == Kind::Play) {
@@ -153,12 +158,12 @@ SceneRowWidget::SceneRowWidget(int sceneId, const QString& name, QWidget* parent
     setObjectName("SceneRow");
     setAttribute(Qt::WA_StyledBackground, true);
     setAutoFillBackground(false);
-    setMinimumHeight(40);
+    setMinimumHeight(30);
     setAttribute(Qt::WA_Hover);
 
     auto* layout = new QHBoxLayout(this);
     // The left margin leaves room for the live meter painted beside the name.
-    layout->setContentsMargins(30, 4, 6, 4);
+    layout->setContentsMargins(30, 3, 5, 3);
     layout->setSpacing(2);
 
     m_name = new QLineEdit(name, this);

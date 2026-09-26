@@ -25,7 +25,7 @@ SampleRowWidget::SampleRowWidget(int sampleId, const QString& path, QWidget* par
     setObjectName("SampleRow");
     setAttribute(Qt::WA_StyledBackground, true);
     setCursor(Qt::OpenHandCursor);
-    setMinimumHeight(36);
+    setMinimumHeight(26);
 
     auto* layout = new QHBoxLayout(this);
     layout->setContentsMargins(2, 2, 2, 2);
@@ -41,7 +41,7 @@ SampleRowWidget::SampleRowWidget(int sampleId, const QString& path, QWidget* par
     m_progress->setRange(0, 1000);
     m_progress->setValue(0);
     m_progress->setTextVisible(false);
-    m_progress->setFixedHeight(28);
+    m_progress->setFixedHeight(22);
     m_progress->setMinimumWidth(0);
     m_progress->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Fixed);
     m_progress->setAttribute(Qt::WA_TransparentForMouseEvents);

@@ -689,7 +689,7 @@ QLabel#PadVolumeValue { background: transparent; color: {{textMuted}}; padding: 
 
 /* Scene list */
 QWidget#SceneRow { background: transparent; color: {{sceneText}}; border: none; }
-QLineEdit#SceneName { background: transparent; border: none; color: {{sceneText}}; padding: 0; min-height: 0; }
+QLineEdit#SceneName { background: transparent; border: none; color: {{sceneText}}; padding: 0; min-height: 0; font-size: 12px; }
 QWidget#SceneRow[active="true"] QLineEdit#SceneName { color: {{sceneActiveText}}; font-weight: 600; }
 QWidget#SceneRow[playing="true"] QLineEdit#SceneName { color: {{scenePlayingText}}; }
 QLineEdit#SceneName[editing="true"],
@@ -705,8 +705,8 @@ QWidget#SceneRow[playing="true"] QLineEdit#SceneName[editing="true"] {
 /* Sample list */
 QWidget#SampleRow { background: {{sampleBackground}}; border: 1px solid {{sampleBorder}}; border-radius: 8px; }
 QWidget#SampleRow[selected="true"] { border: 1px solid {{sampleSelected}}; }
-QWidget#SampleRow QLabel { color: {{sampleText}}; background: transparent; }
-QWidget#SampleRow QLabel#SampleGrip { color: {{sampleGrip}}; font-size: 14px; }
+QWidget#SampleRow QLabel { color: {{sampleText}}; background: transparent; font-size: 12px; }
+QWidget#SampleRow QLabel#SampleGrip { color: {{sampleGrip}}; font-size: 12px; }
 QWidget#SampleRow QProgressBar { background: transparent; border: none; border-radius: 6px; }
 QWidget#SampleRow QProgressBar::chunk { background: {{sampleProgress}}; border-radius: 6px; }
 QFrame#ListDropIndicator { background: {{dropIndicator}}; border: none; }
