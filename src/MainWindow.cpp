@@ -216,7 +216,7 @@ void MainWindow::buildUi()
     m_loadBar = new QProgressBar(m_mainPage);
     m_loadBar->setObjectName(QStringLiteral("LoadProgress"));
     m_loadBar->setTextVisible(false);
-    m_loadBar->setFixedWidth(160);
+    m_loadBar->setFixedWidth(220);
     m_loadBar->setFixedHeight(4);
     m_loadBar->setRange(0, 1);
     m_loadBar->hide();
@@ -2200,12 +2200,7 @@ void MainWindow::refreshLoadUi()
     m_loadBar->setRange(0, total);
     m_loadBar->setValue(std::clamp(m_loads->settled(), 0, total));
     m_loadBar->show();
-    QString label = tr("Loading %1 / %2").arg(m_loads->settled()).arg(m_loads->total());
-    const QString file = m_loads->activeFile();
-    if (!file.isEmpty()) {
-        label += QStringLiteral(" · ") + file;
-    }
-    m_loadLabel->setText(label);
+    m_loadLabel->setText(tr("Loading %1 / %2").arg(m_loads->settled()).arg(m_loads->total()));
     m_loadLabel->show();
     setWindowTitle(tr("Feedra — Loading"));
 }
