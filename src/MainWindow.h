@@ -85,6 +85,7 @@ private:
     void restoreWindowLayout(const QJsonObject& global);
     void clearActivePad();
     void copyPad(int fromIdx, int toIdx);
+    void movePad(int fromIdx, int toIdx);
     void clearActiveSample();
     void tick();
     void checkAudioDevice();

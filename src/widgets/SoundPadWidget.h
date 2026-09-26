@@ -126,7 +126,8 @@ public:
 signals:
     void padClicked(int padId);
     void padDragStarted(int padId);
-    void padDropped(int fromPadId, int toPadId);
+    // `copy` is true for Ctrl+drag (copy the pad), false for a plain drag (move it).
+    void padDropped(int fromPadId, int toPadId, bool copy);
     void filesDropped();
     void requestEdit();
     void loadStateChanged();
@@ -137,8 +138,10 @@ protected:
     void paintEvent(QPaintEvent* event) override;
     void resizeEvent(QResizeEvent* event) override;
     void mousePressEvent(QMouseEvent* event) override;
+    void mouseDoubleClickEvent(QMouseEvent* event) override;
     void mouseMoveEvent(QMouseEvent* event) override;
     void dragEnterEvent(QDragEnterEvent* event) override;
+    void dragMoveEvent(QDragMoveEvent* event) override;
     void dropEvent(QDropEvent* event) override;
 
 private:
@@ -171,6 +174,8 @@ private:
     QString currentSamplePath() const;
     void refreshPeaks();
     void refreshChrome();
+    void beginNameEdit();
+    void endNameEdit();
     QRect padCardRect() const;
     qreal contentScale() const;
     void layoutContents();
@@ -203,6 +208,8 @@ private:
     QString m_timeText;
     QString m_peakPath;
     QString m_volumeStyle;
+    QString m_nameBeforeEdit;
+    bool m_compactText = false; // shortened time and dB readouts on small pads
     std::vector<std::string> m_soundPaths;
 
     QWidget* m_card = nullptr;

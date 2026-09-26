@@ -691,7 +691,13 @@ void MainWindow::connectScene(Scene* scene)
     connect(scene->row(), &SceneRowWidget::deleteRequested, this, &MainWindow::deleteScene);
     for (SoundPadWidget* pad : scene->pads) {
         pad->setLoadQueue(m_loads);
-        connect(pad, &SoundPadWidget::padDropped, this, [this](int from, int to) { copyPad(from, to); });
+        connect(pad, &SoundPadWidget::padDropped, this, [this](int from, int to, bool copy) {
+            if (copy) {
+                copyPad(from, to);
+            } else {
+                movePad(from, to);
+            }
+        });
         connect(pad, &SoundPadWidget::filesDropped, this, [this]() { updateMainControls(); });
         connect(&pad->soundPlayer(), &SoundPlayer::panRandomised, this, [this, pad](int sampleIndex, float) {
             if (pad == activePad() && sampleIndex == m_config.activeSampleIdx
@@ -2121,6 +2127,26 @@ void MainWindow::copyPad(int fromIdx, int toIdx)
     m_config.activeSoundIdx = toIdx;
     scene->activeSoundIdx = toIdx;
     updateMainControls();
+}
+
+// Dragging a pad onto another moves it: the target takes the pad's sounds and settings
+// and the source is cleared.
+void MainWindow::movePad(int fromIdx, int toIdx)
+{
+    Scene* scene = activeScene();
+    if (!scene) {
+        return;
+    }
+    SoundPadWidget* from = scene->padAt(fromIdx);
+    SoundPadWidget* to = scene->padAt(toIdx);
+    if (!from || !to || from == to) {
+        return;
+    }
+    copyPad(fromIdx, toIdx); // reads the source's samples before it is cleared
+    from->clearPad();
+    if (m_sidebar == SidebarView::Editor) {
+        refreshEditorPage();
+    }
 }
 
 void MainWindow::clearActiveSample()

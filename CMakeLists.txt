@@ -55,6 +55,12 @@ set(KISSFFT_SOURCES
 
 add_executable(feedra WIN32 ${FEEDRA_SOURCES} ${KISSFFT_SOURCES})
 
+if(WIN32)
+    # The .exe's own icon (Explorer, the taskbar, Alt+Tab). CMake builds .rc files with the
+    # platform's resource compiler (rc.exe for MSVC, windres for MinGW).
+    target_sources(feedra PRIVATE resources/feedra.rc)
+endif()
+
 if(APPLE)
     set_target_properties(feedra PROPERTIES
         MACOSX_BUNDLE TRUE

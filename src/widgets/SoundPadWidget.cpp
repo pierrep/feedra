@@ -19,6 +19,7 @@
 #include <QFontMetrics>
 #include <QHash>
 #include <QJsonObject>
+#include <QKeyEvent>
 #include <QLabel>
 #include <QLinearGradient>
 #include <QLineEdit>
@@ -37,6 +38,7 @@
 #include <QThread>
 #include <QThreadPool>
 #include <QUrl>
+#include <QValidator>
 #include <QWidget>
 #include <algorithm>
 #include <atomic>
@@ -233,6 +235,47 @@ QVector<float> padPeaks(const QString& path)
     });
     return {};
 }
+}
+
+namespace {
+// Accepts a pad name only while it fits the name box at the font and size it is shown in,
+// so the limit is "what fits" rather than a character count. Shortening is always allowed,
+// so a longer name from a file name or an older project can still be edited down.
+class NameFitValidator : public QValidator
+{
+public:
+    explicit NameFitValidator(QLineEdit* edit)
+        : QValidator(edit)
+        , m_edit(edit)
+        , m_accepted(edit->text())
+    {
+        // While validating, the line edit already holds the candidate text, so remember the
+        // last accepted name ourselves (setText() updates it too).
+        connect(edit, &QLineEdit::textChanged, this, [this](const QString& text) {
+            m_accepted = text;
+        });
+    }
+
+    State validate(QString& input, int&) const override
+    {
+        const QMargins margins = m_edit->textMargins();
+        // QLineEdit keeps a 2px inner margin each side and needs 1px for the cursor.
+        const int room = m_edit->contentsRect().width() - margins.left() - margins.right() - 5;
+        if (room <= 0) {
+            return Acceptable; // not laid out yet
+        }
+        const QFontMetrics metrics(m_edit->font());
+        const int width = metrics.horizontalAdvance(input);
+        if (width <= room || width <= metrics.horizontalAdvance(m_accepted)) {
+            return Acceptable;
+        }
+        return Invalid;
+    }
+
+private:
+    QLineEdit* m_edit;
+    QString m_accepted;
+};
 }
 
 GlyphButton::GlyphButton(Kind kind, QWidget* parent)
@@ -439,16 +482,22 @@ void PadPlayhead::paintEvent(QPaintEvent*)
     const int headBar = static_cast<int>(fillTo);
 
     p.setPen(Qt::NoPen);
+    if (m_delay) {
+        // Counting down to the next play there is no sound, so the strip becomes a flat
+        // row of dots (a silent, constant signal) that fills in as the delay runs out.
+        const qreal d = std::min(barW, std::max(2.0, h * 0.14));
+        for (int i = 0; i < kBars; ++i) {
+            p.setBrush(i < headBar ? theme.playheadDelay : theme.playheadBorder);
+            p.drawEllipse(QPointF(i * (barW + gap) + barW / 2.0, h / 2.0), d / 2.0, d / 2.0);
+        }
+        return;
+    }
     for (int i = 0; i < kBars; ++i) {
         // No peaks yet: a quiet flat strip until the background scan lands.
         const float amp = m_peaks.size() == kBars ? m_peaks[i] : 0.18f;
         const qreal bh = std::max(minH, static_cast<qreal>(amp) * h);
         QColor color = theme.playheadBorder;
-        if (m_delay) {
-            if (i < headBar) {
-                color = theme.playheadDelay;
-            }
-        } else if (m_playing) {
+        if (m_playing) {
             if (i < headBar) {
                 color = theme.playhead;
             } else if (i == headBar) {
@@ -522,9 +571,23 @@ SoundPadWidget::SoundPadWidget(AppConfig* config, int sceneId, int padId, QWidge
 
     m_name = new QLineEdit(m_card);
     m_name->setObjectName("PadName");
-    m_name->setMaxLength(17);
+    // Names may be as long as fits the box in the pad's current font (see NameFitValidator).
+    m_name->setMaxLength(64);
+    m_name->setValidator(new NameFitValidator(m_name));
+    // The title is read-only until double-clicked (see beginNameEdit). Enter or clicking away
+    // finishes editing; Esc puts the old name back.
+    connect(m_name, &QLineEdit::returnPressed, m_name, [this]() {
+        m_name->clearFocus();
+    });
+    connect(m_name, &QLineEdit::editingFinished, this, &SoundPadWidget::endNameEdit);
+    endNameEdit();
     m_name->setAlignment(Qt::AlignLeft | Qt::AlignVCenter);
     m_name->setPlaceholderText(tr("Empty pad"));
+    m_name->setTextMargins(0, 0, 0, 0);
+    // Small pads can clip a long name; the tooltip always has all of it.
+    connect(m_name, &QLineEdit::textChanged, m_name, [this](const QString& text) {
+        m_name->setToolTip(text);
+    });
 
     refreshChrome();
 
@@ -643,7 +706,8 @@ void SoundPadWidget::updateAudio()
         refreshPeaks();
     }
 
-    const QString time = loaded ? (delay ? tr("Next in %1").arg(remainingTimeText()) : positionTimeText()) : QString();
+    const QString nextIn = m_compactText ? tr("Next %1") : tr("Next in %1");
+    const QString time = loaded ? (delay ? nextIn.arg(remainingTimeText()) : positionTimeText()) : QString();
     const bool loading = isLoading();
     const bool stateChanged = loaded != m_uiLoaded || playing != m_uiPlaying || delay != m_uiDelay
         || loading != m_uiLoading;
@@ -700,12 +764,13 @@ void SoundPadWidget::refreshChrome()
     const bool loading = isLoading();
     const bool empty = !loading && !m_uiLoaded;
     const bool hasSound = m_uiLoaded;
-    m_load->setVisible(empty || (hasSound && m_selected));
+    // One tool slot beside play: stop while the pad plays (or counts down its delay),
+    // the folder to load sounds while it is stopped. Empty pads show the big drop circle.
+    m_load->setVisible(empty || (hasSound && !m_uiPlaying));
     m_loop->setVisible(hasSound);
-    m_stop->setArmed(hasSound && (m_uiPlaying || m_selected));
+    m_stop->setArmed(hasSound && m_uiPlaying);
     m_volume->setVisible(hasSound);
-    // Small pads drop the dB readout so the time has room; the volume line still shows the level.
-    m_volumeValue->setVisible(hasSound && contentScale() >= 0.9);
+    m_volumeValue->setVisible(hasSound);
     layoutContents();
 }
 
@@ -763,17 +828,6 @@ void SoundPadWidget::paintEvent(QPaintEvent*)
     }
     p.drawRoundedRect(card, radius, radius);
 
-    // Status dot beside the name: dim when idle, accent when live, half accent while waiting.
-    QColor dot = empty ? theme.padBorder : theme.playheadDelay;
-    if (live) {
-        dot = accent;
-    } else if (m_uiDelay) {
-        dot = withAlpha(accent, 0.5);
-    }
-    p.setPen(Qt::NoPen);
-    p.setBrush(dot);
-    p.drawEllipse(at(14, 22, 8, 8));
-
     QFont captionFont = font();
     captionFont.setPixelSize(std::max(9, qRound(12 * s)));
     QFont monoFont(QStringLiteral("Geist Mono"));
@@ -808,7 +862,7 @@ void SoundPadWidget::paintEvent(QPaintEvent*)
     if (!m_timeText.isEmpty()) {
         p.setFont(monoFont);
         p.setPen(live ? theme.text : (m_uiDelay ? accent : theme.textMuted));
-        const QRectF timeRect = m_volumeValue->isVisible() ? at(14, 150, 96, 16) : at(14, 150, 148, 16);
+        const QRectF timeRect = m_compactText ? at(14, 150, 94, 16) : at(14, 150, 96, 16);
         p.drawText(timeRect, Qt::AlignLeft | Qt::AlignVCenter,
             QFontMetrics(monoFont).elidedText(m_timeText, Qt::ElideRight, qRound(timeRect.width())));
     }
@@ -842,7 +896,6 @@ void SoundPadWidget::layoutContents()
     // Everything below is placed on the 176x204 mockup canvas; the card itself is inset
     // 4px so the selection ring and live glow have room around it.
     const bool empty = !isLoading() && !m_uiLoaded;
-    const bool toolsShown = m_uiLoaded && m_selected;
 
     m_card->setGeometry(scaled(4, 4, 168, 196));
     // Child geometry below is in pad coordinates; the card starts at (4,4).
@@ -852,18 +905,25 @@ void SoundPadWidget::layoutContents()
         return r;
     };
 
-    const int nameRight = toolsShown ? 104 : 132;
-    m_name->setGeometry(inCard(28, 14, nameRight - 28, 24));
-    m_loop->setGeometry(inCard(138, 14, 24, 24));
+    // The name owns the whole top row. Play sits in the middle between two matching tool
+    // slots: loop on the left, and stop or load (never both) on the right.
+    m_name->setGeometry(inCard(14, 14, 152, 24));
     if (empty) {
         m_load->setGeometry(inCard(62, 54, 52, 52));
     } else {
-        m_load->setGeometry(inCard(110, 14, 24, 24));
+        m_load->setGeometry(inCard(130, 64, 28, 28));
     }
     m_play->setGeometry(inCard(56, 46, 64, 64));
-    m_stop->setGeometry(inCard(134, 86, 28, 28));
+    m_stop->setGeometry(inCard(130, 64, 28, 28));
+    m_loop->setGeometry(inCard(18, 64, 28, 28));
     m_playhead->setGeometry(inCard(14, 120, 148, 24));
-    m_volumeValue->setGeometry(scaled(92, 150, 70, 16));
+    // Small pads keep both readouts by shortening them ("0:44/1:11", "-6 dB").
+    const bool compact = s < 0.9;
+    m_volumeValue->setGeometry(compact ? scaled(110, 150, 52, 16) : scaled(92, 150, 70, 16));
+    if (compact != m_compactText) {
+        m_compactText = compact;
+        updateVolumeLabel();
+    }
     m_volume->setGeometry(scaled(14, 170, 148, 16));
     m_volume->raise();
     m_volumeValue->raise();
@@ -1428,8 +1488,56 @@ void SoundPadWidget::removeSampleAt(int index)
     }
 }
 
+void SoundPadWidget::beginNameEdit()
+{
+    if (!m_name->isReadOnly()) {
+        return;
+    }
+    m_nameBeforeEdit = m_name->text();
+    m_name->setAttribute(Qt::WA_TransparentForMouseEvents, false);
+    m_name->setReadOnly(false);
+    m_name->setFocusPolicy(Qt::StrongFocus);
+    m_name->setCursor(Qt::IBeamCursor);
+    m_name->setFocus(Qt::MouseFocusReason);
+    m_name->selectAll();
+}
+
+void SoundPadWidget::endNameEdit()
+{
+    // Read-only and see-through to the mouse, so a single click selects the pad and a drag
+    // that starts on the title picks up the pad like anywhere else on it.
+    m_name->setReadOnly(true);
+    m_name->setFocusPolicy(Qt::NoFocus);
+    m_name->setAttribute(Qt::WA_TransparentForMouseEvents, true);
+    m_name->unsetCursor();
+    m_name->deselect();
+    m_name->setCursorPosition(0);
+    if (m_name->hasFocus()) {
+        m_name->clearFocus();
+    }
+}
+
+void SoundPadWidget::mouseDoubleClickEvent(QMouseEvent* event)
+{
+    if (event->button() == Qt::LeftButton && m_name->isReadOnly()) {
+        const QRect nameRect(m_name->mapTo(this, QPoint(0, 0)), m_name->size());
+        if (nameRect.contains(event->position().toPoint())) {
+            emit padClicked(m_padId);
+            beginNameEdit();
+            return;
+        }
+    }
+    QWidget::mouseDoubleClickEvent(event);
+}
+
 bool SoundPadWidget::eventFilter(QObject* watched, QEvent* event)
 {
+    if (watched == m_name && event->type() == QEvent::KeyPress && !m_name->isReadOnly()
+        && static_cast<QKeyEvent*>(event)->key() == Qt::Key_Escape) {
+        m_name->setText(m_nameBeforeEdit);
+        m_name->clearFocus(); // finishes editing through editingFinished
+        return true;
+    }
     if (event->type() == QEvent::MouseButtonPress && static_cast<QMouseEvent*>(event)->button() == Qt::LeftButton) {
         emit padClicked(m_padId);
     }
@@ -1443,6 +1551,75 @@ void SoundPadWidget::mousePressEvent(QMouseEvent* event)
         emit padClicked(m_padId);
     }
     QWidget::mousePressEvent(event);
+}
+
+namespace {
+// The pad as it looks now, shrunk and faded, for the drag image.
+QPixmap padDragGhost(QWidget* pad, qreal scale)
+{
+    const QPixmap full = pad->grab();
+    const qreal dpr = full.devicePixelRatio();
+    const QSize logical(qRound(pad->width() * scale), qRound(pad->height() * scale));
+    QPixmap ghost(logical * dpr);
+    ghost.setDevicePixelRatio(dpr);
+    ghost.fill(Qt::transparent);
+    QPainter p(&ghost);
+    p.setRenderHint(QPainter::SmoothPixmapTransform, true);
+    p.setOpacity(0.85);
+    p.drawPixmap(QRect(QPoint(0, 0), logical), full);
+    return ghost;
+}
+
+// Pointer with a round accent badge: four arrows for move, a plus for copy.
+QPixmap padDragCursor(bool copy, qreal dpr)
+{
+    const Theme::Palette& theme = Theme::instance().palette();
+    const int size = 40;
+    QPixmap pix(QSize(size, size) * dpr);
+    pix.setDevicePixelRatio(dpr);
+    pix.fill(Qt::transparent);
+    QPainter p(&pix);
+    p.setRenderHint(QPainter::Antialiasing, true);
+
+    // Arrow pointer, tip at (1,1) so the hot spot stays where the system puts it.
+    QPolygonF arrow;
+    arrow << QPointF(1, 1) << QPointF(1, 18) << QPointF(5.5, 14) << QPointF(8.5, 21)
+          << QPointF(11.5, 19.8) << QPointF(8.6, 13) << QPointF(14.5, 13);
+    p.setPen(QPen(QColor(0, 0, 0), 1.2, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
+    p.setBrush(QColor(255, 255, 255));
+    p.drawPolygon(arrow);
+
+    // Badge.
+    const QPointF c(27, 27);
+    const qreal r = 10.5;
+    p.setPen(QPen(theme.background, 2.0));
+    p.setBrush(theme.playLoaded);
+    p.drawEllipse(c, r, r);
+    const QColor mark = Theme::contrastOn(theme.playLoaded);
+    p.setPen(QPen(mark, 1.8, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
+    p.setBrush(Qt::NoBrush);
+    if (copy) {
+        p.drawLine(QPointF(c.x() - 5, c.y()), QPointF(c.x() + 5, c.y()));
+        p.drawLine(QPointF(c.x(), c.y() - 5), QPointF(c.x(), c.y() + 5));
+    } else {
+        // Cross with solid arrowheads on all four ends.
+        const qreal a = 4.0;   // half-length of the cross bars
+        const qreal tip = 7.0; // distance from centre to each arrow tip
+        const qreal w = 3.0;   // half-width of each arrowhead
+        p.drawLine(QPointF(c.x() - a, c.y()), QPointF(c.x() + a, c.y()));
+        p.drawLine(QPointF(c.x(), c.y() - a), QPointF(c.x(), c.y() + a));
+        p.setPen(Qt::NoPen);
+        p.setBrush(mark);
+        const QPointF dirs[4] = {{1, 0}, {-1, 0}, {0, 1}, {0, -1}};
+        for (const QPointF& d : dirs) {
+            const QPointF side(d.y(), d.x());
+            QPolygonF head;
+            head << c + d * tip << c + d * (tip - 3.2) + side * w << c + d * (tip - 3.2) - side * w;
+            p.drawPolygon(head);
+        }
+    }
+    return pix;
+}
 }
 
 void SoundPadWidget::mouseMoveEvent(QMouseEvent* event)
@@ -1461,12 +1638,48 @@ void SoundPadWidget::mouseMoveEvent(QMouseEvent* event)
     auto* mime = new QMimeData();
     mime->setData(QStringLiteral("application/x-feedra-pad"), QByteArray::number(m_padId));
     drag->setMimeData(mime);
-    drag->exec(Qt::CopyAction);
+    // A small see-through copy of the pad rides under the pointer, and the pointer carries a
+    // badge saying what the drop will do: four arrows to move, a plus to copy.
+    const qreal dpr = devicePixelRatioF();
+    const QPixmap ghost = padDragGhost(this, 0.6);
+    drag->setPixmap(ghost);
+    drag->setHotSpot(QPoint(qRound(event->position().x() * 0.6), qRound(event->position().y() * 0.6)));
+    drag->setDragCursor(padDragCursor(false, dpr), Qt::MoveAction);
+    drag->setDragCursor(padDragCursor(true, dpr), Qt::CopyAction);
+    // A plain drag moves the pad; holding Ctrl (or Alt, the macOS habit) copies it instead.
+    drag->exec(Qt::MoveAction | Qt::CopyAction, Qt::MoveAction);
+}
+
+namespace {
+bool isPadDrag(const QMimeData* mime)
+{
+    return mime->hasFormat(QStringLiteral("application/x-feedra-pad"));
+}
+
+// Choose move or copy from the keys held right now, so the cursor updates as Ctrl is
+// pressed or released mid-drag.
+void choosePadDropAction(QDropEvent* event)
+{
+    const bool copy = event->modifiers() & (Qt::ControlModifier | Qt::AltModifier);
+    event->setDropAction(copy ? Qt::CopyAction : Qt::MoveAction);
+    event->accept();
+}
 }
 
 void SoundPadWidget::dragEnterEvent(QDragEnterEvent* event)
 {
-    if (event->mimeData()->hasUrls() || event->mimeData()->hasFormat(QStringLiteral("application/x-feedra-pad"))) {
+    if (isPadDrag(event->mimeData())) {
+        choosePadDropAction(event);
+    } else if (event->mimeData()->hasUrls()) {
+        event->acceptProposedAction();
+    }
+}
+
+void SoundPadWidget::dragMoveEvent(QDragMoveEvent* event)
+{
+    if (isPadDrag(event->mimeData())) {
+        choosePadDropAction(event);
+    } else if (event->mimeData()->hasUrls()) {
         event->acceptProposedAction();
     }
 }
@@ -1475,8 +1688,8 @@ void SoundPadWidget::dropEvent(QDropEvent* event)
 {
     if (event->mimeData()->hasFormat(QStringLiteral("application/x-feedra-pad"))) {
         const int from = event->mimeData()->data(QStringLiteral("application/x-feedra-pad")).toInt();
-        emit padDropped(from, m_padId);
-        event->acceptProposedAction();
+        choosePadDropAction(event);
+        emit padDropped(from, m_padId, event->dropAction() == Qt::CopyAction);
         return;
     }
     if (event->mimeData()->hasUrls()) {
@@ -1529,13 +1742,17 @@ void SoundPadWidget::updateVolumeLabel()
     if (!m_volumeValue) {
         return;
     }
-    m_volumeValue->setText(VolumeDb::format(VolumeDb::fromSlider(m_volume->value(), VolumeDb::kFloorDb)));
+    const float db = VolumeDb::fromSlider(m_volume->value(), VolumeDb::kFloorDb);
+    m_volumeValue->setText(m_compactText
+            ? QString::number(static_cast<int>(std::lround(db))) + QStringLiteral(" dB")
+            : VolumeDb::format(db));
+    m_volumeValue->setToolTip(VolumeDb::format(db));
 }
 
 QString SoundPadWidget::positionTimeText() const
 {
     const float duration = m_player.getDuration();
-    return QStringLiteral("%1 / %2")
+    return QString(m_compactText ? QStringLiteral("%1/%2") : QStringLiteral("%1 / %2"))
         .arg(formatClock(m_player.getPosition() * duration), formatClock(duration));
 }
 

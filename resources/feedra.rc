@@ -1,0 +1,2 @@
+// Windows resources: the application icon shown on feedra.exe, in Explorer and on the taskbar.
+IDI_ICON1 ICON "feedra.ico"
