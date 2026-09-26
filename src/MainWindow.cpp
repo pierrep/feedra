@@ -211,8 +211,7 @@ MainWindow::MainWindow(QWidget* parent)
 MainWindow::~MainWindow()
 {
     waitForLoads();
-    m_config.lastSettingsPath = currentSettingsFilePath();
-    saveConfigTo(m_config.defaultSettingsPath(), false);
+    saveOnExit();
     if (m_loads) {
         m_loads->shutdown();
     }
@@ -2000,18 +1999,74 @@ void MainWindow::refreshSettingsPathLabel()
     static_cast<SettingsPathLabel*>(m_settingsPathLabel)->setFullText(shown);
 }
 
+QString MainWindow::resolvedSettingsPath() const
+{
+    // Prefer the file already open. A missing file falls back to data/settings/settings.json.
+    const QString path = currentSettingsFilePath();
+    return QFile::exists(path) ? path : m_config.defaultSettingsPath();
+}
+
 void MainWindow::saveConfig()
 {
-    if (!saveConfigTo(m_config.defaultSettingsPath(), false)) {
+    const QString path = resolvedSettingsPath();
+    if (!saveConfigTo(path, false)) {
         QMessageBox::warning(this, tr("Feedra"),
-            tr("Could not save settings to:\n%1").arg(m_config.defaultSettingsPath()));
+            tr("Could not save settings to:\n%1").arg(path));
+        return;
+    }
+    const QString saved = QFileInfo(path).absoluteFilePath();
+    if (m_config.settingsPath != saved) {
+        m_config.settingsPath = saved;
+        refreshSettingsPathLabel();
+    }
+}
+
+void MainWindow::saveOnExit()
+{
+    if (m_savedOnExit) {
+        return;
+    }
+    m_savedOnExit = true;
+    m_config.lastSettingsPath = currentSettingsFilePath();
+    const QString path = currentSettingsFilePath();
+    saveConfigTo(path, false);
+
+    // The session lives in the open file. The default file only keeps the startup
+    // choice when that file is somewhere else.
+    const QString defaults = QFileInfo(m_config.defaultSettingsPath()).absoluteFilePath();
+    if (QFileInfo(path).absoluteFilePath() == defaults) {
+        return;
+    }
+
+    QJsonObject root;
+    QFile existing(defaults);
+    if (existing.open(QIODevice::ReadOnly)) {
+        const QJsonDocument doc = QJsonDocument::fromJson(existing.readAll());
+        if (doc.isObject()) {
+            root = doc.object();
+        }
+    }
+    QJsonObject global = root.value(QStringLiteral("global")).toObject();
+    global.insert(QStringLiteral("loadlastsettings"), m_config.loadLastSettings);
+    global.insert(QStringLiteral("lastsettingspath"), m_config.lastSettingsPath);
+    root.insert(QStringLiteral("global"), global);
+
+    const QString dirPath = QFileInfo(defaults).absolutePath();
+    if (!QDir().mkpath(dirPath)) {
+        qWarning() << "Failed to create settings directory" << dirPath;
+        return;
+    }
+    const QByteArray bytes = QJsonDocument(root).toJson(QJsonDocument::Indented);
+    QSaveFile file(defaults);
+    if (!file.open(QIODevice::WriteOnly) || file.write(bytes) != bytes.size() || !file.commit()) {
+        qWarning() << "Failed to record startup settings in" << defaults << file.errorString();
     }
 }
 
 void MainWindow::saveConfigAs()
 {
     const QString path = QFileDialog::getSaveFileName(this, tr("Save Feedra scenes"),
-        m_config.defaultSettingsPath(), tr("JSON (*.json)"));
+        currentSettingsFilePath(), tr("JSON (*.json)"));
     if (path.isEmpty()) {
         return;
     }
@@ -2685,8 +2740,7 @@ void MainWindow::releaseGridPaint()
 void MainWindow::closeEvent(QCloseEvent* event)
 {
     waitForLoads();
-    m_config.lastSettingsPath = currentSettingsFilePath();
-    saveConfig();
+    saveOnExit();
     QMainWindow::closeEvent(event);
 }
 

@@ -85,7 +85,9 @@ private:
     void setSidebarView(SidebarView view);
     void refreshSettingsPathLabel();
     QString currentSettingsFilePath() const;
+    QString resolvedSettingsPath() const;
     void saveConfig();
+    void saveOnExit();
     void saveConfigAs();
     bool saveConfigTo(const QString& path, bool copyFiles);
     void loadConfig();
@@ -191,6 +193,7 @@ private:
 
     QString m_curDevice;
     bool m_updatingControls = false;
+    bool m_savedOnExit = false;
 
     SampleLoadQueue* m_loads = nullptr;
     QProgressBar* m_loadBar = nullptr;
