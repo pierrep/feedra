@@ -1360,10 +1360,22 @@ bool OpenALSoundPlayer::sfReadFile(const std::filesystem::path& path){
 }
 
 #ifdef FEEDRA_USING_MPG123
+// Local files end where the Xing/LAME header says they end. Without this, mpg123
+// keeps reading past the audio into the ID3/APE trailer and prints a resync error
+// when it gives up. Quiet covers files that have no length header at all.
+static void configureMpg123(mpg123_handle* handle)
+{
+    if (!handle) {
+        return;
+    }
+    mpg123_param(handle, MPG123_ADD_FLAGS, MPG123_QUIET | MPG123_NO_FRANKENSTEIN, 0.0);
+}
+
 //------------------------------------------------------------
 bool OpenALSoundPlayer::mpg123ReadFile(const std::filesystem::path& path){
 	int err = MPG123_OK;
 	mpg123_handle * f = mpg123_new(nullptr,&err);
+	configureMpg123(f);
 	if(mpg123_open(f,path.string().c_str())!=MPG123_OK){
 		qCritical() << "OpenALSoundPlayer" << "mpg123ReadFile(): couldn't read \"" << path.string().c_str() << "\"";
 		return false;
@@ -1383,9 +1395,11 @@ bool OpenALSoundPlayer::mpg123ReadFile(const std::filesystem::path& path){
 	size_t done=0;
 	size_t buffer_size = mpg123_outblock( f );
     buffer_short.resize(buffer_size/2);
-    while(mpg123_read(f,(unsigned char*)&buffer_short[buffer_short.size()-buffer_size/2],buffer_size,&done)!=MPG123_DONE){
+    int code = MPG123_OK;
+    while ((code = mpg123_read(f,(unsigned char*)&buffer_short[buffer_short.size()-buffer_size/2],buffer_size,&done)) == MPG123_OK
+           || code == MPG123_NEW_FORMAT) {
         buffer_short.resize(buffer_short.size()+buffer_size/2);
-	};
+	}
     buffer_short.resize(buffer_short.size()-(buffer_size/2-done/2));
 	mpg123_close(f);
 	mpg123_delete(f);
@@ -1482,6 +1496,7 @@ bool OpenALSoundPlayer::mpg123Stream(const std::filesystem::path& path){
 	if(!mp3streamf){
 		int err = MPG123_OK;
 		mp3streamf = mpg123_new(nullptr,&err);
+		configureMpg123(mp3streamf);
 		if(mpg123_open(mp3streamf,path.string().c_str())!=MPG123_OK){
 			mpg123_close(mp3streamf);
 			mpg123_delete(mp3streamf);
@@ -1600,6 +1615,7 @@ bool OpenALSoundPlayer::uploadDecoded(DecodedAudio decoded, bool spatialise)
 namespace {
 
 struct DecodeStream {
+    std::filesystem::path path;
     bool mp3 = false;
     SNDFILE* snd = nullptr;
     SF_INFO info{};
@@ -1634,8 +1650,9 @@ struct DecodeStream {
 #endif
     }
 
-    bool open(const std::filesystem::path& path, const std::string& ext, bool allowFloat)
+    bool open(const std::filesystem::path& filePath, const std::string& ext, bool allowFloat)
     {
+        path = filePath;
         if (ext == ".mp3") {
 #ifndef FEEDRA_USING_MPG123
             qCritical() << "OpenALSoundPlayer" << "decodeFile(): mp3 support is not built";
@@ -1645,7 +1662,8 @@ struct DecodeStream {
             fileFormat = 0x230000;
             int err = MPG123_OK;
             mpg = mpg123_new(nullptr, &err);
-            if (!mpg || mpg123_open(mpg, path.string().c_str()) != MPG123_OK) {
+            configureMpg123(mpg);
+            if (!mpg || mpg123_open(mpg, filePath.string().c_str()) != MPG123_OK) {
                 close();
                 return false;
             }
@@ -1658,7 +1676,7 @@ struct DecodeStream {
             subformat = getMpg123EncodingString(encoding);
             if (encoding != MPG123_ENC_SIGNED_16) {
                 qCritical() << "OpenALSoundPlayer" << "decodeFile():" << subformat.c_str()
-                            << "encoding for" << path.string().c_str() << "unsupported";
+                            << "encoding for" << filePath.string().c_str() << "unsupported";
                 close();
                 return false;
             }
@@ -1673,7 +1691,7 @@ struct DecodeStream {
         }
 
         memset(&info, 0, sizeof(info));
-        snd = sf_open(path.string().c_str(), SFM_READ, &info);
+        snd = sf_open(filePath.string().c_str(), SFM_READ, &info);
         if (!snd) {
             return false;
         }
@@ -1726,10 +1744,19 @@ struct DecodeStream {
             floats.resize(shorts.size());
             size_t done = 0;
             const int code = mpg123_read(mpg, reinterpret_cast<unsigned char*>(shorts.data()), static_cast<size_t>(curr) * 2, &done);
-            if (code == MPG123_DONE) {
+            shorts.resize(done / 2);
+            floats.resize(shorts.size());
+            // DONE is a clean end. RESYNC_FAIL is the same for a local file: the
+            // bytes after the last frame (ID3, APE, padding) are not MPEG audio.
+            if (code != MPG123_OK && code != MPG123_NEW_FORMAT) {
+                // A clean end returns MPG123_DONE and is not logged. Anything else is the
+                // resync failure mpg123 prints just before this read returns.
+                if (code != MPG123_DONE) {
+                    qWarning() << "mpg123 stopped in" << path.string().c_str()
+                               << "at byte" << static_cast<long long>(mpg123_tell_stream(mpg))
+                               << mpg123_plain_strerror(code);
+                }
                 mpg123_seek(mpg, 0, SEEK_SET);
-                shorts.resize(done / 2);
-                floats.resize(done / 2);
                 ended = true;
                 samplesRead = 0;
             }
@@ -1782,7 +1809,9 @@ struct DecodeStream {
             size_t done = 0;
             size_t bufferSize = static_cast<size_t>(mpg123_outblock(mpg));
             shorts.resize(bufferSize / 2);
-            while (mpg123_read(mpg, reinterpret_cast<unsigned char*>(&shorts[shorts.size() - bufferSize / 2]), bufferSize, &done) != MPG123_DONE) {
+            int code = MPG123_OK;
+            while ((code = mpg123_read(mpg, reinterpret_cast<unsigned char*>(&shorts[shorts.size() - bufferSize / 2]), bufferSize, &done)) == MPG123_OK
+                   || code == MPG123_NEW_FORMAT) {
                 shorts.resize(shorts.size() + bufferSize / 2);
             }
             shorts.resize(shorts.size() - (bufferSize / 2 - done / 2));
@@ -2006,6 +2035,7 @@ bool OpenALSoundPlayer::attachDecodedStream(const DecodedAudio& decoded)
     if (decoded.mp3) {
         int err = MPG123_OK;
         mp3streamf = mpg123_new(nullptr, &err);
+        configureMpg123(mp3streamf);
         if (!mp3streamf || mpg123_open(mp3streamf, decoded.path.string().c_str()) != MPG123_OK) {
             qCritical() << "OpenALSoundPlayer" << "attachDecodedStream(): couldn't read" << decoded.path.string().c_str();
             if (mp3streamf) {
