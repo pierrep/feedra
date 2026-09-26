@@ -527,23 +527,23 @@ void MainWindow::buildUi()
     auto* tabRow = new QHBoxLayout(tabBar);
     tabRow->setContentsMargins(8, 0, 8, 0);
     tabRow->setSpacing(0);
-    m_sampleTab = new QPushButton(tr("Sample"), tabBar);
-    m_sampleTab->setObjectName(QStringLiteral("BottomTab"));
-    m_sampleTab->setFocusPolicy(Qt::NoFocus);
-    m_padTab = new QPushButton(tr("Pad"), tabBar);
-    m_padTab->setObjectName(QStringLiteral("BottomTab"));
-    m_padTab->setFocusPolicy(Qt::NoFocus);
     m_waveTab = new QPushButton(tr("Waveform"), tabBar);
     m_waveTab->setObjectName(QStringLiteral("BottomTab"));
     m_waveTab->setFocusPolicy(Qt::NoFocus);
+    m_padTab = new QPushButton(tr("Pad"), tabBar);
+    m_padTab->setObjectName(QStringLiteral("BottomTab"));
+    m_padTab->setFocusPolicy(Qt::NoFocus);
+    m_sampleTab = new QPushButton(tr("Info"), tabBar);
+    m_sampleTab->setObjectName(QStringLiteral("BottomTab"));
+    m_sampleTab->setFocusPolicy(Qt::NoFocus);
     m_collapseBottom = new QPushButton(QStringLiteral("\u25B4"), tabBar);
     m_collapseBottom->setObjectName(QStringLiteral("BottomCollapse"));
     m_collapseBottom->setFocusPolicy(Qt::NoFocus);
     m_collapseBottom->setFixedSize(28, 24);
     m_collapseBottom->setToolTip(tr("Hide panel"));
-    tabRow->addWidget(m_sampleTab, 0, Qt::AlignBottom);
-    tabRow->addWidget(m_padTab, 0, Qt::AlignBottom);
     tabRow->addWidget(m_waveTab, 0, Qt::AlignBottom);
+    tabRow->addWidget(m_padTab, 0, Qt::AlignBottom);
+    tabRow->addWidget(m_sampleTab, 0, Qt::AlignBottom);
     tabRow->addStretch();
     tabRow->addWidget(m_collapseBottom, 0, Qt::AlignVCenter);
 
@@ -652,7 +652,7 @@ void MainWindow::buildUi()
     connect(m_collapseBottom, &QPushButton::clicked, this, [this]() {
         setBottomCollapsed(!m_bottomCollapsed);
     });
-    setBottomTab(0);
+    setBottomTab(2);
 
     connect(m_addScene, &QPushButton::clicked, this, &MainWindow::addNewScene);
     connect(m_scenesTab, &QPushButton::clicked, this, [this]() {
