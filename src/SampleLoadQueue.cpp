@@ -1,5 +1,7 @@
 #include "SampleLoadQueue.h"
 
+#include "PeakStore.h"
+
 #include <QElapsedTimer>
 #include <QFileInfo>
 #include <QThread>
@@ -39,12 +41,17 @@ void SampleLoadQueue::enqueue(const SampleLoadJob& job)
     ++m_total;
 
     const std::shared_ptr<State> state = m_state;
-    m_pool->start([state, job]() {
+    // Taken here, on the UI thread, so the store is never first created on a worker.
+    PeakStore* peaks = &PeakStore::instance();
+    m_pool->start([state, job, peaks]() {
         SampleLoadResult result;
         result.job = job;
         const bool stale = !job.generationToken || job.generationToken->load() != job.generation;
         if (!state->shuttingDown.load() && !stale) {
             result.audio = OpenALSoundPlayer::decodeFile(std::filesystem::path(job.path.toStdString()), job.stream);
+            // Bring the saved waveform in with the sample, so the pad strip and the Waveform
+            // tab show it straight away (no scan if the cache file is valid).
+            peaks->preload(job.path);
         }
         if (state->shuttingDown.load()) {
             return;

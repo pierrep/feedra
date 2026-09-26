@@ -1,21 +1,14 @@
 #pragma once
 
-#include <QHash>
 #include <QPixmap>
 #include <QString>
-#include <QStringList>
 #include <QWidget>
-#include <atomic>
-#include <memory>
-#include <vector>
-
-class QThreadPool;
 
 // Whole-file waveform of one sample with a moving playhead.
 //
-// Peaks are computed once per file on a low-priority background thread with its own
-// decoder, then cached. The widget only reads positions the UI thread already polls,
-// so drawing it never waits on, or holds up, the audio stream threads.
+// Peaks come from PeakStore, which reads each file once on a low-priority background thread
+// with its own decoder. The widget only reads positions the UI thread already polls, so
+// drawing it never waits on, or holds up, the audio stream threads.
 class WaveformWidget : public QWidget
 {
     Q_OBJECT
@@ -40,14 +33,6 @@ protected:
     void resizeEvent(QResizeEvent* event) override;
 
 private:
-    struct Peaks {
-        bool ok = false;
-        std::vector<float> mins;
-        std::vector<float> maxs;
-    };
-
-    void requestPeaks(const QString& path);
-    void onPeaksReady(const QString& path, std::shared_ptr<const Peaks> peaks);
     void rebuildPixmap();
     QRect waveRect() const;
     bool canSeek() const;
@@ -60,14 +45,7 @@ private:
     bool m_playing = false;
     bool m_dragging = false;
 
-    QHash<QString, std::shared_ptr<const Peaks>> m_cache;
-    QStringList m_cacheOrder;
-    QStringList m_pending;
-
     QPixmap m_wave;
     QPixmap m_waveDim;
     bool m_waveDirty = true;
-
-    QThreadPool* m_pool = nullptr;
-    std::shared_ptr<std::atomic<bool>> m_cancel = std::make_shared<std::atomic<bool>>(false);
 };

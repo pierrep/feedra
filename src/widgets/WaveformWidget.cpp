@@ -1,6 +1,6 @@
 #include "WaveformWidget.h"
 
-#include "OpenALSoundPlayer.h"
+#include "PeakStore.h"
 #include "Theme.h"
 
 #include <QFileInfo>
@@ -8,15 +8,10 @@
 #include <QPainter>
 #include <QPainterPath>
 #include <QResizeEvent>
-#include <QThread>
-#include <QThreadPool>
 #include <algorithm>
 #include <cmath>
-#include <filesystem>
 
 namespace {
-constexpr int kPeakBins = 4096;   // resolution kept per file; ~32 KB each
-constexpr int kCacheLimit = 48;   // files kept in the peak cache
 constexpr int kMarginX = 20;
 constexpr int kHeaderHeight = 32;
 constexpr int kMarginBottom = 12;
@@ -24,26 +19,26 @@ constexpr int kMarginBottom = 12;
 
 WaveformWidget::WaveformWidget(QWidget* parent)
     : QWidget(parent)
-    , m_pool(new QThreadPool(this))
 {
     setObjectName(QStringLiteral("Waveform"));
-    // One file at a time: this is display work and should never compete for cores.
-    m_pool->setMaxThreadCount(1);
     setMouseTracking(true); // for the hand cursor over the waveform
     connect(&Theme::instance(), &Theme::changed, this, [this]() {
         m_waveDirty = true;
         update();
     });
+    connect(&PeakStore::instance(), &PeakStore::cacheCleared, this, [this]() {
+        m_waveDirty = true;
+        update();
+    });
+    connect(&PeakStore::instance(), &PeakStore::peaksReady, this, [this](const QString& key) {
+        if (!m_path.isEmpty() && key == PeakStore::keyFor(m_path)) {
+            m_waveDirty = true;
+            update();
+        }
+    });
 }
 
-WaveformWidget::~WaveformWidget()
-{
-    // Stop the scanner before members go away; queued results addressed to us are
-    // discarded by Qt once this object is destroyed.
-    m_cancel->store(true);
-    m_pool->clear();
-    m_pool->waitForDone();
-}
+WaveformWidget::~WaveformWidget() = default;
 
 void WaveformWidget::setSample(const QString& path, float durationSec)
 {
@@ -54,9 +49,8 @@ void WaveformWidget::setSample(const QString& path, float durationSec)
     m_path = path;
     m_playhead = 0.0f; // a newly shown sample starts at the beginning, never "fully played"
     m_waveDirty = true;
-    if (!m_path.isEmpty() && !m_cache.contains(m_path)) {
-        requestPeaks(m_path);
-    }
+    // Queue it ahead of the pad strips' files: this one is on screen.
+    PeakStore::instance().get(m_path, true);
     update();
 }
 
@@ -78,55 +72,10 @@ void WaveformWidget::setPlayhead(float pct, bool playing)
     }
 }
 
-void WaveformWidget::requestPeaks(const QString& path)
-{
-    if (m_pending.contains(path)) {
-        return;
-    }
-    m_pending.append(path);
-    const std::shared_ptr<std::atomic<bool>> cancel = m_cancel;
-    m_pool->start([this, path, cancel]() {
-        QThread::currentThread()->setPriority(QThread::LowPriority);
-        const WaveformPeaks raw = OpenALSoundPlayer::computePeaks(
-            std::filesystem::path(path.toStdString()), kPeakBins, cancel.get());
-        if (cancel->load()) {
-            return;
-        }
-        auto peaks = std::make_shared<Peaks>();
-        peaks->ok = raw.ok;
-        peaks->mins = raw.mins;
-        peaks->maxs = raw.maxs;
-        std::shared_ptr<const Peaks> result = std::move(peaks);
-        QMetaObject::invokeMethod(this, [this, path, result]() {
-            onPeaksReady(path, result);
-        }, Qt::QueuedConnection);
-    });
-}
-
-void WaveformWidget::onPeaksReady(const QString& path, std::shared_ptr<const Peaks> peaks)
-{
-    m_pending.removeAll(path);
-    m_cache.insert(path, std::move(peaks));
-    m_cacheOrder.removeAll(path);
-    m_cacheOrder.append(path);
-    while (m_cacheOrder.size() > kCacheLimit) {
-        const QString oldest = m_cacheOrder.takeFirst();
-        if (oldest == m_path) {
-            m_cacheOrder.append(oldest); // never evict what is on screen
-            continue;
-        }
-        m_cache.remove(oldest);
-    }
-    if (path == m_path) {
-        m_waveDirty = true;
-        update();
-    }
-}
-
 bool WaveformWidget::canSeek() const
 {
-    const auto it = m_cache.constFind(m_path);
-    return !m_path.isEmpty() && it != m_cache.constEnd() && *it && (*it)->ok;
+    const std::shared_ptr<const PeakData> peaks = PeakStore::instance().get(m_path, true);
+    return peaks && peaks->ok;
 }
 
 void WaveformWidget::seekAt(int x)
@@ -186,13 +135,13 @@ void WaveformWidget::rebuildPixmap()
 {
     m_waveDirty = false;
     const QRect area = waveRect();
-    const auto it = m_cache.constFind(m_path);
-    if (area.width() <= 0 || area.height() <= 0 || it == m_cache.constEnd() || !(*it) || !(*it)->ok) {
+    const std::shared_ptr<const PeakData> data = PeakStore::instance().get(m_path, true);
+    if (area.width() <= 0 || area.height() <= 0 || !data || !data->ok) {
         m_wave = QPixmap();
         m_waveDim = QPixmap();
         return;
     }
-    const Peaks& peaks = **it;
+    const PeakData& peaks = *data;
     const qreal dpr = devicePixelRatioF();
     const int w = std::max(1, static_cast<int>(std::lround(area.width() * dpr)));
     const int h = std::max(1, static_cast<int>(std::lround(area.height() * dpr)));
@@ -279,10 +228,10 @@ void WaveformWidget::paintEvent(QPaintEvent* event)
     if (m_path.isEmpty()) {
         return;
     }
-    const auto it = m_cache.constFind(m_path);
     if (m_wave.isNull()) {
         p.setPen(pal.textMuted);
-        const bool failed = it != m_cache.constEnd() && (!(*it) || !(*it)->ok);
+        const std::shared_ptr<const PeakData> data = PeakStore::instance().get(m_path, true);
+        const bool failed = data && !data->ok;
         p.drawText(area, Qt::AlignCenter, failed ? tr("Waveform unavailable") : tr("Reading waveform…"));
         return;
     }

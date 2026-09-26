@@ -50,6 +50,7 @@ private:
     void buildSettingsPage();
     void buildThemePage();
     void syncSettingsPage();
+    void refreshWaveformCacheInfo();
     void applyImpulsePath(const QString& path);
     void refreshThemeSwatches();
     QWidget* buildPageHeader(QWidget* page, const QString& title, const QString& subtitle);
@@ -199,6 +200,7 @@ private:
     QProgressBar* m_loadBar = nullptr;
     QLabel* m_loadLabel = nullptr;
     QLabel* m_settingsPathLabel = nullptr;
+    QLabel* m_waveformCacheInfo = nullptr;
     QAction* m_saveAction = nullptr;
     QAction* m_saveAsAction = nullptr;
 };

@@ -1,5 +1,6 @@
 #include "MainWindow.h"
 #include "OpenALSoundPlayer.h"
+#include "PeakStore.h"
 #include "SampleLoadQueue.h"
 #include "Scene.h"
 #include "Theme.h"
@@ -36,6 +37,7 @@
 #include <QLabel>
 #include <QLayout>
 #include <QLineEdit>
+#include <QLocale>
 #include <QMenu>
 #include <QMenuBar>
 #include <QMessageBox>
@@ -155,6 +157,7 @@ MainWindow::MainWindow(QWidget* parent)
     setWindowTitle(QStringLiteral("Feedra"));
     resize(1150, 800);
     m_config.setup();
+    PeakStore::instance().setCacheDir(m_config.waveformCacheDir());
     m_loads = new SampleLoadQueue(this);
     OpenALSoundPlayer::initialize();
     OpenALSoundPlayer::setConvolutionGain(OpenALSoundPlayer::defaultConvolutionGain());
@@ -1554,6 +1557,26 @@ void MainWindow::buildSettingsPage()
     libraryLayout->addWidget(m_libraryPath, 1);
     libraryLayout->addWidget(browse);
     library.addRow(tr("Folder"), libraryRow);
+
+    auto* cacheRow = new QWidget(library.frame);
+    auto* cacheLayout = new QHBoxLayout(cacheRow);
+    cacheLayout->setContentsMargins(0, 0, 0, 0);
+    cacheLayout->setSpacing(8);
+    m_waveformCacheInfo = new QLabel(cacheRow);
+    auto* clearCache = new QPushButton(tr("Clear"), cacheRow);
+    clearCache->setToolTip(tr("Delete the saved waveforms"));
+    cacheLayout->addWidget(m_waveformCacheInfo, 1);
+    cacheLayout->addWidget(clearCache);
+    library.addRow(tr("Waveform cache"), cacheRow,
+        tr("Saved waveforms, so they show as soon as a sample loads. Clearing is safe: "
+           "each is worked out and saved again the next time its sample is shown."));
+    connect(clearCache, &QPushButton::clicked, this, [this]() {
+        const PeakStore::CacheStats removed = PeakStore::instance().clearCache();
+        const QString size = QLocale().formattedDataSize(removed.bytes);
+        m_waveformCacheInfo->setText(removed.files == 0 ? tr("Nothing to clear")
+            : removed.files == 1                        ? tr("Cleared 1 waveform, %1").arg(size)
+                                                        : tr("Cleared %1 waveforms, %2").arg(removed.files).arg(size));
+    });
     cards->addWidget(library.frame);
 
     // Reverb
@@ -1840,6 +1863,18 @@ void MainWindow::applyImpulsePath(const QString& path)
     m_impulsePath->setText(fromImpulsePath(OpenALSoundPlayer::convolutionImpulsePath()));
 }
 
+void MainWindow::refreshWaveformCacheInfo()
+{
+    if (!m_waveformCacheInfo) {
+        return;
+    }
+    const PeakStore::CacheStats stats = PeakStore::instance().cacheStats();
+    const QString size = QLocale().formattedDataSize(stats.bytes);
+    m_waveformCacheInfo->setText(stats.files == 0 ? tr("Empty")
+        : stats.files == 1                        ? tr("1 waveform, %1").arg(size)
+                                                  : tr("%1 waveforms, %2").arg(stats.files).arg(size));
+}
+
 void MainWindow::syncSettingsPage()
 {
     m_updatingControls = true;
@@ -1940,6 +1975,7 @@ void MainWindow::setPage(Page page)
         m_bottomPanel->setVisible(page == Page::Main);
     }
     if (page == Page::Settings) {
+        refreshWaveformCacheInfo();
         m_pages->setCurrentWidget(m_settingsPage);
     } else if (page == Page::Theme) {
         m_pages->setCurrentWidget(m_themePage);

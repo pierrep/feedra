@@ -13,6 +13,8 @@ public:
 
     QString dataDir() const;
     QString defaultSettingsPath() const;
+    // data/cache/waveforms: saved waveform peaks, one file per sample (see PeakStore).
+    QString waveformCacheDir() const;
     QString libraryLocation() const { return defaultLibraryLocation; }
     // Where a "load files" dialog should open: the folder of samplePath if it has one,
     // then the sample library from the settings, then the "files" folder next to the

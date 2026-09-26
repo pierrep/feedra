@@ -61,6 +61,11 @@ QString AppConfig::loadDialogDir(const QString& samplePath) const
     return music.isEmpty() ? QDir::homePath() : music;
 }
 
+QString AppConfig::waveformCacheDir() const
+{
+    return QDir(dataDir()).filePath(QStringLiteral("cache/waveforms"));
+}
+
 QString AppConfig::defaultSettingsPath() const
 {
     return QDir(dataDir()).filePath("settings/settings.json");

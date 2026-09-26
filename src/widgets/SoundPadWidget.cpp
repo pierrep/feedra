@@ -2,6 +2,7 @@
 #include "AppConfig.h"
 #include "AudioSample.h"
 #include "OpenALSoundPlayer.h"
+#include "PeakStore.h"
 #include "SampleLoadQueue.h"
 #include "Theme.h"
 #include "VolumeDb.h"
@@ -169,75 +170,6 @@ QString formatClock(float seconds)
     return QString("%1:%2").arg(minutes).arg(secs, 2, 10, QChar('0'));
 }
 
-// Waveform strips for pads: a few peak bins per file, computed once on one low-priority
-// background thread and shared by every pad that shows that file.
-struct PadPeakCache {
-    QHash<QString, QVector<float>> peaks;
-    QSet<QString> pending;
-    QThreadPool* pool = nullptr;
-    std::atomic<bool> cancel{false};
-};
-
-PadPeakCache& peakCache()
-{
-    static PadPeakCache cache;
-    if (!cache.pool) {
-        cache.pool = new QThreadPool(qApp);
-        cache.pool->setMaxThreadCount(1);
-        QObject::connect(qApp, &QCoreApplication::aboutToQuit, []() {
-            peakCache().cancel.store(true);
-            peakCache().pool->clear();
-            peakCache().pool->waitForDone();
-        });
-    }
-    return cache;
-}
-
-// Returns the cached strip for `path`, or an empty vector after queueing the scan.
-QVector<float> padPeaks(const QString& path)
-{
-    PadPeakCache& cache = peakCache();
-    const auto it = cache.peaks.constFind(path);
-    if (it != cache.peaks.constEnd()) {
-        return it.value();
-    }
-    if (path.isEmpty() || cache.pending.contains(path)) {
-        return {};
-    }
-    cache.pending.insert(path);
-    cache.pool->start([path]() {
-        QThread::currentThread()->setPriority(QThread::LowPriority);
-        PadPeakCache& c = peakCache();
-        const WaveformPeaks raw = OpenALSoundPlayer::computePeaks(
-            std::filesystem::path(path.toStdString()), PadPlayhead::kBars, &c.cancel);
-        if (c.cancel.load()) {
-            return;
-        }
-        QVector<float> bars;
-        if (raw.ok) {
-            float loudest = 0.0f;
-            for (size_t i = 0; i < raw.maxs.size() && i < raw.mins.size(); ++i) {
-                const float amp = std::max(std::abs(raw.mins[i]), std::abs(raw.maxs[i]));
-                bars.append(amp);
-                loudest = std::max(loudest, amp);
-            }
-            if (loudest > 0.0f) {
-                for (float& bar : bars) {
-                    bar /= loudest;
-                }
-            }
-        }
-        if (bars.isEmpty()) {
-            bars.fill(0.35f, PadPlayhead::kBars); // unreadable: keep a flat strip, don't retry forever
-        }
-        QMetaObject::invokeMethod(qApp, [path, bars]() {
-            PadPeakCache& c = peakCache();
-            c.pending.remove(path);
-            c.peaks.insert(path, bars);
-        }, Qt::QueuedConnection);
-    });
-    return {};
-}
 }
 
 namespace {
@@ -614,6 +546,10 @@ SoundPadWidget::SoundPadWidget(AppConfig* config, int sceneId, int padId, QWidge
 
     m_playhead = new PadPlayhead(m_card);
     m_playhead->setVisible(false);
+    // After the waveform cache is cleared, fetch the strip again on the next tick.
+    connect(&PeakStore::instance(), &PeakStore::cacheCleared, this, [this]() {
+        m_peakPath.clear();
+    });
     m_playhead->m_onScrub = [this](float pct) {
         if (m_player.isLoaded()) {
             // seekTo, not setPosition: setPosition only moves the decoder, so streamed
@@ -803,7 +739,7 @@ void SoundPadWidget::refreshPeaks()
     if (path == m_peakPath && m_playhead->hasPeaks()) {
         return;
     }
-    const QVector<float> peaks = padPeaks(path);
+    const QVector<float> peaks = PeakStore::instance().bars(path, PadPlayhead::kBars);
     if (path != m_peakPath || !peaks.isEmpty()) {
         m_peakPath = path;
         m_playhead->setPeaks(peaks);
