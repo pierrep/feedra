@@ -61,6 +61,9 @@ private:
     SoundPadWidget* findPad(int sceneId, int padId) const;
     void createDefaultScenes();
     void addNewScene();
+    int nextSceneId() const;
+    void importScenes();
+    void importScenesFrom(const QString& path);
     void deleteScene(int sceneId);
     void enableScene(int idx);
     void moveScene(int fromIndex, int insertIndex);

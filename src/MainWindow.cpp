@@ -22,6 +22,8 @@
 #include <QFileDialog>
 #include <QFileInfo>
 #include <QGridLayout>
+#include <QHash>
+#include <QRegularExpression>
 #include <QAbstractButton>
 #include <QPolygonF>
 #include <QPainter>
@@ -142,6 +144,11 @@ void MainWindow::buildMenus()
     auto* openAct = fileMenu->addAction(tr("&Open..."));
     openAct->setShortcut(QKeySequence::Open);
     connect(openAct, &QAction::triggered, this, [this]() { loadConfig(); });
+
+    auto* importAct = fileMenu->addAction(tr("&Import Scenes..."));
+    importAct->setShortcut(QKeySequence(QStringLiteral("Ctrl+I")));
+    importAct->setToolTip(tr("Add the scenes from another Feedra file after the current ones"));
+    connect(importAct, &QAction::triggered, this, [this]() { importScenes(); });
 
     m_saveAction = fileMenu->addAction(tr("&Save"));
     m_saveAction->setShortcut(QKeySequence::Save);
@@ -738,11 +745,9 @@ void MainWindow::createDefaultScenes()
     m_config.activeSceneId = 0;
 }
 
-void MainWindow::addNewScene()
+// The lowest scene id not in use, filling gaps left by deleted scenes.
+int MainWindow::nextSceneId() const
 {
-    if (static_cast<unsigned int>(m_scenes.size()) >= m_config.maxScenes) {
-        return;
-    }
     QVector<int> ids;
     for (Scene* s : m_scenes) {
         ids.push_back(s->id);
@@ -758,8 +763,15 @@ void MainWindow::addNewScene()
             }
         }
     }
+    return newId;
+}
 
-    auto* scene = new Scene(&m_config, newId, QString(), m_padStack, m_sceneListHost, this);
+void MainWindow::addNewScene()
+{
+    if (static_cast<unsigned int>(m_scenes.size()) >= m_config.maxScenes) {
+        return;
+    }
+    auto* scene = new Scene(&m_config, nextSceneId(), QString(), m_padStack, m_sceneListHost, this);
     m_scenes.push_back(scene);
     m_padStack->addWidget(scene->grid());
     m_sceneListLayout->insertWidget(m_sceneListLayout->count() - 1, scene->row());
@@ -1994,6 +2006,135 @@ bool MainWindow::saveConfigTo(const QString& path, bool copyFiles)
         return false;
     }
     return true;
+}
+
+void MainWindow::importScenes()
+{
+    const QString path = QFileDialog::getOpenFileName(this, tr("Import scenes"),
+        m_config.defaultSettingsPath(), tr("JSON (*.json)"));
+    if (!path.isEmpty()) {
+        importScenesFrom(path);
+    }
+}
+
+// Appends every scene in another settings file after the current ones. The file's global
+// options (volume, theme, window, reverb, grid size...) are ignored. Pads keep their row and
+// column; if the file's grid is larger than this one, its extra rows and columns are dropped.
+void MainWindow::importScenesFrom(const QString& path)
+{
+    QFile file(path);
+    if (!file.open(QIODevice::ReadOnly)) {
+        QMessageBox::warning(this, tr("Import scenes"), tr("Could not open %1.").arg(QDir::toNativeSeparators(path)));
+        return;
+    }
+    QJsonParseError error;
+    const QJsonDocument doc = QJsonDocument::fromJson(file.readAll(), &error);
+    if (doc.isNull() || !doc.isObject()) {
+        QMessageBox::warning(this, tr("Import scenes"),
+            tr("%1 is not a Feedra settings file:\n%2").arg(QFileInfo(path).fileName(), error.errorString()));
+        return;
+    }
+    const QJsonObject root = doc.object();
+    const QJsonObject global = root.value(QStringLiteral("global")).toObject();
+    // Only the grid shape is read from the file's global options, to place its pads.
+    const int fromCols = std::max(1, global.value(QStringLiteral("gridwidth")).toInt(m_config.gridWidth));
+    const int toCols = std::max(1, m_config.gridWidth);
+    const int toRows = std::max(1, m_config.gridHeight);
+
+    // Gather scenes ("scene<N>", in N order) and every pad object ("<sceneId>-<padId>").
+    // Older files keep a scene's pads under a different "scene<N>" entry, so pads are looked
+    // up across the whole file rather than inside each scene's own object.
+    QVector<QPair<int, QJsonObject>> incoming;
+    QHash<QString, QJsonObject> pads;
+    static const QRegularExpression sceneKey(QStringLiteral("^scene(\\d+)$"));
+    static const QRegularExpression padKey(QStringLiteral("^(\\d+)-(\\d+)$"));
+    for (auto it = root.begin(); it != root.end(); ++it) {
+        const QRegularExpressionMatch match = sceneKey.match(it.key());
+        if (!match.hasMatch() || !it.value().isObject()) {
+            continue;
+        }
+        const QJsonObject sceneObj = it.value().toObject();
+        for (auto p = sceneObj.begin(); p != sceneObj.end(); ++p) {
+            if (p.value().isObject() && padKey.match(p.key()).hasMatch()) {
+                pads.insert(p.key(), p.value().toObject());
+            }
+        }
+        if (sceneObj.contains(QStringLiteral("id"))) {
+            incoming.append({match.captured(1).toInt(), sceneObj});
+        }
+    }
+    std::sort(incoming.begin(), incoming.end(), [](const auto& a, const auto& b) { return a.first < b.first; });
+    if (incoming.isEmpty()) {
+        QMessageBox::information(this, tr("Import scenes"), tr("%1 has no scenes to import.").arg(QFileInfo(path).fileName()));
+        return;
+    }
+
+    // Maps a pad index in the file's grid to this grid, or -1 when it falls outside.
+    auto mapPad = [&](int index) {
+        const int row = index / fromCols;
+        const int col = index % fromCols;
+        return (col < toCols && row < toRows) ? row * toCols + col : -1;
+    };
+
+    int imported = 0;
+    int skippedScenes = 0;
+    int droppedPads = 0;
+    for (const auto& entry : incoming) {
+        const QJsonObject& sceneObj = entry.second;
+        if (static_cast<unsigned int>(m_scenes.size()) >= m_config.maxScenes) {
+            ++skippedScenes;
+            continue;
+        }
+        const int oldId = sceneObj.value(QStringLiteral("id")).toInt();
+        const int newId = nextSceneId();
+        const QString prefix = QStringLiteral("%1-").arg(oldId);
+
+        QJsonObject remapped;
+        for (auto p = pads.cbegin(); p != pads.cend(); ++p) {
+            if (!p.key().startsWith(prefix)) {
+                continue;
+            }
+            const int to = mapPad(p.key().mid(prefix.size()).toInt());
+            if (to < 0) {
+                ++droppedPads;
+                continue;
+            }
+            remapped.insert(QStringLiteral("%1-%2").arg(newId).arg(to), p.value());
+        }
+        QJsonObject padRoot;
+        padRoot.insert(QStringLiteral("scene"), remapped);
+
+        auto* scene = new Scene(&m_config, newId, sceneObj.value(QStringLiteral("name")).toString(),
+            m_padStack, m_sceneListHost, this);
+        scene->activeSoundIdx = std::max(0, mapPad(sceneObj.value(QStringLiteral("activesound")).toInt(0)));
+        connectScene(scene);
+        for (SoundPadWidget* pad : scene->pads) {
+            pad->loadFromJson(padRoot);
+        }
+        m_scenes.push_back(scene);
+        m_padStack->addWidget(scene->grid());
+        m_sceneListLayout->insertWidget(m_sceneListLayout->count() - 1, scene->row());
+        ++imported;
+    }
+    m_addScene->setEnabled(static_cast<unsigned int>(m_scenes.size()) < m_config.maxScenes);
+    refreshLoadUi();
+
+    if (skippedScenes > 0 || droppedPads > 0) {
+        QStringList notes;
+        const QString file = QFileInfo(path).fileName();
+        notes << (imported == 1 ? tr("Imported 1 scene from %1.").arg(file)
+                                : tr("Imported %1 scenes from %2.").arg(imported).arg(file));
+        if (skippedScenes > 0) {
+            notes << (skippedScenes == 1 ? tr("1 scene was left out") : tr("%1 scenes were left out").arg(skippedScenes))
+                     + tr(" because the scene limit (%1) was reached. You can raise it in Settings.").arg(m_config.maxScenes);
+        }
+        if (droppedPads > 0) {
+            notes << (droppedPads == 1 ? tr("1 pad was dropped") : tr("%1 pads were dropped").arg(droppedPads))
+                     + (droppedPads == 1 ? tr(" because it falls outside this %1-column, %2-row pad grid.")
+                                       : tr(" because they fall outside this %1-column, %2-row pad grid.")).arg(toCols).arg(toRows);
+        }
+        QMessageBox::information(this, tr("Import scenes"), notes.join(QStringLiteral("\n\n")));
+    }
 }
 
 void MainWindow::loadConfig()
