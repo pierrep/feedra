@@ -1584,7 +1584,7 @@ void SoundPadWidget::mouseDoubleClickEvent(QMouseEvent* event)
 }
 
 namespace {
-bool volumePressOnHandle(const QSlider* slider, const QPoint& pos)
+QStyleOptionSlider padVolumeOption(const QSlider* slider)
 {
     QStyleOptionSlider opt;
     opt.initFrom(slider);
@@ -1600,8 +1600,27 @@ bool volumePressOnHandle(const QSlider* slider, const QPoint& pos)
     if (slider->orientation() == Qt::Horizontal) {
         opt.state |= QStyle::State_Horizontal;
     }
+    return opt;
+}
+
+bool volumePressOnHandle(const QSlider* slider, const QPoint& pos)
+{
+    const QStyleOptionSlider opt = padVolumeOption(slider);
     return slider->style()->hitTestComplexControl(QStyle::CC_Slider, &opt, pos, slider)
         == QStyle::SC_SliderHandle;
+}
+
+// Level whose handle centre sits under this point on the groove.
+int volumeFromBarPos(const QSlider* slider, const QPoint& pos)
+{
+    const QStyleOptionSlider opt = padVolumeOption(slider);
+    const QRect groove = slider->style()->subControlRect(QStyle::CC_Slider, &opt, QStyle::SC_SliderGroove, slider);
+    const QRect handle = slider->style()->subControlRect(QStyle::CC_Slider, &opt, QStyle::SC_SliderHandle, slider);
+    const int travelMin = groove.x();
+    const int travelMax = groove.right() - handle.width() + 1;
+    const int handleCentre = handle.center().x() - handle.x();
+    return QStyle::sliderValueFromPosition(slider->minimum(), slider->maximum(),
+        pos.x() - handleCentre - travelMin, travelMax - travelMin, opt.upsideDown);
 }
 }
 
@@ -1618,7 +1637,14 @@ bool SoundPadWidget::eventFilter(QObject* watched, QEvent* event)
         if (mouse->button() == Qt::LeftButton) {
             // Groove drags are ignored by the slider and then land here as a pad move.
             // Remember them so mouseMoveEvent can drop those, and only those.
-            m_volumeDragIgnored = !volumePressOnHandle(m_volume, mouse->position().toPoint());
+            const QPoint pos = mouse->position().toPoint();
+            m_volumeDragIgnored = !volumePressOnHandle(m_volume, pos);
+            if (m_volumeDragIgnored) {
+                emit padClicked(m_padId);
+                // Jump to the clicked level. Eating the press stops Qt from page-stepping as well.
+                m_volume->setValue(volumeFromBarPos(m_volume, pos));
+                return true;
+            }
         }
     } else if (watched == m_volume && event->type() == QEvent::MouseButtonRelease
                && static_cast<QMouseEvent*>(event)->button() == Qt::LeftButton) {
@@ -1637,6 +1663,14 @@ void SoundPadWidget::mousePressEvent(QMouseEvent* event)
         emit padClicked(m_padId);
     }
     QWidget::mousePressEvent(event);
+}
+
+void SoundPadWidget::mouseReleaseEvent(QMouseEvent* event)
+{
+    if (event->button() == Qt::LeftButton) {
+        m_volumeDragIgnored = false;
+    }
+    QWidget::mouseReleaseEvent(event);
 }
 
 namespace {
