@@ -35,6 +35,8 @@
 #include <QSet>
 #include <QSizePolicy>
 #include <QSlider>
+#include <QStyle>
+#include <QStyleOption>
 #include <QThread>
 #include <QThreadPool>
 #include <QUrl>
@@ -1581,6 +1583,28 @@ void SoundPadWidget::mouseDoubleClickEvent(QMouseEvent* event)
     QWidget::mouseDoubleClickEvent(event);
 }
 
+namespace {
+bool volumePressOnHandle(const QSlider* slider, const QPoint& pos)
+{
+    QStyleOptionSlider opt;
+    opt.initFrom(slider);
+    opt.orientation = slider->orientation();
+    opt.minimum = slider->minimum();
+    opt.maximum = slider->maximum();
+    opt.sliderPosition = slider->sliderPosition();
+    opt.sliderValue = slider->value();
+    opt.upsideDown = slider->orientation() == Qt::Horizontal
+        ? slider->invertedAppearance() != (opt.direction == Qt::RightToLeft)
+        : !slider->invertedAppearance();
+    opt.direction = Qt::LeftToRight;
+    if (slider->orientation() == Qt::Horizontal) {
+        opt.state |= QStyle::State_Horizontal;
+    }
+    return slider->style()->hitTestComplexControl(QStyle::CC_Slider, &opt, pos, slider)
+        == QStyle::SC_SliderHandle;
+}
+}
+
 bool SoundPadWidget::eventFilter(QObject* watched, QEvent* event)
 {
     if (watched == m_name && event->type() == QEvent::KeyPress && !m_name->isReadOnly()
@@ -1588,6 +1612,17 @@ bool SoundPadWidget::eventFilter(QObject* watched, QEvent* event)
         m_name->setText(m_nameBeforeEdit);
         m_name->clearFocus(); // finishes editing through editingFinished
         return true;
+    }
+    if (watched == m_volume && event->type() == QEvent::MouseButtonPress) {
+        auto* mouse = static_cast<QMouseEvent*>(event);
+        if (mouse->button() == Qt::LeftButton) {
+            // Groove drags are ignored by the slider and then land here as a pad move.
+            // Remember them so mouseMoveEvent can drop those, and only those.
+            m_volumeDragIgnored = !volumePressOnHandle(m_volume, mouse->position().toPoint());
+        }
+    } else if (watched == m_volume && event->type() == QEvent::MouseButtonRelease
+               && static_cast<QMouseEvent*>(event)->button() == Qt::LeftButton) {
+        m_volumeDragIgnored = false;
     }
     if (event->type() == QEvent::MouseButtonPress && static_cast<QMouseEvent*>(event)->button() == Qt::LeftButton) {
         emit padClicked(m_padId);
@@ -1675,6 +1710,9 @@ QPixmap padDragCursor(bool copy, qreal dpr)
 
 void SoundPadWidget::mouseMoveEvent(QMouseEvent* event)
 {
+    if (m_volumeDragIgnored) {
+        return;
+    }
     if (!(event->buttons() & Qt::LeftButton)) {
         return;
     }

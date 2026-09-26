@@ -79,6 +79,7 @@ private:
     void moveEditorSample(int fromIndex, int insertIndex);
     void setPage(Page page);
     void setSidebarView(SidebarView view);
+    void refreshSettingsPathLabel();
     void saveConfig();
     void saveConfigAs();
     bool saveConfigTo(const QString& path, bool copyFiles);
@@ -187,6 +188,7 @@ private:
     SampleLoadQueue* m_loads = nullptr;
     QProgressBar* m_loadBar = nullptr;
     QLabel* m_loadLabel = nullptr;
+    QLabel* m_settingsPathLabel = nullptr;
     QAction* m_saveAction = nullptr;
     QAction* m_saveAsAction = nullptr;
 };

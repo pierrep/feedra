@@ -80,6 +80,54 @@ QString fromImpulsePath(const std::filesystem::path& path)
     return QString::fromStdWString(path.wstring());
 }
 
+// Shows a file path in whatever width the header has left, keeping the file name visible.
+class SettingsPathLabel : public QLabel
+{
+public:
+    explicit SettingsPathLabel(QWidget* parent = nullptr)
+        : QLabel(parent)
+    {
+        setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
+        setAlignment(Qt::AlignLeft | Qt::AlignVCenter);
+    }
+
+    void setFullText(const QString& text)
+    {
+        m_full = text;
+        setToolTip(text);
+        applyElision();
+    }
+
+    QSize sizeHint() const override
+    {
+        return QSize(160, QLabel::sizeHint().height());
+    }
+
+    QSize minimumSizeHint() const override
+    {
+        return QSize(0, QLabel::minimumSizeHint().height());
+    }
+
+protected:
+    void resizeEvent(QResizeEvent* event) override
+    {
+        QLabel::resizeEvent(event);
+        applyElision();
+    }
+
+private:
+    void applyElision()
+    {
+        const int width = contentsRect().width();
+        const QString shown = width > 0 ? fontMetrics().elidedText(m_full, Qt::ElideMiddle, width) : m_full;
+        if (text() != shown) {
+            QLabel::setText(shown);
+        }
+    }
+
+    QString m_full;
+};
+
 }
 
 MainWindow::MainWindow(QWidget* parent)
@@ -114,6 +162,8 @@ MainWindow::MainWindow(QWidget* parent)
     }
     enableScene(std::clamp(m_config.activeSceneIdx, 0, std::max(0, static_cast<int>(m_scenes.size()) - 1)));
     updateMainControls();
+    refreshSettingsPathLabel();
+    refreshLoadUi();
 
     auto* tickTimer = new QTimer(this);
     connect(tickTimer, &QTimer::timeout, this, &MainWindow::tick);
@@ -233,7 +283,10 @@ void MainWindow::buildUi()
     volumeRow->addSpacing(16);
     volumeRow->addWidget(m_loadBar);
     volumeRow->addWidget(m_loadLabel);
-    volumeRow->addStretch();
+    m_settingsPathLabel = new SettingsPathLabel(header);
+    m_settingsPathLabel->setObjectName(QStringLiteral("SettingsPath"));
+    m_settingsPathLabel->hide();
+    volumeRow->addWidget(m_settingsPathLabel, 1);
     mainLayout->addWidget(header);
 
     auto* body = new QHBoxLayout();
@@ -507,7 +560,7 @@ void MainWindow::buildUi()
     padGrid->addWidget(m_minDelay, 0, 1);
     padGrid->addWidget(new QLabel(tr("Max delay"), padPage), 0, 2);
     padGrid->addWidget(m_maxDelay, 0, 3);
-    padGrid->addWidget(new QLabel(tr("Reverb send"), padPage), 1, 0);
+    padGrid->addWidget(new QLabel(tr("EAX Reverb send"), padPage), 1, 0);
     padGrid->addWidget(m_reverbSend, 1, 1, 1, 3);
     padGrid->addWidget(new QLabel(tr("Convolution send"), padPage), 2, 0);
     padGrid->addWidget(m_reverbSend2, 2, 1, 1, 3);
@@ -1477,7 +1530,7 @@ void MainWindow::buildSettingsPage()
             QString::fromStdString(OpenALSoundPlayer::reverbPresetLabel(i)),
             QString::fromStdString(OpenALSoundPlayer::reverbPresetId(i)));
     }
-    reverb.addRow(tr("Reverb preset"), m_reverbPreset, tr("Used by each pad's Reverb send."));
+    reverb.addRow(tr("EAX Reverb preset"), m_reverbPreset, tr("Used by each pad's EAX Reverb send."));
 
     m_convolutionGain = new QSlider(Qt::Horizontal, reverb.frame);
     m_convolutionGain->setRange(0, VolumeDb::sliderSpan(VolumeDb::kFloorDb, VolumeDb::kUnityDb));
@@ -1890,6 +1943,13 @@ void MainWindow::refreshEditorPage()
     rebuildEditSamples();
 }
 
+void MainWindow::refreshSettingsPathLabel()
+{
+    const QString path = m_config.settingsPath.isEmpty() ? m_config.defaultSettingsPath() : m_config.settingsPath;
+    const QString shown = QDir::toNativeSeparators(QFileInfo(path).absoluteFilePath());
+    static_cast<SettingsPathLabel*>(m_settingsPathLabel)->setFullText(shown);
+}
+
 void MainWindow::saveConfig()
 {
     if (!saveConfigTo(m_config.defaultSettingsPath(), false)) {
@@ -1910,6 +1970,7 @@ void MainWindow::saveConfigAs()
     } else {
         // Save As copies the samples into a "files" folder beside the new file.
         m_config.settingsPath = QFileInfo(path).absoluteFilePath();
+        refreshSettingsPathLabel();
     }
 }
 
@@ -2150,6 +2211,7 @@ void MainWindow::loadConfigFrom(const QString& path)
         return;
     }
     m_config.settingsPath = QFileInfo(path).absoluteFilePath();
+    refreshSettingsPathLabel();
     const QJsonObject root = m_config.json();
     const QJsonObject global = root.value(QStringLiteral("global")).toObject();
     applyAppSettings(global);
@@ -2330,10 +2392,16 @@ void MainWindow::refreshLoadUi()
     if (!busy) {
         m_loadBar->hide();
         m_loadLabel->hide();
+        if (m_settingsPathLabel) {
+            m_settingsPathLabel->show();
+        }
         if (windowTitle() != QStringLiteral("Feedra")) {
             setWindowTitle(QStringLiteral("Feedra"));
         }
         return;
+    }
+    if (m_settingsPathLabel) {
+        m_settingsPathLabel->hide();
     }
     const int total = std::max(1, m_loads->total());
     m_loadBar->setRange(0, total);
@@ -2524,9 +2592,9 @@ bool MainWindow::handleReorderKey(QKeyEvent* event)
     if (m_sidebar == SidebarView::Scenes) {
         const int idx = m_config.activeSceneIdx;
         if (up && idx > 0) {
-            moveScene(idx, idx - 1);
+            enableScene(idx - 1);
         } else if (!up && idx < m_scenes.size() - 1) {
-            moveScene(idx, idx + 2);
+            enableScene(idx + 1);
         }
         return true;
     }

@@ -235,4 +235,7 @@ private:
     QLabel* m_volumeValue = nullptr;
     QLineEdit* m_name = nullptr;
     QPoint m_dragStart;
+    // True while a press is held on the volume bar outside the handle. That drag is
+    // not a pad move; dragging the handle still changes the level.
+    bool m_volumeDragIgnored = false;
 };

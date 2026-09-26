@@ -451,7 +451,8 @@ static int LoadEffect(ALuint effect, const EFXEAXREVERBPROPERTIES *reverb)
     /* Load the reverb properties. */
     alEffectf(effect, AL_EAXREVERB_DENSITY, reverb->flDensity);
     alEffectf(effect, AL_EAXREVERB_DIFFUSION, reverb->flDiffusion);
-    alEffectf(effect, AL_EAXREVERB_GAIN, reverb->flGain);
+    /* Presets bake in about −10 dB of room gain. Load them at unity so the send is the level control. */
+    alEffectf(effect, AL_EAXREVERB_GAIN, 1.0f);
     alEffectf(effect, AL_EAXREVERB_GAINHF, reverb->flGainHF);
     alEffectf(effect, AL_EAXREVERB_GAINLF, reverb->flGainLF);
     alEffectf(effect, AL_EAXREVERB_DECAY_TIME, reverb->flDecayTime);
