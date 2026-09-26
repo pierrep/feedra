@@ -59,8 +59,8 @@
 
 namespace {
 
-constexpr float kSampleGainMinDb = -6.0f;
-constexpr float kSampleGainMaxDb = 16.0f;
+constexpr float kSampleGainMinDb = -12.0f;
+constexpr float kSampleGainMaxDb = 24.0f;
 
 QString defaultImpulsePath(const AppConfig& config)
 {
