@@ -13,6 +13,7 @@ class Scene;
 class SampleRowWidget;
 class SampleLoadQueue;
 class WaveformWidget;
+class FileBrowserWidget;
 class QAbstractButton;
 class QAction;
 class QFrame;
@@ -46,7 +47,7 @@ protected:
 
 private:
     enum class Page { Main, Settings, Theme };
-    enum class SidebarView { Scenes, Editor };
+    enum class SidebarView { Scenes, Editor, Files };
 
     void buildUi();
     void buildMenus();
@@ -146,6 +147,8 @@ private:
     QWidget* m_themePage = nullptr;
     QPushButton* m_scenesTab = nullptr;
     QPushButton* m_editorTab = nullptr;
+    QPushButton* m_filesTab = nullptr;
+    FileBrowserWidget* m_fileBrowser = nullptr;
     QVBoxLayout* m_sampleListLayout = nullptr;
     QVector<SampleRowWidget*> m_sampleRows;
     SoundPadWidget* m_followedPad = nullptr;

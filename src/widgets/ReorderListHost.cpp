@@ -1,5 +1,7 @@
 #include "ReorderListHost.h"
 
+#include "AudioFormats.h"
+
 #include <QDragEnterEvent>
 #include <QDragLeaveEvent>
 #include <QDragMoveEvent>
@@ -78,8 +80,36 @@ void ReorderListHost::hideIndicator()
     m_indicator->hide();
 }
 
+int ReorderListHost::rowCount() const
+{
+    const auto* box = qobject_cast<QVBoxLayout*>(layout());
+    int rows = 0;
+    for (int i = 0; box && i < box->count(); ++i) {
+        if (box->itemAt(i)->widget()) {
+            ++rows;
+        }
+    }
+    return rows;
+}
+
+bool ReorderListHost::isFileDrag(const QMimeData* mime) const
+{
+    return m_acceptsFiles && !mime->hasFormat(m_mimeType) && mime->hasUrls();
+}
+
 void ReorderListHost::dragEnterEvent(QDragEnterEvent* event)
 {
+    if (isFileDrag(event->mimeData())) {
+        m_fileDragOk = AudioFormats::hasPlayableFiles(event->mimeData());
+        if (!m_fileDragOk) {
+            event->ignore();
+            return;
+        }
+        event->setDropAction((event->possibleActions() & Qt::CopyAction) ? Qt::CopyAction : event->proposedAction());
+        event->accept();
+        placeIndicator(rowCount());
+        return;
+    }
     if (!event->mimeData()->hasFormat(m_mimeType)) {
         event->ignore();
         return;
@@ -91,6 +121,16 @@ void ReorderListHost::dragEnterEvent(QDragEnterEvent* event)
 
 void ReorderListHost::dragMoveEvent(QDragMoveEvent* event)
 {
+    if (isFileDrag(event->mimeData())) {
+        if (!m_fileDragOk) {
+            event->ignore();
+            return;
+        }
+        event->setDropAction((event->possibleActions() & Qt::CopyAction) ? Qt::CopyAction : event->proposedAction());
+        event->accept();
+        placeIndicator(rowCount());
+        return;
+    }
     if (!event->mimeData()->hasFormat(m_mimeType)) {
         event->ignore();
         return;
@@ -124,6 +164,18 @@ void ReorderListHost::dragLeaveEvent(QDragLeaveEvent* event)
 void ReorderListHost::dropEvent(QDropEvent* event)
 {
     hideIndicator();
+    if (isFileDrag(event->mimeData())) {
+        m_fileDragOk = false;
+        const QStringList paths = AudioFormats::playableFiles(event->mimeData()->urls());
+        if (paths.isEmpty()) {
+            event->ignore();
+            return;
+        }
+        event->setDropAction((event->possibleActions() & Qt::CopyAction) ? Qt::CopyAction : event->proposedAction());
+        event->accept();
+        emit filesDropped(paths);
+        return;
+    }
     if (!event->mimeData()->hasFormat(m_mimeType)) {
         event->ignore();
         return;

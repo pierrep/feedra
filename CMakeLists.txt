@@ -31,6 +31,7 @@ set(FEEDRA_SOURCES
     src/main.cpp
     src/AppConfig.cpp
     src/Theme.cpp
+    src/AudioFormats.cpp
     src/AudioSample.cpp
     src/OpenALSoundPlayer.cpp
     src/SoundPlayer.cpp
@@ -43,6 +44,7 @@ set(FEEDRA_SOURCES
     src/widgets/SampleRowWidget.cpp
     src/widgets/ReorderListHost.cpp
     src/widgets/WaveformWidget.cpp
+    src/widgets/FileBrowserWidget.cpp
     resources/resources.qrc
 )
 

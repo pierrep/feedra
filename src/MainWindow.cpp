@@ -1,4 +1,5 @@
 #include "MainWindow.h"
+#include "AudioFormats.h"
 #include "OpenALSoundPlayer.h"
 #include "PeakStore.h"
 #include "SampleLoadQueue.h"
@@ -8,6 +9,7 @@
 #include "widgets/SampleRowWidget.h"
 #include "widgets/SoundPadWidget.h"
 #include "widgets/WaveformWidget.h"
+#include "widgets/FileBrowserWidget.h"
 #include "VolumeDb.h"
 
 #include <QAction>
@@ -283,6 +285,9 @@ MainWindow::~MainWindow()
 {
     waitForLoads();
     saveOnExit();
+    if (m_fileBrowser) {
+        m_fileBrowser->stopPreview();
+    }
     if (m_loads) {
         m_loads->shutdown();
     }
@@ -328,11 +333,17 @@ void MainWindow::buildMenus()
         setPage(Page::Main);
         setSidebarView(SidebarView::Editor);
     });
+    auto* filesAct = viewMenu->addAction(tr("Files"));
+    filesAct->setShortcut(QKeySequence(QStringLiteral("Ctrl+3")));
+    connect(filesAct, &QAction::triggered, this, [this]() {
+        setPage(Page::Main);
+        setSidebarView(SidebarView::Files);
+    });
     auto* settingsAct = viewMenu->addAction(tr("Settings"));
-    settingsAct->setShortcut(QKeySequence(QStringLiteral("Ctrl+3")));
+    settingsAct->setShortcut(QKeySequence(QStringLiteral("Ctrl+4")));
     connect(settingsAct, &QAction::triggered, this, [this]() { setPage(Page::Settings); });
     auto* themeAct = viewMenu->addAction(tr("Theme"));
-    themeAct->setShortcut(QKeySequence(QStringLiteral("Ctrl+4")));
+    themeAct->setShortcut(QKeySequence(QStringLiteral("Ctrl+5")));
     connect(themeAct, &QAction::triggered, this, [this]() { setPage(Page::Theme); });
 }
 
@@ -438,8 +449,13 @@ void MainWindow::buildUi()
     m_editorTab = new QPushButton(tr("Editor"), sideTabBar);
     m_editorTab->setObjectName(QStringLiteral("BottomTab"));
     m_editorTab->setFocusPolicy(Qt::NoFocus);
+    m_filesTab = new QPushButton(tr("Files"), sideTabBar);
+    m_filesTab->setObjectName(QStringLiteral("BottomTab"));
+    m_filesTab->setFocusPolicy(Qt::NoFocus);
+    m_filesTab->setToolTip(tr("Browse and preview audio files, and drag them onto pads (Ctrl+3)"));
     sideTabRow->addWidget(m_scenesTab, 0, Qt::AlignBottom);
     sideTabRow->addWidget(m_editorTab, 0, Qt::AlignBottom);
+    sideTabRow->addWidget(m_filesTab, 0, Qt::AlignBottom);
     sideTabRow->addStretch();
 
     m_sidebarStack = new QStackedWidget(side);
@@ -515,6 +531,15 @@ void MainWindow::buildUi()
     m_sampleListLayout->addStretch();
     sampleScroll->setWidget(sampleHost);
     editLayout->addWidget(sampleScroll, 1);
+    sampleHost->setAcceptsFiles(true);
+    connect(sampleHost, &ReorderListHost::filesDropped, this, [this](const QStringList& paths) {
+        auto* pad = activePad();
+        if (!pad || !SoundPadWidget::confirmFileCount(this, paths.size())) {
+            return;
+        }
+        pad->loadFiles(paths, false);
+        rebuildEditSamples();
+    }, Qt::QueuedConnection); // after the drag finishes, so a question box can open
     connect(sampleHost, &ReorderListHost::itemReordered, this, [this](int sampleId, int insertIndex) {
         auto* pad = activePad();
         if (!pad) {
@@ -591,8 +616,27 @@ void MainWindow::buildUi()
     controlsLayout->addLayout(checkLayout);
     editLayout->addWidget(m_sampleControls);
 
+    m_fileBrowser = new FileBrowserWidget(&m_config, m_sidebarStack);
+    m_fileBrowser->setProjectFoldersProvider([this]() {
+        QStringList folders;
+        for (Scene* scene : m_scenes) {
+            for (SoundPadWidget* pad : scene->pads) {
+                for (const QString& path : pad->samplePaths()) {
+                    folders << QFileInfo(path).absolutePath();
+                }
+            }
+        }
+        return folders;
+    });
+    connect(m_fileBrowser, &FileBrowserWidget::libraryFolderChosen, this, [this](const QString& dir) {
+        m_updatingControls = true;
+        m_libraryPath->setText(dir);
+        m_updatingControls = false;
+    });
+
     m_sidebarStack->addWidget(m_scenesPage);
     m_sidebarStack->addWidget(m_editorPage);
+    m_sidebarStack->addWidget(m_fileBrowser);
     sideLayout->addWidget(sideTabBar);
     sideLayout->addWidget(m_sidebarStack, 1);
     body->addWidget(side);
@@ -753,6 +797,9 @@ void MainWindow::buildUi()
     connect(m_editorTab, &QPushButton::clicked, this, [this]() {
         setSidebarView(SidebarView::Editor);
     });
+    connect(m_filesTab, &QPushButton::clicked, this, [this]() {
+        setSidebarView(SidebarView::Files);
+    });
     connect(m_mainVolume, &QSlider::valueChanged, this, [this](int v) {
         const float db = VolumeDb::fromSlider(v, VolumeDb::kFloorDb);
         m_config.setMasterVolume(VolumeDb::toLinearMuted(db));
@@ -842,7 +889,7 @@ void MainWindow::buildUi()
         if (auto* pad = activePad()) {
             const QString start = m_config.loadDialogDir(pad->currentSamplePath());
             const QStringList paths = QFileDialog::getOpenFileNames(this, tr("Load files"), start,
-                tr("Audio files (*.wav *.flac *.ogg *.mp3 *.aiff *.aif);;All files (*.*)"));
+                AudioFormats::dialogFilters().join(QStringLiteral(";;")));
             if (!paths.isEmpty()) {
                 pad->loadFiles(paths, false);
                 rebuildEditSamples();
@@ -858,7 +905,7 @@ void MainWindow::buildUi()
         }
         if (m_sidebar == SidebarView::Scenes) {
             clearActivePad();
-        } else {
+        } else if (m_sidebar == SidebarView::Editor) {
             clearActiveSample();
         }
     });
@@ -2053,6 +2100,9 @@ void MainWindow::applyAppSettings(const QJsonObject& global)
         Theme::instance().load(global.value(QStringLiteral("theme")).toString(),
             global.value(QStringLiteral("themecolors")).toObject());
     }
+    if (m_fileBrowser) {
+        m_fileBrowser->applySettings(global);
+    }
     syncSettingsPage();
 }
 
@@ -2095,6 +2145,7 @@ void MainWindow::setScenesFocus(bool on)
 
     m_padStack->setVisible(!on);
     m_editorTab->setVisible(!on);
+    m_filesTab->setVisible(!on); // files are dragged onto pads, which this mode hides
     if (m_bottomPanel) {
         m_bottomPanel->setVisible(!on && m_page == Page::Main);
     }
@@ -2161,24 +2212,33 @@ void MainWindow::setScenesFocus(bool on)
 
 void MainWindow::setSidebarView(SidebarView view)
 {
-    if (view == SidebarView::Editor && m_scenesFocus) {
-        setScenesFocus(false); // the Editor needs a pad, so bring the pads back (e.g. Ctrl+2)
+    if (view != SidebarView::Scenes && m_scenesFocus) {
+        // The Editor needs a pad and files are dragged onto pads, so bring the pads back
+        // (e.g. Ctrl+2 or Ctrl+3).
+        setScenesFocus(false);
     }
     m_sidebar = view;
-    const bool showScenes = view == SidebarView::Scenes;
-    if (view == SidebarView::Editor) {
+    switch (view) {
+    case SidebarView::Editor:
         m_config.activeSampleIdx = 0;
         if (auto* pad = activePad(); pad && !pad->soundPlayer().player.empty()) {
             m_config.activeSampleId = pad->soundPlayer().player[0]->id;
         }
         refreshEditorPage();
-    } else {
+        break;
+    case SidebarView::Files:
+        m_sidebarStack->setCurrentWidget(m_fileBrowser);
+        m_fileBrowser->view()->setFocus();
+        break;
+    case SidebarView::Scenes:
         m_sidebarStack->setCurrentWidget(m_scenesPage);
         updateMainControls();
+        break;
     }
-    m_addScene->setVisible(showScenes);
-    refreshTabButton(m_scenesTab, showScenes);
-    refreshTabButton(m_editorTab, !showScenes);
+    m_addScene->setVisible(view == SidebarView::Scenes);
+    refreshTabButton(m_scenesTab, view == SidebarView::Scenes);
+    refreshTabButton(m_editorTab, view == SidebarView::Editor);
+    refreshTabButton(m_filesTab, view == SidebarView::Files);
 }
 
 void MainWindow::refreshEditorPage()
@@ -2331,6 +2391,7 @@ bool MainWindow::saveConfigTo(const QString& path, bool copyFiles)
     global.insert(QStringLiteral("theme"), Theme::instance().idName());
     global.insert(QStringLiteral("themecolors"), Theme::instance().colorsJson());
     saveWindowLayout(global);
+    m_fileBrowser->saveSettings(global);
     root.insert(QStringLiteral("global"), global);
 
     for (int i = 0; i < m_scenes.size(); ++i) {
@@ -2851,6 +2912,7 @@ void MainWindow::tick()
     drainLoads(8);
     refreshLoadUi();
     OpenALSoundPlayer::updateAll();
+    m_fileBrowser->tick();
     for (Scene* scene : m_scenes) {
         if (scene->selectRequested) {
             scene->selectRequested = false;
@@ -3001,6 +3063,9 @@ bool MainWindow::handleReorderKey(QKeyEvent* event)
         return false;
     }
 
+    if (m_sidebar == SidebarView::Files) {
+        return false; // the arrows move through the file list
+    }
     const bool up = event->key() == Qt::Key_Up;
     if (m_sidebar == SidebarView::Scenes) {
         const int idx = m_config.activeSceneIdx;

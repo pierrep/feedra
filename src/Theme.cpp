@@ -745,6 +745,19 @@ QLabel#EditTitle { color: {{text}}; font-weight: 600; }
 QLabel#SettingsTitle { font-size: 20px; font-weight: 600; }
 QLabel#ThemeSection { font-size: 12px; font-weight: 600; color: {{textMuted}}; margin-top: 14px; }
 
+/* Files tab */
+QLabel#FilePath { color: {{textMuted}}; font-size: 12px; background: transparent; }
+QLineEdit#FileSearch { font-size: 12px; padding: 3px 8px; }
+QTreeView#FileTree { background: transparent; border: none; outline: 0; show-decoration-selected: 0; selection-background-color: transparent; }
+QTreeView#FileTree::item, QTreeView#FileTree::item:selected, QTreeView#FileTree::item:hover { background: transparent; border: none; }
+QWidget#FilePreview { background: {{fieldBackground}}; border: 1px solid {{panelBorder}}; border-radius: 10px; }
+QWidget#FilePreview QLabel { background: transparent; }
+QLabel#PreviewName { color: {{text}}; font-size: 12px; font-weight: 500; }
+QLabel#PreviewName[idle="true"] { color: {{textMuted}}; font-weight: 400; }
+QLabel#PreviewTime { color: {{textMuted}}; font-family: "Geist Mono"; font-size: 11px; }
+QCheckBox#AutoPreview { font-size: 12px; spacing: 6px; }
+QCheckBox#AutoPreview::indicator { width: 14px; height: 14px; }
+
 /* Settings and Theme pages */
 QFrame#SettingsCard { background: {{fieldBackground}}; border: 1px solid {{panelBorder}}; border-radius: 12px; }
 QFrame#SettingsCard QLabel { background: transparent; }

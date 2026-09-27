@@ -4,6 +4,7 @@
 
 #include <QAbstractButton>
 #include <QJsonObject>
+#include <QPixmap>
 #include <QVector>
 #include <QPoint>
 #include <QWidget>
@@ -21,6 +22,12 @@ class QSlider;
 class QVariantAnimation;
 class SampleLoadQueue;
 struct SampleLoadJob;
+
+// Pointer with a round accent badge, shown while dragging onto pads: four arrows to move a
+// pad, a plus to copy a pad or add files to one, two opposing arrows to replace a pad's
+// sounds with dropped files.
+enum class DragBadge { Move, Plus, Replace };
+QPixmap feedraDragCursor(DragBadge badge, qreal dpr);
 
 class GlyphButton : public QAbstractButton
 {
@@ -165,6 +172,11 @@ public:
 
     // Path of the sample the pad would play next, or empty if it has none.
     QString currentSamplePath() const;
+    // Every sample path on the pad, in order.
+    QStringList samplePaths() const;
+
+    // Asks before a drop brings in a lot of files at once (e.g. a big folder). True to go on.
+    static bool confirmFileCount(QWidget* parent, int count);
 
 signals:
     void padClicked(int padId);
@@ -268,4 +280,5 @@ private:
     // True while a press is held on the volume bar outside the handle. That drag is
     // not a pad move; dragging the handle still changes the level.
     bool m_volumeDragIgnored = false;
+    bool m_fileDragOk = false; // the file drag over this pad carries something playable
 };

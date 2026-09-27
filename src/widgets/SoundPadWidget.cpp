@@ -1,5 +1,6 @@
 #include "SoundPadWidget.h"
 #include "AppConfig.h"
+#include "AudioFormats.h"
 #include "AudioSample.h"
 #include "OpenALSoundPlayer.h"
 #include "PeakStore.h"
@@ -25,6 +26,8 @@
 #include <QLinearGradient>
 #include <QLineEdit>
 #include <QMimeData>
+#include <QTimer>
+#include <QMessageBox>
 #include <QMouseEvent>
 #include <QAbstractButton>
 #include <QPainter>
@@ -51,13 +54,6 @@
 #include <utility>
 
 namespace {
-QStringList audioNameFilters()
-{
-    return {
-        QStringLiteral("Audio files (*.wav *.flac *.ogg *.mp3 *.aiff *.aif *.wma)"),
-        QStringLiteral("All files (*.*)")
-    };
-}
 
 QColor withAlpha(QColor color, qreal alpha)
 {
@@ -1647,8 +1643,9 @@ QPixmap padDragGhost(QWidget* pad, qreal scale)
     return ghost;
 }
 
-// Pointer with a round accent badge: four arrows for move, a plus for copy.
-QPixmap padDragCursor(bool copy, qreal dpr)
+}
+
+QPixmap feedraDragCursor(DragBadge badge, qreal dpr)
 {
     const Theme::Palette& theme = Theme::instance().palette();
     const int size = 40;
@@ -1675,9 +1672,21 @@ QPixmap padDragCursor(bool copy, qreal dpr)
     const QColor mark = Theme::contrastOn(theme.playLoaded);
     p.setPen(QPen(mark, 1.8, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
     p.setBrush(Qt::NoBrush);
-    if (copy) {
+    if (badge == DragBadge::Plus) {
         p.drawLine(QPointF(c.x() - 5, c.y()), QPointF(c.x() + 5, c.y()));
         p.drawLine(QPointF(c.x(), c.y() - 5), QPointF(c.x(), c.y() + 5));
+    } else if (badge == DragBadge::Replace) {
+        // Two opposing arrows: the pad's sounds are swapped for the dropped ones.
+        p.drawLine(QPointF(c.x() - 5, c.y() - 2.6), QPointF(c.x() + 4, c.y() - 2.6));
+        p.drawLine(QPointF(c.x() + 5, c.y() + 2.6), QPointF(c.x() - 4, c.y() + 2.6));
+        p.setPen(Qt::NoPen);
+        p.setBrush(mark);
+        QPolygonF right;
+        right << QPointF(c.x() + 6.5, c.y() - 2.6) << QPointF(c.x() + 3, c.y() - 5.4) << QPointF(c.x() + 3, c.y() + 0.2);
+        QPolygonF left;
+        left << QPointF(c.x() - 6.5, c.y() + 2.6) << QPointF(c.x() - 3, c.y() - 0.2) << QPointF(c.x() - 3, c.y() + 5.4);
+        p.drawPolygon(right);
+        p.drawPolygon(left);
     } else {
         // Cross with solid arrowheads on all four ends.
         const qreal a = 4.0;   // half-length of the cross bars
@@ -1696,7 +1705,6 @@ QPixmap padDragCursor(bool copy, qreal dpr)
         }
     }
     return pix;
-}
 }
 
 void SoundPadWidget::mouseMoveEvent(QMouseEvent* event)
@@ -1724,8 +1732,8 @@ void SoundPadWidget::mouseMoveEvent(QMouseEvent* event)
     const QPixmap ghost = padDragGhost(this, 0.6);
     drag->setPixmap(ghost);
     drag->setHotSpot(QPoint(qRound(event->position().x() * 0.6), qRound(event->position().y() * 0.6)));
-    drag->setDragCursor(padDragCursor(false, dpr), Qt::MoveAction);
-    drag->setDragCursor(padDragCursor(true, dpr), Qt::CopyAction);
+    drag->setDragCursor(feedraDragCursor(DragBadge::Move, dpr), Qt::MoveAction);
+    drag->setDragCursor(feedraDragCursor(DragBadge::Plus, dpr), Qt::CopyAction);
     // A plain drag moves the pad; holding Ctrl (or Alt, the macOS habit) copies it instead.
     drag->exec(Qt::MoveAction | Qt::CopyAction, Qt::MoveAction);
 }
@@ -1746,12 +1754,34 @@ void choosePadDropAction(QDropEvent* event)
 }
 }
 
+namespace {
+// Files dropped on a pad replace its sounds; with Shift held they're added to them. The
+// browser's drag offers Link for "add" so its cursor can show a plus; other apps' drags
+// usually don't, and then Copy stands for both and the drop reads Shift itself.
+void chooseFileDropAction(QDropEvent* event)
+{
+    const bool add = event->modifiers() & Qt::ShiftModifier;
+    if (add && (event->possibleActions() & Qt::LinkAction)) {
+        event->setDropAction(Qt::LinkAction);
+    } else if (event->possibleActions() & Qt::CopyAction) {
+        event->setDropAction(Qt::CopyAction);
+    } else {
+        event->setDropAction(event->proposedAction());
+    }
+    event->accept();
+}
+}
+
 void SoundPadWidget::dragEnterEvent(QDragEnterEvent* event)
 {
     if (isPadDrag(event->mimeData())) {
         choosePadDropAction(event);
-    } else if (event->mimeData()->hasUrls()) {
-        event->acceptProposedAction();
+    } else if (AudioFormats::hasPlayableFiles(event->mimeData())) {
+        m_fileDragOk = true;
+        chooseFileDropAction(event);
+    } else {
+        m_fileDragOk = false;
+        event->ignore();
     }
 }
 
@@ -1759,8 +1789,10 @@ void SoundPadWidget::dragMoveEvent(QDragMoveEvent* event)
 {
     if (isPadDrag(event->mimeData())) {
         choosePadDropAction(event);
-    } else if (event->mimeData()->hasUrls()) {
-        event->acceptProposedAction();
+    } else if (m_fileDragOk) {
+        chooseFileDropAction(event); // follows Shift being pressed or released mid-drag
+    } else {
+        event->ignore();
     }
 }
 
@@ -1772,23 +1804,53 @@ void SoundPadWidget::dropEvent(QDropEvent* event)
         emit padDropped(from, m_padId, event->dropAction() == Qt::CopyAction);
         return;
     }
-    if (event->mimeData()->hasUrls()) {
-        QStringList paths;
-        for (const QUrl& url : event->mimeData()->urls()) {
-            if (url.isLocalFile()) {
-                paths << url.toLocalFile();
-            }
-        }
-        loadFiles(paths, true);
-        emit padClicked(m_padId);
-        event->acceptProposedAction();
+    m_fileDragOk = false;
+    if (!event->mimeData()->hasUrls()) {
+        event->ignore();
+        return;
     }
+    const QStringList paths = AudioFormats::playableFiles(event->mimeData()->urls());
+    if (paths.isEmpty()) {
+        event->ignore();
+        return;
+    }
+    const bool add = (event->modifiers() & Qt::ShiftModifier) || event->dropAction() == Qt::LinkAction;
+    chooseFileDropAction(event);
+    // The drag has to finish before a question box can open, so ask on the next turn.
+    QTimer::singleShot(0, this, [this, paths, add]() {
+        if (!confirmFileCount(this, paths.size())) {
+            return;
+        }
+        loadFiles(paths, !add);
+        emit padClicked(m_padId);
+    });
+}
+
+bool SoundPadWidget::confirmFileCount(QWidget* parent, int count)
+{
+    constexpr int kAskAbove = 32;
+    if (count <= kAskAbove) {
+        return true;
+    }
+    return QMessageBox::question(parent, tr("Add files"),
+               tr("This adds %1 files to one pad. Go ahead?").arg(count),
+               QMessageBox::Yes | QMessageBox::Cancel, QMessageBox::Yes)
+        == QMessageBox::Yes;
+}
+
+QStringList SoundPadWidget::samplePaths() const
+{
+    QStringList out;
+    for (const std::string& path : m_soundPaths) {
+        out << QString::fromStdString(path);
+    }
+    return out;
 }
 
 void SoundPadWidget::chooseFiles()
 {
     const QString start = m_config->loadDialogDir(currentSamplePath());
-    const QStringList paths = QFileDialog::getOpenFileNames(this, tr("Load files"), start, audioNameFilters().join(QStringLiteral(";;")));
+    const QStringList paths = QFileDialog::getOpenFileNames(this, tr("Load files"), start, AudioFormats::dialogFilters().join(QStringLiteral(";;")));
     if (!paths.isEmpty()) {
         loadFiles(paths, true);
         emit padClicked(m_padId);
