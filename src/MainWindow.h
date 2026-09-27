@@ -3,6 +3,8 @@
 #include "AppConfig.h"
 #include "widgets/SoundPadWidget.h"
 
+#include <QByteArray>
+#include <QRect>
 #include <QMainWindow>
 #include <QVector>
 
@@ -14,6 +16,7 @@ class WaveformWidget;
 class QAbstractButton;
 class QAction;
 class QFrame;
+class QHBoxLayout;
 class QProgressBar;
 class QCheckBox;
 class QComboBox;
@@ -84,6 +87,9 @@ private:
     void moveEditorSample(int fromIndex, int insertIndex);
     void setPage(Page page);
     void setSidebarView(SidebarView view);
+    // Scenes focus: hides the pad grid, the bottom panel and the Editor tab so only the
+    // scene list shows, and shrinks the window to a narrow strip (restored when turned off).
+    void setScenesFocus(bool on);
     void refreshSettingsPathLabel();
     QString currentSettingsFilePath() const;
     QString resolvedSettingsPath() const;
@@ -113,6 +119,18 @@ private:
     SoundPadWidget::PadClip m_padClip;
     Page m_page = Page::Main;
     SidebarView m_sidebar = SidebarView::Scenes;
+    bool m_scenesFocus = false;
+    QWidget* m_sidebarWidget = nullptr;
+    QHBoxLayout* m_bodyLayout = nullptr;
+    QAbstractButton* m_fullLayoutButton = nullptr;
+    QAbstractButton* m_scenesFocusButton = nullptr;
+    QHBoxLayout* m_headerRow = nullptr;
+    QLabel* m_volumeCaption = nullptr;
+    // The window before it became a strip: put back when scenes focus is turned off, and
+    // saved on quit in its place so the next launch opens full size.
+    QByteArray m_expandedGeometry;
+    QRect m_expandedRect;
+    bool m_expandedMaximized = false;
 
     QStackedWidget* m_padStack = nullptr;
     QWidget* m_sceneListHost = nullptr;

@@ -149,6 +149,74 @@ void readStartupFilePrefs(const QString& settingsPath, bool& loadLast, QString& 
     lastPath = global.value(QStringLiteral("lastsettingspath")).toString();
 }
 
+// Header layout switch: a small icon button, raised while its layout is the one showing.
+// Neutral colours only; ember stays for things that are live.
+class LayoutButton : public QAbstractButton
+{
+public:
+    enum class Glyph { FullLayout, ScenesOnly };
+
+    LayoutButton(Glyph glyph, const QString& tip, QWidget* parent)
+        : QAbstractButton(parent)
+        , m_glyph(glyph)
+    {
+        setCheckable(true);
+        setFixedSize(30, 28);
+        setFocusPolicy(Qt::NoFocus);
+        setCursor(Qt::PointingHandCursor);
+        setAttribute(Qt::WA_Hover);
+        setToolTip(tip);
+    }
+
+protected:
+    void paintEvent(QPaintEvent*) override
+    {
+        QPainter p(this);
+        p.setRenderHint(QPainter::Antialiasing, true);
+        const Theme::Palette& theme = Theme::instance().palette();
+        const bool hover = underMouse() && isEnabled();
+        const QRectF r = QRectF(rect()).adjusted(0.5, 0.5, -0.5, -0.5);
+        if (isChecked()) {
+            p.setPen(QPen(theme.fieldBorder, 1.0));
+            p.setBrush(theme.fieldBackground);
+            p.drawRoundedRect(r, 6, 6);
+        } else if (hover) {
+            p.setPen(Qt::NoPen);
+            p.setBrush(theme.tabBackground);
+            p.drawRoundedRect(r, 6, 6);
+        }
+        const QColor fg = (isChecked() || hover) ? theme.text : theme.textMuted;
+        const QPointF c = r.center();
+        // A 16x13 window outline in both glyphs.
+        const QRectF frame(c.x() - 8.0, c.y() - 6.5, 16.0, 13.0);
+        p.setBrush(Qt::NoBrush);
+        p.setPen(QPen(fg, 1.4, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
+        p.drawRoundedRect(frame, 2.0, 2.0);
+        p.setPen(Qt::NoPen);
+        p.setBrush(fg);
+        if (m_glyph == Glyph::FullLayout) {
+            // Pads on the left (2x2), a divider, the sidebar on the right.
+            const qreal cell = 3.0;
+            const qreal x0 = frame.left() + 2.5;
+            const qreal y0 = frame.top() + 2.5;
+            for (int row = 0; row < 2; ++row) {
+                for (int col = 0; col < 2; ++col) {
+                    p.drawRoundedRect(QRectF(x0 + col * (cell + 1.5), y0 + row * (cell + 1.5), cell, cell), 0.6, 0.6);
+                }
+            }
+            p.drawRect(QRectF(frame.right() - 5.5, frame.top() + 1.5, 1.0, frame.height() - 3.0));
+        } else {
+            // Three list rows: the scene list on its own.
+            for (int i = 0; i < 3; ++i) {
+                p.drawRoundedRect(QRectF(frame.left() + 3.0, frame.top() + 2.8 + i * 3.0, frame.width() - 6.0, 1.6), 0.8, 0.8);
+            }
+        }
+    }
+
+private:
+    Glyph m_glyph;
+};
+
 }
 
 MainWindow::MainWindow(QWidget* parent)
@@ -297,10 +365,12 @@ void MainWindow::buildUi()
     header->setObjectName(QStringLiteral("Header"));
     header->setAttribute(Qt::WA_StyledBackground, true);
     auto* volumeRow = new QHBoxLayout(header);
+    m_headerRow = volumeRow;
     volumeRow->setContentsMargins(20, 12, 20, 10);
     volumeRow->setSpacing(12);
     auto* volumeCaption = new QLabel(tr("Main Volume"), header);
     volumeCaption->setObjectName(QStringLiteral("HeaderLabel"));
+    m_volumeCaption = volumeCaption;
     volumeRow->addWidget(volumeCaption);
     volumeRow->addWidget(m_mainVolume);
     volumeRow->addWidget(m_mainVolumeValue);
@@ -321,15 +391,34 @@ void MainWindow::buildUi()
     m_settingsPathLabel->setObjectName(QStringLiteral("SettingsPath"));
     m_settingsPathLabel->hide();
     volumeRow->addWidget(m_settingsPathLabel, 1);
+
+    // Layout switch, right-justified: the full layout, or the scene list on its own.
+    auto* layoutSwitch = new QWidget(header);
+    auto* layoutRow = new QHBoxLayout(layoutSwitch);
+    layoutRow->setContentsMargins(0, 0, 0, 0);
+    layoutRow->setSpacing(2);
+    m_fullLayoutButton = new LayoutButton(LayoutButton::Glyph::FullLayout, tr("Pads and scenes"), layoutSwitch);
+    m_scenesFocusButton = new LayoutButton(LayoutButton::Glyph::ScenesOnly, tr("Scenes only"), layoutSwitch);
+    m_fullLayoutButton->setChecked(true);
+    layoutRow->addWidget(m_fullLayoutButton);
+    layoutRow->addWidget(m_scenesFocusButton);
+    // Stretch 0: takes the spare width only while the settings path label (stretch 1) is hidden,
+    // so the switch stays at the right edge either way.
+    volumeRow->addStretch(0);
+    volumeRow->addWidget(layoutSwitch, 0, Qt::AlignVCenter);
+    connect(m_fullLayoutButton, &QAbstractButton::clicked, this, [this]() { setScenesFocus(false); });
+    connect(m_scenesFocusButton, &QAbstractButton::clicked, this, [this]() { setScenesFocus(true); });
     mainLayout->addWidget(header);
 
     auto* body = new QHBoxLayout();
+    m_bodyLayout = body;
     body->setContentsMargins(12, 0, 0, 0);
     body->setSpacing(12);
     m_padStack = new QStackedWidget(m_mainPage);
     body->addWidget(m_padStack, 1);
 
     auto* side = new QWidget(m_mainPage);
+    m_sidebarWidget = side;
     side->setObjectName(QStringLiteral("Sidebar"));
     side->setAttribute(Qt::WA_StyledBackground, true);
     side->setMinimumWidth(300);
@@ -1969,10 +2058,13 @@ void MainWindow::applyAppSettings(const QJsonObject& global)
 
 void MainWindow::setPage(Page page)
 {
+    if (page != Page::Main && m_scenesFocus) {
+        setScenesFocus(false); // Settings and Theme need the full window
+    }
     m_page = page;
     // The Sample / Pad / Waveform panel belongs to the pad grid, not to Settings or Theme.
     if (m_bottomPanel) {
-        m_bottomPanel->setVisible(page == Page::Main);
+        m_bottomPanel->setVisible(page == Page::Main && !m_scenesFocus);
     }
     if (page == Page::Settings) {
         refreshWaveformCacheInfo();
@@ -1985,8 +2077,93 @@ void MainWindow::setPage(Page page)
     }
 }
 
+void MainWindow::setScenesFocus(bool on)
+{
+    if (on == m_scenesFocus) {
+        return;
+    }
+    if (on) {
+        // Remember the full-size window before anything changes.
+        m_expandedMaximized = isMaximized();
+        m_expandedRect = (isMaximized() || isMinimized()) ? normalGeometry() : geometry();
+        m_expandedGeometry = saveGeometry();
+        if (m_sidebar != SidebarView::Scenes) {
+            setSidebarView(SidebarView::Scenes);
+        }
+    }
+    m_scenesFocus = on;
+
+    m_padStack->setVisible(!on);
+    m_editorTab->setVisible(!on);
+    if (m_bottomPanel) {
+        m_bottomPanel->setVisible(!on && m_page == Page::Main);
+    }
+    // With the pads hidden the scene list takes the full width.
+    m_bodyLayout->setStretchFactor(m_sidebarWidget, on ? 1 : 0);
+    m_bodyLayout->setContentsMargins(on ? 0 : 12, 0, 0, 0);
+
+    // Header: just the fader and the layout switch in the strip.
+    m_volumeCaption->setVisible(!on);
+    if (on) {
+        m_mainVolume->setMinimumWidth(100);
+        m_mainVolume->setMaximumWidth(QWIDGETSIZE_MAX);
+        m_headerRow->setStretchFactor(m_mainVolume, 1);
+    } else {
+        m_headerRow->setStretchFactor(m_mainVolume, 0);
+        m_mainVolume->setFixedWidth(240);
+    }
+    refreshLoadUi(); // hides or shows the settings path and the load bar
+
+    const QSignalBlocker blockFull(m_fullLayoutButton);
+    const QSignalBlocker blockFocus(m_scenesFocusButton);
+    m_fullLayoutButton->setChecked(!on);
+    m_scenesFocusButton->setChecked(on);
+    m_fullLayoutButton->update();
+    m_scenesFocusButton->update();
+
+    // Apply the hidden/shown panels to the layouts now, so the window's minimum size is
+    // right before it is resized.
+    if (QLayout* layout = m_mainPage->layout()) {
+        layout->invalidate();
+        layout->activate();
+    }
+    if (QLayout* layout = centralWidget()->layout()) {
+        layout->invalidate();
+        layout->activate();
+    }
+    if (QLayout* layout = this->layout()) {
+        layout->invalidate();
+        layout->activate();
+    }
+
+    if (on) {
+        // A narrow strip the same height, keeping the right edge where it was.
+        constexpr int kStripWidth = 340;
+        if (isMaximized() || isFullScreen()) {
+            showNormal();
+        }
+        const QRect before = m_expandedRect;
+        const int width = std::max(kStripWidth, minimumSizeHint().width());
+        setGeometry(before.x() + before.width() - width, before.y(), width, before.height());
+    } else {
+        if (!m_expandedGeometry.isEmpty()) {
+            restoreGeometry(m_expandedGeometry); // also restores maximised
+        }
+        // The grid was hidden while the window changed size: lay it out again once it's
+        // back in the layout.
+        QTimer::singleShot(0, this, [this]() {
+            if (Scene* active = activeScene()) {
+                active->layoutGrid();
+            }
+        });
+    }
+}
+
 void MainWindow::setSidebarView(SidebarView view)
 {
+    if (view == SidebarView::Editor && m_scenesFocus) {
+        setScenesFocus(false); // the Editor needs a pad, so bring the pads back (e.g. Ctrl+2)
+    }
     m_sidebar = view;
     const bool showScenes = view == SidebarView::Scenes;
     if (view == SidebarView::Editor) {
@@ -2342,8 +2519,13 @@ void MainWindow::importScenesFrom(const QString& path)
 
 void MainWindow::loadConfig()
 {
+    // Start in the folder of the settings file that's open now (or data/settings).
+    QString startDir = QFileInfo(currentSettingsFilePath()).absolutePath();
+    if (!QDir(startDir).exists()) {
+        startDir = QFileInfo(m_config.defaultSettingsPath()).absolutePath();
+    }
     const QString path = QFileDialog::getOpenFileName(this, tr("Load Feedra scenes"),
-        m_config.defaultSettingsPath(), tr("JSON (*.json)"));
+        startDir, tr("JSON (*.json)"));
     if (!path.isEmpty()) {
         loadConfigFrom(path);
         enableScene(0);
@@ -2400,13 +2582,17 @@ void MainWindow::loadConfigFrom(const QString& path)
 
 void MainWindow::saveWindowLayout(QJsonObject& global) const
 {
-    const QRect box = (isMaximized() || isMinimized()) ? normalGeometry() : geometry();
+    // In the scenes strip, save the window it came from so the next launch opens full size.
+    const bool strip = m_scenesFocus && !m_expandedGeometry.isEmpty();
+    const QRect box = strip ? m_expandedRect
+        : (isMaximized() || isMinimized()) ? normalGeometry() : geometry();
     global.insert(QStringLiteral("windowx"), box.x());
     global.insert(QStringLiteral("windowy"), box.y());
     global.insert(QStringLiteral("windowwidth"), box.width());
     global.insert(QStringLiteral("windowheight"), box.height());
-    global.insert(QStringLiteral("windowmaximized"), isMaximized());
-    global.insert(QStringLiteral("windowgeometry"), QString::fromLatin1(saveGeometry().toBase64()));
+    global.insert(QStringLiteral("windowmaximized"), strip ? m_expandedMaximized : isMaximized());
+    global.insert(QStringLiteral("windowgeometry"),
+        QString::fromLatin1((strip ? m_expandedGeometry : saveGeometry()).toBase64()));
     global.insert(QStringLiteral("bottomcollapsed"), m_bottomCollapsed);
     global.insert(QStringLiteral("bottomtab"), m_bottomStack ? m_bottomStack->currentIndex() : 0);
 }
@@ -2611,7 +2797,8 @@ void MainWindow::refreshLoadUi()
         m_loadBar->hide();
         m_loadLabel->hide();
         if (m_settingsPathLabel) {
-            m_settingsPathLabel->show();
+            // No room in the scenes strip; the full path is in the normal layout.
+            m_settingsPathLabel->setVisible(!m_scenesFocus);
         }
         if (windowTitle() != QStringLiteral("Feedra")) {
             setWindowTitle(QStringLiteral("Feedra"));
@@ -2621,13 +2808,19 @@ void MainWindow::refreshLoadUi()
     if (m_settingsPathLabel) {
         m_settingsPathLabel->hide();
     }
+    setWindowTitle(tr("Feedra — Loading"));
+    if (m_scenesFocus) {
+        // No room in the strip's header; the window title still says it's loading.
+        m_loadBar->hide();
+        m_loadLabel->hide();
+        return;
+    }
     const int total = std::max(1, m_loads->total());
     m_loadBar->setRange(0, total);
     m_loadBar->setValue(std::clamp(m_loads->settled(), 0, total));
     m_loadBar->show();
     m_loadLabel->setText(tr("Loading %1 / %2").arg(m_loads->settled()).arg(m_loads->total()));
     m_loadLabel->show();
-    setWindowTitle(tr("Feedra — Loading"));
 }
 
 void MainWindow::waitForLoads()
