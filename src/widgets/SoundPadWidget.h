@@ -110,8 +110,9 @@ public:
     void setSoundName(const QString& name);
     float padVolume() const;
     void setPadVolume(float value);
-    bool isLooping() const;
-    void setLooping(bool looping);
+    // Repeat (pad): start the list again after the last sample, after the random delay.
+    bool isRepeating() const;
+    void setRepeating(bool repeat);
     bool isLoaded() const;
     bool isPlaying() const;
     int sampleRate() const { return m_sampleRate; }
@@ -143,7 +144,7 @@ public:
         bool stream = true;
         int sampleRate = 0;
         int channels = 0;
-        bool looping = false;
+        bool repeat = false;
         int minDelay = 0;
         int maxDelay = 0;
         bool randomPlayback = false;
@@ -159,6 +160,7 @@ public:
             float pan = 0.0f;
             bool panRandom = false;
             bool spatialise = false;
+            LoopRegion loop;
         };
         std::vector<Sample> samples;
     };
@@ -172,6 +174,8 @@ public:
 
     // Path of the sample the pad would play next, or empty if it has none.
     QString currentSamplePath() const;
+    // True when min or max delay is above zero, so the pad waits before it plays.
+    bool hasDelay() const;
     // Every sample path on the pad, in order.
     QStringList samplePaths() const;
 
@@ -187,6 +191,8 @@ signals:
     void requestEdit();
     void loadStateChanged();
     void loadingFinished();
+    // The pad's loop icon switched the current sample's loop.
+    void sampleLoopChanged();
 
 protected:
     bool eventFilter(QObject* watched, QEvent* event) override;
@@ -208,6 +214,7 @@ private:
         float pan = 0.0f;
         bool panRandom = false;
         bool spatialise = false;
+        LoopRegion loop;
         bool failed = false;
     };
 
@@ -218,7 +225,8 @@ private:
 
     void chooseFiles();
     void cancelLoading();
-    void enqueueSample(const QString& path, float pitch, float gain, float pan, bool panRandom, bool spatialise);
+    void enqueueSample(const QString& path, float pitch, float gain, float pan, bool panRandom, bool spatialise,
+                       const LoopRegion& loop = LoopRegion{});
     bool commitDecoded(int slotIndex, DecodedAudio audio);
     void flushIncoming();
     std::vector<LoadSlot> sampleSpecs() const;

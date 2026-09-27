@@ -36,6 +36,7 @@ public:
         QColor padFill;
         QColor padBorder;
         QColor padSelected;
+        QColor padDelayBorder; // border of a pad with a start delay set
         QColor playLoaded;
         QColor playEmpty;
         QColor playOutline;

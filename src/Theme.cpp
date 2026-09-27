@@ -39,6 +39,7 @@ const Role kRoles[] = {
     {"padFill", "Pads", "Pad", &Theme::Palette::padFill},
     {"padBorder", "Pads", "Pad border", &Theme::Palette::padBorder},
     {"padSelected", "Pads", "Pad selection", &Theme::Palette::padSelected},
+    {"padDelayBorder", "Pads", "Pad with delay", &Theme::Palette::padDelayBorder},
     {"playLoaded", "Pads", "Play", &Theme::Palette::playLoaded},
     {"playEmpty", "Pads", "Play empty", &Theme::Palette::playEmpty},
     {"playOutline", "Pads", "Play outline", &Theme::Palette::playOutline},
@@ -104,6 +105,7 @@ Theme::Palette midnightPalette()
     p.padFill = QColor(QStringLiteral("#171a21"));
     p.padBorder = QColor(QStringLiteral("#2a2f3a"));
     p.padSelected = QColor(QStringLiteral("#7aa2ff"));
+    p.padDelayBorder = QColor(QStringLiteral("#b48cf2"));
     p.playLoaded = QColor(QStringLiteral("#ff7a3d"));
     p.playEmpty = QColor(QStringLiteral("#262b35"));
     p.playOutline = QColor(QStringLiteral("#343a47"));
@@ -162,6 +164,7 @@ Theme::Palette parchmentPalette()
     p.padFill = QColor(QStringLiteral("#fbe9d8"));
     p.padBorder = QColor(QStringLiteral("#202020"));
     p.padSelected = QColor(QStringLiteral("#65aecd"));
+    p.padDelayBorder = QColor(QStringLiteral("#7a3e9d"));
     p.playLoaded = QColor(QStringLiteral("#d08331"));
     p.playEmpty = QColor(QStringLiteral("#998c84"));
     p.playOutline = QColor(QStringLiteral("#c0c0c0"));
@@ -220,6 +223,7 @@ Theme::Palette nightPalette()
     p.padFill = QColor(QStringLiteral("#2c2622"));
     p.padBorder = QColor(QStringLiteral("#0e0c0b"));
     p.padSelected = QColor(QStringLiteral("#7ec4d6"));
+    p.padDelayBorder = QColor(QStringLiteral("#b99ad8"));
     p.playLoaded = QColor(QStringLiteral("#e09a45"));
     p.playEmpty = QColor(QStringLiteral("#6a5c52"));
     p.playOutline = QColor(QStringLiteral("#d9cbbd"));
@@ -278,6 +282,7 @@ Theme::Palette forestPalette()
     p.padFill = QColor(QStringLiteral("#f4f7ec"));
     p.padBorder = QColor(QStringLiteral("#172016"));
     p.padSelected = QColor(QStringLiteral("#2f7f86"));
+    p.padDelayBorder = QColor(QStringLiteral("#7b4a9c"));
     p.playLoaded = QColor(QStringLiteral("#d0893a"));
     p.playEmpty = QColor(QStringLiteral("#8b987c"));
     p.playOutline = QColor(QStringLiteral("#d5deca"));
@@ -336,6 +341,7 @@ Theme::Palette inkPalette()
     p.padFill = QColor(QStringLiteral("#fbf9f4"));
     p.padBorder = QColor(QStringLiteral("#1b1e24"));
     p.padSelected = QColor(QStringLiteral("#2b6cb0"));
+    p.padDelayBorder = QColor(QStringLiteral("#6b46c1"));
     p.playLoaded = QColor(QStringLiteral("#c4493a"));
     p.playEmpty = QColor(QStringLiteral("#b7b1a6"));
     p.playOutline = QColor(QStringLiteral("#8d93a0"));
@@ -671,7 +677,11 @@ QComboBox QAbstractItemView {
 QCheckBox { spacing: 8px; }
 QCheckBox::indicator { width: 16px; height: 16px; border-radius: 4px; border: 1px solid {{fieldBorder}}; background: {{fieldBackground}}; }
 QCheckBox::indicator:hover { border-color: {{focusBorder}}; }
-QCheckBox::indicator:checked { background: {{selection}}; border-color: {{selection}}; }
+/* Checked: the same empty box with a dot in the middle, no fill or border change. */
+QCheckBox::indicator:checked {
+    background: qradialgradient(cx: 0.5, cy: 0.5, radius: 0.5, fx: 0.5, fy: 0.5,
+        stop: 0 {{fieldText}}, stop: 0.52 {{fieldText}}, stop: 0.62 {{fieldBackground}}, stop: 1 {{fieldBackground}});
+}
 
 /* Scroll bars */
 QScrollBar:vertical { background: transparent; width: 10px; margin: 0; }
@@ -757,6 +767,9 @@ QLabel#PreviewName[idle="true"] { color: {{textMuted}}; font-weight: 400; }
 QLabel#PreviewTime { color: {{textMuted}}; font-family: "Geist Mono"; font-size: 11px; }
 QCheckBox#AutoPreview { font-size: 12px; spacing: 6px; }
 QCheckBox#AutoPreview::indicator { width: 14px; height: 14px; }
+QCheckBox#WaveToggle { font-size: 12px; spacing: 6px; }
+QCheckBox#WaveToggle::indicator { width: 14px; height: 14px; }
+QSpinBox#WaveCrossfade { font-size: 12px; padding: 1px 20px 1px 6px; min-height: 18px; }
 
 /* Settings and Theme pages */
 QFrame#SettingsCard { background: {{fieldBackground}}; border: 1px solid {{panelBorder}}; border-radius: 12px; }

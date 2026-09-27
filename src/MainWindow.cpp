@@ -565,6 +565,9 @@ void MainWindow::buildUi()
     m_gain->setValue(VolumeDb::toSlider(VolumeDb::kUnityDb, kSampleGainMinDb));
     m_randomPan = new QCheckBox(tr("Random Pan"), m_editorPage);
     m_spatialise = new QCheckBox(tr("Spatialise Stereo"), m_editorPage);
+    m_sampleLoop = new QCheckBox(tr("Loop"), m_editorPage);
+    m_sampleLoop->setToolTip(tr("Loop this sample seamlessly between its loop points (set them on the Waveform tab).\n"
+                                "The pad's loop icon shows and switches this for the sample that is playing."));
 
     // Displayed value = slider value * scale + offset; the spin box range follows the slider range.
     auto makeValueBox = [&](QSlider* slider, double scale, double offset) {
@@ -613,6 +616,7 @@ void MainWindow::buildUi()
     checkLayout->setContentsMargins(0, 0, 8, 0);
     checkLayout->addWidget(m_randomPan);
     checkLayout->addWidget(m_spatialise);
+    checkLayout->addWidget(m_sampleLoop);
     controlsLayout->addLayout(checkLayout);
     editLayout->addWidget(m_sampleControls);
 
@@ -723,6 +727,10 @@ void MainWindow::buildUi()
     m_reverbSend2->setToolTip(tr("Send into the convolution reverb"));
     m_randomPlayback = new QCheckBox(tr("Random Playback"), padPage);
     m_randomPlayback->hide();
+    m_repeat = new QCheckBox(tr("Repeat"), padPage);
+    m_repeat->setToolTip(tr("After the last sample, start the list again after the delay.\n"
+                            "To loop one sample seamlessly, use the pad's loop icon instead."));
+    m_repeat->setEnabled(false);
     padGrid->addWidget(new QLabel(tr("Min delay"), padPage), 0, 0);
     padGrid->addWidget(m_minDelay, 0, 1);
     padGrid->addWidget(new QLabel(tr("Max delay"), padPage), 0, 2);
@@ -731,7 +739,8 @@ void MainWindow::buildUi()
     padGrid->addWidget(m_reverbSend, 1, 1, 1, 3);
     padGrid->addWidget(new QLabel(tr("Convolution send"), padPage), 2, 0);
     padGrid->addWidget(m_reverbSend2, 2, 1, 1, 3);
-    padGrid->addWidget(m_randomPlayback, 3, 0, 1, 4);
+    padGrid->addWidget(m_repeat, 3, 0, 1, 1);
+    padGrid->addWidget(m_randomPlayback, 3, 1, 1, 3);
     padGrid->setRowStretch(4, 1);
     padGrid->setColumnStretch(1, 1);
     // Keep the controls together on the left; the spare width goes to an empty last column.
@@ -750,10 +759,71 @@ void MainWindow::buildUi()
         if (!pad || !pad->isLoaded() || pad->soundPlayer().player.empty()) {
             return;
         }
-        const SoundPlayer& player = pad->soundPlayer();
+        SoundPlayer& player = pad->soundPlayer();
         const int cur = std::clamp(player.getCurSound(), 0, static_cast<int>(player.player.size()) - 1);
-        if (OpenALSoundPlayer* audio = player.player[static_cast<size_t>(cur)]->audioPlayer) {
-            audio->seekTo(pct);
+        player.seekSample(cur, pct);
+    });
+    connect(m_waveform, &WaveformWidget::loopPointsChanged, this, [this](double startPct, double endPct, bool finished) {
+        // Applied on release: the waveform shows the drag itself, and the audio changes once.
+        // The sample is the one shown when the drag began, even if the pad has moved on since.
+        if (!finished) {
+            if (m_loopDragSampleId < 0) {
+                if (AudioSample* shown = waveformSample()) {
+                    m_loopDragSampleId = shown->id;
+                }
+            }
+            return;
+        }
+        AudioSample* sample = waveformSample();
+        if (m_loopDragSampleId >= 0) {
+            sample = nullptr;
+            if (auto* pad = activePad()) {
+                for (AudioSample* candidate : pad->soundPlayer().player) {
+                    if (candidate->id == m_loopDragSampleId) {
+                        sample = candidate;
+                    }
+                }
+            }
+            m_loopDragSampleId = -1;
+        }
+        if (!sample) {
+            return;
+        }
+        const double duration = sample->audioPlayer->getDuration();
+        if (duration <= 0.0) {
+            return;
+        }
+        LoopRegion region = sample->loopRegion();
+        region.start = startPct <= 0.0 ? 0.0 : startPct * duration;
+        region.end = endPct >= 1.0 ? -1.0 : endPct * duration;
+        applyLoopRegion(sample, region);
+    });
+    connect(m_waveform, &WaveformWidget::loopToggled, this, [this](bool on) {
+        if (AudioSample* sample = waveformSample()) {
+            LoopRegion region = sample->loopRegion();
+            region.loop = on;
+            applyLoopRegion(sample, region);
+        }
+    });
+    connect(m_waveform, &WaveformWidget::crossfadeChanged, this, [this](int ms) {
+        if (AudioSample* sample = waveformSample()) {
+            LoopRegion region = sample->loopRegion();
+            region.crossfadeMs = ms;
+            applyLoopRegion(sample, region);
+        }
+    });
+    connect(m_waveform, &WaveformWidget::playToEndToggled, this, [this](bool on) {
+        if (AudioSample* sample = waveformSample()) {
+            LoopRegion region = sample->loopRegion();
+            region.playToEnd = on;
+            applyLoopRegion(sample, region);
+        }
+    });
+    connect(m_waveform, &WaveformWidget::playFromStartToggled, this, [this](bool on) {
+        if (AudioSample* sample = waveformSample()) {
+            LoopRegion region = sample->loopRegion();
+            region.playFromStart = on;
+            applyLoopRegion(sample, region);
         }
     });
     // Tall enough for every page, so nothing (like the Random Playback box) is clipped.
@@ -816,6 +886,7 @@ void MainWindow::buildUi()
             for (int i = 0; i < static_cast<int>(pad->soundPlayer().player.size()); ++i) {
                 pad->soundPlayer().recalculateDelay(i);
             }
+            pad->update(); // the delay border comes and goes with the delay
             updateMainControls();
         }
     });
@@ -830,6 +901,7 @@ void MainWindow::buildUi()
             for (int i = 0; i < static_cast<int>(pad->soundPlayer().player.size()); ++i) {
                 pad->soundPlayer().recalculateDelay(i);
             }
+            pad->update(); // the delay border comes and goes with the delay
             updateMainControls();
         }
     });
@@ -849,6 +921,21 @@ void MainWindow::buildUi()
         if (m_updatingControls) return;
         if (auto* pad = activePad()) {
             pad->soundPlayer().setRandomPlayback(on);
+        }
+    });
+    connect(m_repeat, &QCheckBox::toggled, this, [this](bool on) {
+        if (m_updatingControls) return;
+        if (auto* pad = activePad()) {
+            pad->setRepeating(on);
+        }
+    });
+    connect(m_sampleLoop, &QCheckBox::toggled, this, [this](bool on) {
+        if (m_updatingControls) return;
+        if (auto* pad = activePad(); pad && pad->soundPlayer().player.size() > static_cast<size_t>(m_config.activeSampleIdx)) {
+            AudioSample* sample = pad->soundPlayer().player.at(m_config.activeSampleIdx);
+            LoopRegion region = sample->loopRegion();
+            region.loop = on;
+            applyLoopRegion(sample, region);
         }
     });
     connect(m_pan, &QSlider::valueChanged, this, [this](int v) {
@@ -926,6 +1013,11 @@ void MainWindow::connectScene(Scene* scene)
             }
         });
         connect(pad, &SoundPadWidget::filesDropped, this, [this]() { updateMainControls(); });
+        connect(pad, &SoundPadWidget::sampleLoopChanged, this, [this, pad]() {
+            if (pad == activePad()) {
+                updateEditControls();
+            }
+        });
         connect(&pad->soundPlayer(), &SoundPlayer::panRandomised, this, [this, pad](int sampleIndex, float) {
             if (pad == activePad() && sampleIndex == m_config.activeSampleIdx
                 && sampleIndex < static_cast<int>(pad->soundPlayer().player.size())) {
@@ -1114,6 +1206,8 @@ void MainWindow::updateMainControls()
         m_reverbSend2->setValue(static_cast<int>(pad->soundPlayer().getReverbSend2() * 1000.0f));
         m_randomPlayback->setChecked(pad->soundPlayer().isPlayingRandom());
         m_randomPlayback->setVisible(pad->soundPlayer().player.size() > 1);
+        m_repeat->setChecked(pad->isRepeating());
+        m_repeat->setEnabled(true);
         m_infoPad = nullptr;
         m_infoSound = -1;
         refreshSampleInfo();
@@ -1124,6 +1218,8 @@ void MainWindow::updateMainControls()
     } else {
         m_infoLabel->setText(tr("channels: —\nformat: —\nsub-format: —\nsample rate: —\npath: —\nNum sounds: —  Random delay: — secs"));
         m_randomPlayback->hide();
+        m_repeat->setChecked(false);
+        m_repeat->setEnabled(false);
         m_minDelay->setEnabled(false);
         m_maxDelay->setEnabled(false);
         m_reverbSend->setEnabled(false);
@@ -1192,8 +1288,58 @@ void MainWindow::refreshWaveform()
         path = QString::fromStdString(audio->getFilePath().string());
     }
     m_waveform->setSample(path, audio->getDuration());
+    if (!m_waveform->isDraggingHandle()) {
+        m_loopDragSampleId = -1; // a drag that ended without a release (the sample changed)
+    }
     const bool playing = player.isPlaying() && !player.isPlayingDelay();
     m_waveform->setPlayhead(audio->getAudiblePosition(), playing);
+
+    const double duration = audio->getDuration();
+    const LoopRegion region = audio->getLoopRegion();
+    WaveformWidget::LoopView view;
+    if (duration > 0.0) {
+        view.startPct = std::clamp(region.start / duration, 0.0, 1.0);
+        view.endPct = region.end > 0.0 ? std::clamp(region.end / duration, view.startPct, 1.0) : 1.0;
+        // Clamped to half the loop, as the player does.
+        const double xf = std::min(std::clamp(region.crossfadeMs, 0.0, LoopRegion::kMaxCrossfadeMs) / 1000.0,
+                                   (view.endPct - view.startPct) * duration / 2.0);
+        view.crossfadePct = std::max(0.0, xf / duration);
+    }
+    view.loop = region.loop;
+    view.playFromStart = region.playFromStart;
+    view.playToEnd = region.playToEnd;
+    view.crossfadeMs = static_cast<int>(std::lround(region.crossfadeMs));
+    m_waveform->setLoopView(view);
+}
+
+AudioSample* MainWindow::waveformSample() const
+{
+    auto* pad = const_cast<MainWindow*>(this)->activePad();
+    if (!pad || !pad->isLoaded() || pad->soundPlayer().player.empty()) {
+        return nullptr;
+    }
+    const SoundPlayer& player = pad->soundPlayer();
+    const int cur = std::clamp(player.getCurSound(), 0, static_cast<int>(player.player.size()) - 1);
+    return player.player[static_cast<size_t>(cur)];
+}
+
+void MainWindow::applyLoopRegion(AudioSample* sample, const LoopRegion& region)
+{
+    if (!sample) {
+        return;
+    }
+    sample->setLoopRegion(region);
+    // The Editor shows the same settings for its selected sample.
+    auto* pad = activePad();
+    if (pad && m_config.activeSampleIdx >= 0
+        && m_config.activeSampleIdx < static_cast<int>(pad->soundPlayer().player.size())
+        && pad->soundPlayer().player[static_cast<size_t>(m_config.activeSampleIdx)] == sample) {
+        const bool wasUpdating = m_updatingControls;
+        m_updatingControls = true;
+        m_sampleLoop->setChecked(region.loop);
+        m_updatingControls = wasUpdating;
+    }
+    refreshWaveform();
 }
 
 void MainWindow::setBottomTab(int index)
@@ -1278,6 +1424,8 @@ void MainWindow::updateEditControls()
         m_gain->minimum(),
         m_gain->maximum()));
     m_randomPan->setChecked(pad->soundPlayer().isRandomPan());
+    const LoopRegion region = sample->loopRegion();
+    m_sampleLoop->setChecked(region.loop);
     m_editTitle->setText(pad->soundName().toUpper());
     m_updatingControls = false;
 }
@@ -1646,13 +1794,15 @@ void MainWindow::buildSettingsPage()
         tr("The file open when Feedra quits is remembered for the next launch."));
     m_loadLastSettings = new QCheckBox(tr("Load the last settings file on startup"), startup.frame);
     startup.addRow(tr("On startup"), m_loadLastSettings);
+    m_autosave = new QCheckBox(tr("Save scenes and pads on quit"), startup.frame);
+    startup.addRow(tr("Autosave"), m_autosave,
+        tr("Off: changes made while playing, such as switching a sample's loop from its pad, are "
+           "kept only when you save. App settings are still saved on quit."));
     cards->addWidget(startup.frame);
 
     // Scenes and pads
     SettingsCard scenes = makeCard(host, tr("Scenes and pads"),
         tr("Defaults for new scenes and pads. Existing scenes keep their grid."));
-    m_loopByDefault = new QCheckBox(tr("Loop new pads"), scenes.frame);
-    scenes.addRow(tr("New pads"), m_loopByDefault);
 
     m_sceneLimit = new QSpinBox(scenes.frame);
     m_sceneLimit->setRange(1, 64);
@@ -1770,11 +1920,11 @@ void MainWindow::buildSettingsPage()
         }
         m_config.loadLastSettings = on;
     });
-    connect(m_loopByDefault, &QCheckBox::toggled, this, [this](bool on) {
+    connect(m_autosave, &QCheckBox::toggled, this, [this](bool on) {
         if (m_updatingControls) {
             return;
         }
-        m_config.loopByDefault = on;
+        m_config.autosave = on;
     });
     connect(m_sceneLimit, qOverload<int>(&QSpinBox::valueChanged), this, [this](int value) {
         if (m_updatingControls) {
@@ -2015,7 +2165,7 @@ void MainWindow::syncSettingsPage()
 {
     m_updatingControls = true;
     m_loadLastSettings->setChecked(m_config.loadLastSettings);
-    m_loopByDefault->setChecked(m_config.loopByDefault);
+    m_autosave->setChecked(m_config.autosave);
     m_sceneLimit->setValue(static_cast<int>(m_config.maxScenes));
     m_gridColumns->setValue(m_config.gridWidth);
     m_gridRows->setValue(m_config.gridHeight);
@@ -2063,8 +2213,8 @@ void MainWindow::refreshThemeSwatches()
 
 void MainWindow::applyAppSettings(const QJsonObject& global)
 {
-    if (global.contains(QStringLiteral("loopbydefault"))) {
-        m_config.loopByDefault = global.value(QStringLiteral("loopbydefault")).toBool();
+    if (global.contains(QStringLiteral("autosave"))) {
+        m_config.autosave = global.value(QStringLiteral("autosave")).toBool(true);
     }
     if (global.contains(QStringLiteral("scenelimit"))) {
         m_config.maxScenes = static_cast<unsigned int>(
@@ -2302,7 +2452,8 @@ void MainWindow::saveOnExit()
     m_savedOnExit = true;
     m_config.lastSettingsPath = currentSettingsFilePath();
     const QString path = currentSettingsFilePath();
-    saveConfigTo(path, false);
+    // Autosave off: keep the file's scenes as they were last saved, update only app settings.
+    saveConfigTo(path, false, !m_config.autosave);
 
     // The session lives in the open file. The default file only keeps the startup
     // choice when that file is somewhere else.
@@ -2352,7 +2503,7 @@ void MainWindow::saveConfigAs()
     }
 }
 
-bool MainWindow::saveConfigTo(const QString& path, bool copyFiles)
+bool MainWindow::saveConfigTo(const QString& path, bool copyFiles, bool settingsOnly)
 {
     if (path.isEmpty() || (m_loads && m_loads->isBusy())) {
         return false;
@@ -2375,7 +2526,7 @@ bool MainWindow::saveConfigTo(const QString& path, bool copyFiles)
     global.insert(QStringLiteral("mainvolume"), m_config.masterVolume());
     global.insert(QStringLiteral("maxscenes"), m_scenes.size());
     global.insert(QStringLiteral("activesceneid"), m_config.activeSceneIdx);
-    global.insert(QStringLiteral("loopbydefault"), m_config.loopByDefault);
+    global.insert(QStringLiteral("autosave"), m_config.autosave);
     global.insert(QStringLiteral("scenelimit"), static_cast<int>(m_config.maxScenes));
     global.insert(QStringLiteral("gridwidth"), m_config.gridWidth);
     global.insert(QStringLiteral("gridheight"), m_config.gridHeight);
@@ -2392,9 +2543,41 @@ bool MainWindow::saveConfigTo(const QString& path, bool copyFiles)
     global.insert(QStringLiteral("themecolors"), Theme::instance().colorsJson());
     saveWindowLayout(global);
     m_fileBrowser->saveSettings(global);
-    root.insert(QStringLiteral("global"), global);
 
-    for (int i = 0; i < m_scenes.size(); ++i) {
+    if (settingsOnly) {
+        // Everything but "global" comes from the file as it is, and so do the parts of
+        // "global" that describe its scenes (count, active scene, main volume).
+        QJsonObject existing;
+        QFile current(savePath);
+        if (current.exists()) {
+            // Never replace scenes we couldn't read with nothing.
+            if (!current.open(QIODevice::ReadOnly)) {
+                qWarning() << "Settings not saved: couldn't read" << savePath << current.errorString();
+                return false;
+            }
+            QJsonParseError parseError;
+            const QJsonDocument doc = QJsonDocument::fromJson(current.readAll(), &parseError);
+            if (parseError.error != QJsonParseError::NoError || !doc.isObject()) {
+                qWarning() << "Settings not saved: couldn't parse" << savePath << parseError.errorString();
+                return false;
+            }
+            existing = doc.object();
+        }
+        const QJsonObject oldGlobal = existing.value(QStringLiteral("global")).toObject();
+        for (const QString& key : { QStringLiteral("maxscenes"), QStringLiteral("activesceneid"), QStringLiteral("mainvolume") }) {
+            if (oldGlobal.contains(key)) {
+                global.insert(key, oldGlobal.value(key));
+            } else {
+                global.remove(key);
+            }
+        }
+        root = existing;
+        root.insert(QStringLiteral("global"), global);
+    } else {
+        root.insert(QStringLiteral("global"), global);
+    }
+
+    for (int i = 0; i < m_scenes.size() && !settingsOnly; ++i) {
         Scene* scene = m_scenes[i];
         QJsonObject sceneObj;
         sceneObj.insert(QStringLiteral("id"), scene->id);

@@ -5,6 +5,7 @@
 #include <QElapsedTimer>
 #include <QObject>
 #include <filesystem>
+#include <mutex>
 #include <string>
 #include <vector>
 
@@ -30,7 +31,8 @@ public:
     void setPan(float pan);
     void setSpeed(float spd);
     void setPaused(bool bP);
-    void setLoop(bool bLp);
+    // Repeat (pad): after the last sample, start the list again after the random delay.
+    void setRepeat(bool on);
     void setVolume(float vol);
     // Pad-level volume (pad x master x fades), before each sample's own gain. Stored so a
     // sample can be given its correct volume *before* it starts, not a UI tick later.
@@ -40,6 +42,8 @@ public:
     // Seek the current sample (or the delay countdown) the same way the Waveform tab does:
     // flushes queued stream audio so the playhead and what you hear jump together.
     void seekTo(float pct);
+    // Seek one sample directly (the Waveform tab), withdrawing any scheduled handover first.
+    void seekSample(int index, float pct);
     void setMinDelay(int delay);
     void setMaxDelay(int delay);
 
@@ -48,7 +52,11 @@ public:
     bool isPlaying() const;
     bool isPlayingDelay() const;
     bool isLoaded() const;
-    bool isLooping() const;
+    bool isRepeating() const;
+    // Loop (sample): the current sample loops seamlessly in the engine. The pad's loop icon
+    // shows and switches this; it is the sample's saved setting.
+    bool isCurrentSampleLooping() const;
+    void setCurrentSampleLooping(bool on);
     float getSpeed() const;
     float getPan() const;
     float getVolume() const;
@@ -80,8 +88,8 @@ public:
     int id = 0;
 
     bool bPaused = true;
-    bool bIsLooping = false;
-    bool bPlayBackEnded = false;
+    bool bRepeat = false;
+    bool bPlayBackEnded = false; // unused; kept for compatibility
     bool bCheckPlayBackEnded = false;
     bool bRandomPlayback = false;
     bool bRandomPan = false;
@@ -90,14 +98,37 @@ signals:
     void panRandomised(int sampleIndex, float pan);
 
 private:
+    // Scheduled handover: the next sample is started by the audio device on the frame after
+    // the current one's last, instead of on the next UI tick after it ends.
+    struct Handover {
+        bool armed = false;
+        int next = -1;
+        int from = -1;
+        int64_t endNs = 0;
+    };
+    void tryArmHandover();
+    void checkHandover();
+    void cancelHandover();
+    int chooseNext() const;
+    void advanceAfterEnd();
+    void applyRandomPan(int index);
     void applyRandomPanOnStart();
     void applyVolumeToCurrent();
     void onPlaybackEnded(OpenALSoundPlayer* ended);
+    void handleEnded(OpenALSoundPlayer* ended);
+    int indexOf(const OpenALSoundPlayer* audio) const;
     float randomRange(float minV, float maxV) const;
     float randomF() const;
 
     QElapsedTimer clock;
     qint64 prevMs = 0;
     bool bStartFromBeginning = true;
+    Handover handover;
+    // "Playback ended" notices, posted by stream threads and handled on the UI tick.
+    std::mutex endedMutex;
+    std::vector<OpenALSoundPlayer*> endedQueue;
+    // Notices kept for a later tick: from the scheduled next sample before it is current,
+    // or from the current sample while the pad is paused.
+    std::vector<OpenALSoundPlayer*> heldEnded;
     float baseVolume = -1.0f; // unknown until the pad sets it
 };

@@ -42,7 +42,9 @@ public:
     int gridWidth = 6;
     int gridHeight = 4;
     unsigned int maxScenes = 14;
-    bool loopByDefault = false;
+    // Save scenes and pads to the open settings file on quit. When off, only app settings
+    // are written on quit, and scene changes are kept only by saving.
+    bool autosave = true;
 
     int activeSceneId = 0;
     int activeSceneIdx = 0;

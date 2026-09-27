@@ -16,7 +16,7 @@ void AppConfig::setup()
     defaultLibraryLocation.clear();
     m_masterVolume = 1.0f;
     m_masterFade = 1.0f;
-    loopByDefault = false;
+    autosave = true;
 }
 
 QString AppConfig::dataDir() const

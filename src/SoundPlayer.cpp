@@ -4,6 +4,15 @@
 #include <QRandomGenerator>
 #include <algorithm>
 #include <cmath>
+#include <cstdlib>
+
+namespace {
+// How long before the current sample's end the next one is scheduled. Several UI ticks,
+// so a busy moment can't make it late, and well inside what the stream queue predicts.
+constexpr int64_t kHandoverArmNs = 500'000'000;
+// A prediction that moves by more than this (a seek, a pitch change) re-schedules.
+constexpr int64_t kHandoverDriftNs = 2'000'000;
+}
 
 SoundPlayer::SoundPlayer(QObject* parent)
     : QObject(parent)
@@ -23,6 +32,12 @@ SoundPlayer::~SoundPlayer()
 
 void SoundPlayer::close()
 {
+    handover = Handover{};
+    {
+        std::lock_guard<std::mutex> lock(endedMutex);
+        endedQueue.clear();
+    }
+    heldEnded.clear();
     for (AudioSample* sample : player) {
         delete sample;
     }
@@ -35,38 +50,67 @@ void SoundPlayer::setup(AppConfig* conf, int newId)
     id = newId;
 }
 
+int SoundPlayer::chooseNext() const
+{
+    const int count = static_cast<int>(player.size());
+    if (count == 0) {
+        return -1;
+    }
+    if (curSound < count - 1) {
+        if (bRandomPlayback && count > 1) {
+            int idx = curSound;
+            while (idx == curSound) {
+                idx = static_cast<int>(randomRange(0.0f, static_cast<float>(count)));
+                idx = std::clamp(idx, 0, count - 1);
+            }
+            return idx;
+        }
+        return curSound + 1;
+    }
+    return bRepeat ? 0 : -1;
+}
+
+void SoundPlayer::advanceAfterEnd()
+{
+    bStartFromBeginning = true;
+    const int count = static_cast<int>(player.size());
+    if (curSound < count - 1) {
+        curSound = chooseNext();
+        recalculateDelay(curSound);
+        // Starts it now, or starts its delay countdown.
+        setPaused(false);
+        return;
+    }
+    curSound = 0;
+    if (bRepeat) {
+        recalculateDelay(curSound);
+        bPaused = false;
+        bPlayingDelay = true; // counts down (possibly zero), then plays
+    } else {
+        bPaused = true;
+        bPlayingDelay = false;
+    }
+}
+
 void SoundPlayer::update()
 {
-    if (bPlayBackEnded) {
-        bStartFromBeginning = true;
-        if (curSound < static_cast<int>(player.size()) - 1) {
-            if (bRandomPlayback && player.size() > 1) {
-                int idx = curSound;
-                while (idx == curSound) {
-                    idx = static_cast<int>(randomRange(0.0f, static_cast<float>(player.size())));
-                    idx = std::clamp(idx, 0, static_cast<int>(player.size()) - 1);
-                }
-                curSound = idx;
-            } else {
-                curSound++;
-            }
-            recalculateDelay(curSound);
-            setPaused(false);
-        } else {
-            curSound = 0;
-        }
+    if (handover.armed) {
+        checkHandover();
+    } else {
+        tryArmHandover();
+    }
 
-        if (!bPaused && !bPlayingDelay) {
-            if (player[curSound]->totalDelay > 0) {
-                recalculateDelay(curSound);
-            }
-            if (bIsLooping) {
-                bPlayingDelay = true;
-            } else {
-                bPaused = true;
-            }
-        }
-        bPlayBackEnded = false;
+    std::vector<OpenALSoundPlayer*> ended;
+    {
+        std::lock_guard<std::mutex> lock(endedMutex);
+        ended.swap(endedQueue);
+    }
+    if (!heldEnded.empty()) {
+        ended.insert(ended.begin(), heldEnded.begin(), heldEnded.end());
+        heldEnded.clear();
+    }
+    for (OpenALSoundPlayer* audio : ended) {
+        handleEnded(audio);
     }
 
     const qint64 now = clock.elapsed();
@@ -101,6 +145,12 @@ void SoundPlayer::stop()
     if (player.empty()) {
         return;
     }
+    cancelHandover();
+    {
+        std::lock_guard<std::mutex> lock(endedMutex);
+        endedQueue.clear();
+    }
+    heldEnded.clear();
     if (!bPlayingDelay) {
         player[curSound]->audioPlayer->stop();
     }
@@ -119,6 +169,7 @@ void SoundPlayer::playSample(int index)
     if (index == curSound && isPlaying()) {
         return;
     }
+    cancelHandover();
     setPaused(true);
     player[curSound]->audioPlayer->stop();
     curSound = index;
@@ -147,9 +198,6 @@ void SoundPlayer::recalculateDelay(int delayId)
     }
     player[delayId]->totalDelay = randomRange(static_cast<float>(minDelay), static_cast<float>(maxDelay));
     player[delayId]->curDelay = player[delayId]->totalDelay;
-    if (player[delayId]->totalDelay > 0) {
-        player[delayId]->audioPlayer->setLoop(false);
-    }
 }
 
 void SoundPlayer::unload()
@@ -164,6 +212,9 @@ void SoundPlayer::setPaused(bool pause)
 {
     if (player.empty()) {
         return;
+    }
+    if (pause) {
+        cancelHandover();
     }
     bPaused = pause;
     if (player[curSound]->curDelay > 0) {
@@ -219,13 +270,29 @@ void SoundPlayer::setSpeed(float spd)
     player[curSound]->audioPlayer->setSpeed(spd);
 }
 
-void SoundPlayer::setLoop(bool bLoop)
+void SoundPlayer::setRepeat(bool on)
 {
-    if (player.empty()) {
+    bRepeat = on;
+}
+
+bool SoundPlayer::isCurrentSampleLooping() const
+{
+    if (player.empty() || curSound < 0 || curSound >= static_cast<int>(player.size())) {
+        return false;
+    }
+    return player[static_cast<size_t>(curSound)]->isLoopOn();
+}
+
+void SoundPlayer::setCurrentSampleLooping(bool on)
+{
+    if (player.empty() || curSound < 0 || curSound >= static_cast<int>(player.size())) {
         return;
     }
-    bIsLooping = bLoop;
-    player[curSound]->audioPlayer->setLoop(false);
+    if (on) {
+        cancelHandover();
+    }
+    // Switching off lets the current pass finish at the end point; the pad then moves on.
+    player[static_cast<size_t>(curSound)]->setLoopOn(on);
 }
 
 float SoundPlayer::getDuration() const
@@ -253,10 +320,22 @@ void SoundPlayer::seekTo(float pct)
     if (player.empty()) {
         return;
     }
+    cancelHandover();
     if (bPlayingDelay) {
         player[curSound]->curDelay = player[curSound]->totalDelay * (1.0f - pct);
     } else if (player[curSound]->audioPlayer) {
         player[curSound]->audioPlayer->seekTo(pct);
+    }
+}
+
+void SoundPlayer::seekSample(int index, float pct)
+{
+    if (index < 0 || index >= static_cast<int>(player.size())) {
+        return;
+    }
+    cancelHandover();
+    if (OpenALSoundPlayer* audio = player[static_cast<size_t>(index)]->audioPlayer) {
+        audio->seekTo(pct);
     }
 }
 
@@ -325,9 +404,9 @@ bool SoundPlayer::isLoaded() const
     return player[curSound]->audioPlayer->isLoaded();
 }
 
-bool SoundPlayer::isLooping() const
+bool SoundPlayer::isRepeating() const
 {
-    return bIsLooping;
+    return bRepeat;
 }
 
 float SoundPlayer::getSpeed() const
@@ -429,24 +508,163 @@ void SoundPlayer::applyRandomPanOnStart()
         return;
     }
     bStartFromBeginning = false;
-    if (!bRandomPan || player.empty()) {
+    applyRandomPan(curSound);
+}
+
+void SoundPlayer::applyRandomPan(int index)
+{
+    if (!bRandomPan || index < 0 || index >= static_cast<int>(player.size())) {
         return;
     }
-    AudioSample* sample = player[curSound];
+    AudioSample* sample = player[static_cast<size_t>(index)];
     if (!sample->audioPlayer->canPan()) {
         return;
     }
     sample->setPan(randomF());
-    emit panRandomised(curSound, sample->getPan());
+    emit panRandomised(index, sample->getPan());
+}
+
+void SoundPlayer::tryArmHandover()
+{
+    // Only when the next sample follows straight on: no delay between samples, and the
+    // current sample is heading for its end rather than looping.
+    if (handover.armed || bPaused || bPlayingDelay || player.empty() || minDelay > 0 || maxDelay > 0) {
+        return;
+    }
+    if (!OpenALSoundPlayer::scheduledStartAvailable()) {
+        return;
+    }
+    const int count = static_cast<int>(player.size());
+    if (curSound < 0 || curSound >= count) {
+        return;
+    }
+    AudioSample* current = player[static_cast<size_t>(curSound)];
+    if (!current->audioPlayer->isLoaded() || current->isLoopOn()) {
+        return;
+    }
+    int64_t endNs = 0;
+    if (!current->audioPlayer->predictEndDeviceTime(endNs)) {
+        return;
+    }
+    if (endNs - OpenALSoundPlayer::deviceClockNs() > kHandoverArmNs) {
+        return;
+    }
+    const int next = chooseNext();
+    if (next < 0 || next >= count || next == curSound) {
+        return; // the end of the list, or a single sample repeating (that one loops instead)
+    }
+    AudioSample* following = player[static_cast<size_t>(next)];
+    if (!following->audioPlayer->isLoaded() || following->audioPlayer->isPlayingOut()) {
+        return; // still playing the end of its last run; try again next tick
+    }
+    following->totalDelay = 0.0f;
+    following->curDelay = 0.0f;
+    following->audioPlayer->stop(); // at its begin frame, queue filled
+    applyRandomPan(next);
+    if (baseVolume >= 0.0f) {
+        following->audioPlayer->setVolume(baseVolume * following->getGain());
+    }
+    if (!following->audioPlayer->playAtDeviceTime(endNs)) {
+        return;
+    }
+    handover.armed = true;
+    handover.next = next;
+    handover.from = curSound;
+    handover.endNs = endNs;
+}
+
+void SoundPlayer::checkHandover()
+{
+    if (!handover.armed) {
+        return;
+    }
+    const int count = static_cast<int>(player.size());
+    if (handover.from != curSound || handover.from < 0 || handover.from >= count || handover.next < 0 || handover.next >= count) {
+        cancelHandover();
+        return;
+    }
+    if (OpenALSoundPlayer::deviceClockNs() >= handover.endNs) {
+        return; // already started: the end notice will make it current
+    }
+    AudioSample* current = player[static_cast<size_t>(curSound)];
+    // The pad's own rules may have changed: Repeat switched off before the last sample
+    // ends, a delay added, or the order changed.
+    int expected = handover.next;
+    if (curSound >= count - 1) {
+        expected = bRepeat ? 0 : -1;
+    } else if (!bRandomPlayback) {
+        expected = curSound + 1;
+    }
+    int64_t endNs = 0;
+    const bool stillValid = expected == handover.next && minDelay <= 0 && maxDelay <= 0
+        && !bPaused && !current->isLoopOn()
+        && current->audioPlayer->predictEndDeviceTime(endNs)
+        && std::llabs(endNs - handover.endNs) <= kHandoverDriftNs;
+    if (!stillValid) {
+        // Seeked, looped, re-pitched or paused: withdraw it; the next tick schedules again if it applies.
+        cancelHandover();
+    }
+}
+
+void SoundPlayer::cancelHandover()
+{
+    if (!handover.armed) {
+        return;
+    }
+    const int next = handover.next;
+    handover = Handover{};
+    if (next >= 0 && next < static_cast<int>(player.size())) {
+        player[static_cast<size_t>(next)]->audioPlayer->stop();
+    }
 }
 
 void SoundPlayer::onPlaybackEnded(OpenALSoundPlayer* ended)
 {
-    for (AudioSample* sample : player) {
-        if (sample->audioPlayer == ended) {
-            bPlayBackEnded = true;
+    // Called on the stream thread: only queue it.
+    std::lock_guard<std::mutex> lock(endedMutex);
+    endedQueue.push_back(ended);
+}
+
+int SoundPlayer::indexOf(const OpenALSoundPlayer* audio) const
+{
+    for (int i = 0; i < static_cast<int>(player.size()); ++i) {
+        if (player[static_cast<size_t>(i)]->audioPlayer == audio) {
+            return i;
         }
     }
+    return -1;
+}
+
+void SoundPlayer::handleEnded(OpenALSoundPlayer* audio)
+{
+    const int index = indexOf(audio);
+    if (index < 0 || !audio->hasEnded()) {
+        return; // not ours, or withdrawn (seeked or restarted since)
+    }
+    if (handover.armed && index == handover.next && index != curSound) {
+        // A very short next sample can finish rendering before it's even heard.
+        heldEnded.push_back(audio);
+        return;
+    }
+    if (index != curSound) {
+        return; // a sample that is no longer current (e.g. still playing out its tail)
+    }
+    if (bPaused) {
+        heldEnded.push_back(audio); // acted on once the pad resumes
+        return;
+    }
+    if (handover.armed && handover.from == curSound) {
+        // The next sample is already scheduled on the device: just make it current.
+        curSound = handover.next;
+        handover = Handover{};
+        bStartFromBeginning = false; // its random pan was applied when it was scheduled
+        bPlayingDelay = false;
+        bPaused = false;
+        bCheckPlayBackEnded = true;
+        applyVolumeToCurrent();
+        return;
+    }
+    advanceAfterEnd();
 }
 
 float SoundPlayer::randomRange(float minV, float maxV) const

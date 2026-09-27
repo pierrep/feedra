@@ -37,3 +37,22 @@ bool AudioSample::isSpatialisedStereo() const
 {
     return audioPlayer ? audioPlayer->isSpatialisedStereo() : false;
 }
+
+void AudioSample::setLoopRegion(const LoopRegion& region)
+{
+    if (audioPlayer) {
+        audioPlayer->setLoopRegion(region);
+    }
+}
+
+LoopRegion AudioSample::loopRegion() const
+{
+    return audioPlayer ? audioPlayer->getLoopRegion() : LoopRegion{};
+}
+
+void AudioSample::setLoopOn(bool on)
+{
+    LoopRegion region = loopRegion();
+    region.loop = on;
+    setLoopRegion(region);
+}

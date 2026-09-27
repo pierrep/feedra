@@ -97,7 +97,11 @@ private:
     void saveConfig();
     void saveOnExit();
     void saveConfigAs();
-    bool saveConfigTo(const QString& path, bool copyFiles);
+    // `settingsOnly` rewrites just the app settings in the file and leaves its scenes as they are.
+    bool saveConfigTo(const QString& path, bool copyFiles, bool settingsOnly = false);
+    // The sample the Waveform tab shows: the selected pad's current sample.
+    AudioSample* waveformSample() const;
+    void applyLoopRegion(AudioSample* sample, const LoopRegion& region);
     void loadConfig();
     void loadConfigFrom(const QString& path);
     void saveWindowLayout(QJsonObject& global) const;
@@ -169,6 +173,7 @@ private:
     QSlider* m_reverbSend = nullptr;
     QSlider* m_reverbSend2 = nullptr;
     QCheckBox* m_randomPlayback = nullptr;
+    QCheckBox* m_repeat = nullptr;
     QLabel* m_infoLabel = nullptr;
     SoundPadWidget* m_infoPad = nullptr;
     int m_infoSound = -1;
@@ -188,11 +193,13 @@ private:
     QDoubleSpinBox* m_gainValue = nullptr;
     QCheckBox* m_randomPan = nullptr;
     QCheckBox* m_spatialise = nullptr;
+    QCheckBox* m_sampleLoop = nullptr;
     QPushButton* m_addSample = nullptr;
     QLabel* m_editTitle = nullptr;
 
     QCheckBox* m_loadLastSettings = nullptr;
-    QCheckBox* m_loopByDefault = nullptr;
+    QCheckBox* m_autosave = nullptr;
+    int m_loopDragSampleId = -1; // sample whose loop handles are being dragged on the Waveform tab
     QSpinBox* m_sceneLimit = nullptr;
     QSpinBox* m_gridColumns = nullptr;
     QSpinBox* m_gridRows = nullptr;
