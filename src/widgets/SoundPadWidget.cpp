@@ -1027,7 +1027,7 @@ void SoundPadWidget::cancelLoading()
 }
 
 void SoundPadWidget::enqueueSample(const QString& path, float pitch, float gain, float pan, bool panRandom, bool spatialise,
-                                   const LoopRegion& loop)
+                                   const LoopRegion& loop, float width)
 {
     if (path.isEmpty()) {
         return;
@@ -1043,6 +1043,7 @@ void SoundPadWidget::enqueueSample(const QString& path, float pitch, float gain,
     slot.panRandom = panRandom;
     slot.spatialise = spatialise;
     slot.loop = loop;
+    slot.width = width;
     m_slots.push_back(slot);
     const int index = m_loadTotal++;
     m_config->lastPath = QFileInfo(path).absolutePath();
@@ -1192,6 +1193,7 @@ bool SoundPadWidget::commitDecoded(int slotIndex, DecodedAudio audio)
     sample->setPitch(slot.pitch);
     sample->setGain(slot.gain);
     sample->setPan(slot.pan);
+    sample->setWidth(slot.width);
     if (slot.panRandom) {
         m_player.setRandomPan(true);
     }
@@ -1239,6 +1241,7 @@ std::vector<SoundPadWidget::LoadSlot> SoundPadWidget::sampleSpecs() const
             spec.pan = m_player.player[static_cast<size_t>(i)]->getPan();
             spec.panRandom = m_player.isRandomPan();
             spec.spatialise = isSpatialisedStereo(i);
+            spec.width = m_player.player[static_cast<size_t>(i)]->getWidth();
             spec.loop = m_player.player[static_cast<size_t>(i)]->loopRegion();
             specs.push_back(spec);
         }
@@ -1259,6 +1262,7 @@ std::vector<SoundPadWidget::LoadSlot> SoundPadWidget::sampleSpecs() const
             spec.pan = sample->getPan();
             spec.panRandom = m_player.isRandomPan();
             spec.spatialise = isSpatialisedStereo(playerIndex);
+            spec.width = sample->getWidth();
             spec.loop = sample->loopRegion();
             ++playerIndex;
         }
@@ -1333,7 +1337,8 @@ void SoundPadWidget::loadFromJson(const QJsonObject& root)
             static_cast<float>(sample.value(QStringLiteral("pan")).toDouble()),
             sample.value(QStringLiteral("panrandom")).toBool(),
             sample.value(QStringLiteral("spatialise")).toBool(),
-            loop);
+            loop,
+            static_cast<float>(std::clamp(sample.value(QStringLiteral("width")).toDouble(1.0), 0.0, 1.0)));
     }
     update();
 }
@@ -1377,7 +1382,8 @@ void SoundPadWidget::saveToJson(QJsonObject& sceneObj) const
         sample.insert(QStringLiteral("pitch"), m_player.player[i]->getPitch());
         sample.insert(QStringLiteral("pan"), m_player.player[i]->getPan());
         sample.insert(QStringLiteral("panrandom"), m_player.isRandomPan());
-        sample.insert(QStringLiteral("spatialise"), isSpatialisedStereo(i));
+        // "spatialise" is no longer written: stereo pans as one source, with a width.
+        sample.insert(QStringLiteral("width"), m_player.player[i]->getWidth());
         sample.insert(QStringLiteral("duration"), m_player.player[i]->audioPlayer->getDuration());
         const LoopRegion loop = m_player.player[i]->loopRegion();
         sample.insert(QStringLiteral("loop"), loop.loop);
@@ -1483,6 +1489,7 @@ SoundPadWidget::PadClip SoundPadWidget::clip() const
         sample.pan = spec.pan;
         sample.panRandom = spec.panRandom || clip.randomPan;
         sample.spatialise = spec.spatialise;
+        sample.width = spec.width;
         sample.loop = spec.loop;
         clip.samples.push_back(sample);
     }
@@ -1512,7 +1519,7 @@ void SoundPadWidget::pasteClip(const PadClip& clip)
     }
     m_notifyWhenDone = true;
     for (const PadClip::Sample& sample : clip.samples) {
-        enqueueSample(sample.path, sample.pitch, sample.gain, sample.pan, sample.panRandom, sample.spatialise, sample.loop);
+        enqueueSample(sample.path, sample.pitch, sample.gain, sample.pan, sample.panRandom, sample.spatialise, sample.loop, sample.width);
     }    update();
 }
 

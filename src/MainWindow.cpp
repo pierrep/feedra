@@ -566,7 +566,10 @@ void MainWindow::buildUi()
     m_gain->setRange(0, VolumeDb::sliderSpan(kSampleGainMinDb, kSampleGainMaxDb));
     m_gain->setValue(VolumeDb::toSlider(VolumeDb::kUnityDb, kSampleGainMinDb));
     m_randomPan = new QCheckBox(tr("Random Pan"), m_editorPage);
-    m_spatialise = new QCheckBox(tr("Spatialise Stereo"), m_editorPage);
+    m_width = new QSlider(Qt::Horizontal, m_editorPage);
+    m_width->setRange(0, 100);
+    m_width->setValue(100);
+    m_width->setToolTip(tr("Stereo width: 100% is the file's full stereo image, 0% plays it as mono at the pan position."));
     m_sampleLoop = new QCheckBox(tr("Loop"), m_editorPage);
     m_sampleLoop->setToolTip(tr("Loop this sample seamlessly between its loop points (set them on the Waveform tab).\n"
                                 "The pad's loop icon shows and switches this for the sample that is playing."));
@@ -596,6 +599,9 @@ void MainWindow::buildUi()
     m_gainValue->setDecimals(1);
     m_gainValue->setSuffix(QStringLiteral(" dB"));
     m_gainValue->setMinimumWidth(88);
+    m_widthValue = makeValueBox(m_width, 1.0, 0.0);
+    m_widthValue->setDecimals(0);
+    m_widthValue->setSuffix(QStringLiteral(" %"));
 
     m_sampleControls = new QWidget(m_editorPage);
     auto* controlsLayout = new QVBoxLayout(m_sampleControls);
@@ -612,12 +618,12 @@ void MainWindow::buildUi()
         return caption;
     };
     m_panLabel = addLabeled(tr("Panning"), m_pan, m_panValue);
+    m_widthLabel = addLabeled(tr("Width"), m_width, m_widthValue);
     addLabeled(tr("Pitch"), m_pitch, m_pitchValue);
     addLabeled(tr("Gain"), m_gain, m_gainValue);
     auto* checkLayout = new QVBoxLayout();
     checkLayout->setContentsMargins(0, 0, 8, 0);
     checkLayout->addWidget(m_randomPan);
-    checkLayout->addWidget(m_spatialise);
     checkLayout->addWidget(m_sampleLoop);
     controlsLayout->addLayout(checkLayout);
     editLayout->addWidget(m_sampleControls);
@@ -995,10 +1001,10 @@ void MainWindow::buildUi()
             pad->soundPlayer().setRandomPan(on);
         }
     });
-    connect(m_spatialise, &QCheckBox::toggled, this, [this](bool on) {
+    connect(m_width, &QSlider::valueChanged, this, [this](int v) {
         if (m_updatingControls) return;
-        if (auto* pad = activePad()) {
-            pad->setSpatialisedStereo(m_config.activeSampleIdx, on);
+        if (auto* pad = activePad(); pad && pad->soundPlayer().player.size() > static_cast<size_t>(m_config.activeSampleIdx)) {
+            pad->soundPlayer().player.at(m_config.activeSampleIdx)->setWidth(v / 100.0f);
         }
     });
     connect(m_addSample, &QPushButton::clicked, this, [this]() {
@@ -1476,8 +1482,11 @@ void MainWindow::updateEditControls()
     m_config.activeSampleIdx = std::clamp(m_config.activeSampleIdx, 0, static_cast<int>(pad->soundPlayer().player.size()) - 1);
     auto* sample = pad->soundPlayer().player.at(m_config.activeSampleIdx);
     m_updatingControls = true;
-    m_spatialise->setVisible(sample->audioPlayer->getNumChannels() == 2);
-    m_spatialise->setChecked(pad->isSpatialisedStereo(m_config.activeSampleIdx));
+    const bool stereo = sample->audioPlayer->getNumChannels() == 2;
+    m_width->setVisible(stereo);
+    m_widthValue->setVisible(stereo);
+    m_widthLabel->setVisible(stereo);
+    m_width->setValue(static_cast<int>(std::lround(sample->getWidth() * 100.0f)));
     updatePanControl(sample);
     m_pitch->setValue(static_cast<int>(sample->getPitch() * 1000.0f));
     m_gain->setValue(std::clamp(

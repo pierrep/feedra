@@ -198,7 +198,9 @@ private:
     QSlider* m_gain = nullptr;
     QDoubleSpinBox* m_gainValue = nullptr;
     QCheckBox* m_randomPan = nullptr;
-    QCheckBox* m_spatialise = nullptr;
+    QSlider* m_width = nullptr;
+    QDoubleSpinBox* m_widthValue = nullptr;
+    QLabel* m_widthLabel = nullptr;
     QCheckBox* m_sampleLoop = nullptr;
     QPushButton* m_addSample = nullptr;
     QLabel* m_editTitle = nullptr;

@@ -222,10 +222,17 @@ public:
     std::string getSubFormatString() const { return subformat_string; }
 
     int getNumSources() { return static_cast<int>(sources.size()); }
+    // Stereo files always play as one stereo source now; kept for older callers.
     bool isSpatialisedStereo() { return spatialisedStereo; }
     // Stereo files are split into one mono source per channel when spatialised.
     bool uploadDecoded(DecodedAudio decoded, bool spatialise);
-    bool canPan() const { return channels == 1 || (channels == 2 && spatialisedStereo); }
+    // Mono moves its position; stereo turns both channels together (see setStereoWidth).
+    bool canPan() const { return channels == 1 || channels == 2; }
+    // Stereo image width: 1 = the normal ±30° spread, 0 = both channels in the pan position.
+    void setStereoWidth(float width);
+    float getStereoWidth() const { return stereoWidth; }
+    // True when the device pans stereo by moving its channels (AL_EXT_STEREO_ANGLES).
+    static bool stereoAnglesAvailable();
 
     static void addPlaybackEndedListener(void* owner, PlaybackEndedCallback cb);
     static void removePlaybackEndedListener(void* owner);
@@ -404,6 +411,12 @@ private:
     std::atomic<int64_t> pendingSeekFrame{-1};
 
     void applySends();
+    void applyStereoImage();
+    void applyStereoFallback(float* data, int frames);
+    float stereoWidth = 1.0f;
+    // Pan and width for the fallback panner in the renderer (no AL_EXT_STEREO_ANGLES).
+    std::atomic<float> fallbackPan{0.0f};
+    std::atomic<float> fallbackWidth{1.0f};
     ALuint filters[kSendCount] = { 0, 0, 0, 0 };
     float sends[kSendCount] = { 0.0f, 0.0f, 0.0f, 0.0f };
     bool bUseFilter = false;

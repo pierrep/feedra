@@ -163,6 +163,7 @@ public:
             float pan = 0.0f;
             bool panRandom = false;
             bool spatialise = false;
+            float width = 1.0f;
             LoopRegion loop;
         };
         std::vector<Sample> samples;
@@ -217,6 +218,7 @@ private:
         float pan = 0.0f;
         bool panRandom = false;
         bool spatialise = false;
+        float width = 1.0f;
         LoopRegion loop;
         bool failed = false;
     };
@@ -229,7 +231,7 @@ private:
     void chooseFiles();
     void cancelLoading();
     void enqueueSample(const QString& path, float pitch, float gain, float pan, bool panRandom, bool spatialise,
-                       const LoopRegion& loop = LoopRegion{});
+                       const LoopRegion& loop = LoopRegion{}, float width = 1.0f);
     bool commitDecoded(int slotIndex, DecodedAudio audio);
     void flushIncoming();
     std::vector<LoadSlot> sampleSpecs() const;

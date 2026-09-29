@@ -172,6 +172,9 @@ typedef void (AL_APIENTRY* FeedraPlayAtTimevFn)(ALsizei n, const ALuint* sources
 typedef void (ALC_APIENTRY* FeedraGetInteger64vFn)(ALCdevice* device, ALCenum pname, ALsizei size, int64_t* values);
 static FeedraPlayAtTimevFn g_playAtTimev = nullptr;
 static FeedraGetInteger64vFn g_getInteger64v = nullptr;
+// Stereo panning by moving the two channels (OpenAL Soft's AL_EXT_STEREO_ANGLES).
+#define FEEDRA_AL_STEREO_ANGLES 0x1030
+static bool g_stereoAngles = false;
 
 
 // ----------------------------------------------------------------------------
@@ -1202,6 +1205,8 @@ void OpenALSoundPlayer::initialize(){
             g_getInteger64v = reinterpret_cast<FeedraGetInteger64vFn>(alcGetProcAddress(alDevice, "alcGetInteger64vSOFT"));
         }
         qInfo() << "Scheduled starts" << (g_playAtTimev && g_getInteger64v ? "available" : "unavailable");
+        g_stereoAngles = alIsExtensionPresent("AL_EXT_STEREO_ANGLES") == AL_TRUE;
+        qInfo() << "Stereo panning" << (g_stereoAngles ? "by stereo angles" : "in the renderer");
 #ifdef FEEDRA_USING_MPG123
 		mpg123_init();
 #endif
@@ -1479,7 +1484,10 @@ size_t OpenALSoundPlayer::readFile(const std::filesystem::path& fileName){
 //------------------------------------------------------------
 bool OpenALSoundPlayer::uploadDecoded(DecodedAudio decoded, bool spatialise)
 {
-    spatialisedStereo = spatialise;
+    // Stereo is no longer split into two mono sources: one stereo source pans and narrows
+    // as a whole (setPan / setStereoWidth), and keeps both channels whatever the pan.
+    (void)spatialise;
+    spatialisedStereo = false;
     return uploadDecoded(std::move(decoded));
 }
 
@@ -2643,6 +2651,7 @@ int OpenALSoundPlayer::renderChunk(ChunkRecord& rec)
         rec.toEnd = std::max<int64_t>(0, stopFrame() - decPos.load());
     }
     stream_end = renderEnded;
+    applyStereoFallback(work.data(), out);
     convertRendered(out);
     return out;
 }
@@ -3182,18 +3191,84 @@ void OpenALSoundPlayer::setVolume(float vol){
 }
 
 //------------------------------------------------------------
+bool OpenALSoundPlayer::stereoAnglesAvailable()
+{
+    return g_stereoAngles;
+}
+
+void OpenALSoundPlayer::setStereoWidth(float width)
+{
+    stereoWidth = std::clamp(width, 0.0f, 1.0f);
+    if (channels == 2 && sources.size() == 1) {
+        applyStereoImage();
+    }
+}
+
+void OpenALSoundPlayer::applyStereoImage()
+{
+    if (sources.empty() || channels != 2) {
+        return;
+    }
+    if (g_stereoAngles) {
+        // Angles are counter-clockwise (left positive), radians. The pan turns the pair
+        // towards the side, the same place a mono sound at this pan sits; the width sets
+        // how far each channel is from that centre (30° at full width).
+        const float centre = -std::asin(std::clamp(pan, -1.0f, 1.0f));
+        const float half = stereoWidth * 0.5235987755982988f;
+        const ALfloat angles[2] = { centre + half, centre - half };
+        alSourcefv(sources[0], FEEDRA_AL_STEREO_ANGLES, angles);
+        fallbackPan.store(0.0f);
+        fallbackWidth.store(1.0f);
+    } else {
+        // No extension: the renderer applies it to each chunk as it is prepared.
+        fallbackPan.store(pan);
+        fallbackWidth.store(stereoWidth);
+    }
+}
+
+void OpenALSoundPlayer::applyStereoFallback(float* data, int frames)
+{
+    const float p = fallbackPan.load();
+    const float w = fallbackWidth.load();
+    if (channels != 2 || (p == 0.0f && w >= 1.0f)) {
+        return;
+    }
+    // Width: scale the side signal. Pan: move the far channel into the near one at constant
+    // power, so nothing is dropped at full pan.
+    const float a = std::fabs(p) * 1.5707963267948966f;
+    const float keep = std::cos(a);
+    const float fold = std::sin(a);
+    for (int f = 0; f < frames; ++f) {
+        float* s = data + f * 2;
+        const float mid = 0.5f * (s[0] + s[1]);
+        const float side = 0.5f * (s[0] - s[1]) * w;
+        float l = mid + side;
+        float r = mid - side;
+        if (p > 0.0f) {
+            r += l * fold;
+            l *= keep;
+        } else if (p < 0.0f) {
+            l += r * fold;
+            r *= keep;
+        }
+        s[0] = l;
+        s[1] = r;
+    }
+}
+
 void OpenALSoundPlayer::setPan(float p){
 	p = std::clamp(p, -1.f, 1.f);
 	pan = p;
 	if(sources.empty()) return;
     if(!canPan()) {
-        //Non-spatialised stereo plays through a single stereo source, so panning does nothing
         return;
     }
 
     if(channels==1){
         float pos[3] = {pan, 0, -sqrtf(1.0f - pan*pan)};
         alSourcefv(sources[sources.size()-1],AL_POSITION,pos);
+	}else if(sources.size() == 1){
+        applyStereoImage();
 	}else{
         // calculates left/right volumes from pan-value (constant panning law)
         // see: Curtis Roads: Computer Music Tutorial p 460

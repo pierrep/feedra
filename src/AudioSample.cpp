@@ -56,3 +56,15 @@ void AudioSample::setLoopOn(bool on)
     region.loop = on;
     setLoopRegion(region);
 }
+
+void AudioSample::setWidth(float width)
+{
+    if (audioPlayer) {
+        audioPlayer->setStereoWidth(width);
+    }
+}
+
+float AudioSample::getWidth() const
+{
+    return audioPlayer ? audioPlayer->getStereoWidth() : 1.0f;
+}

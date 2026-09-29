@@ -17,6 +17,9 @@ public:
     float getGain() const { return gain; }
     float getPan() const;
     bool isSpatialisedStereo() const;
+    // Stereo width, 0 (mono, at the pan position) to 1 (full width). Stereo files only.
+    void setWidth(float width);
+    float getWidth() const;
 
     // Loop region, "loop this sample" and "play from start". Kept in the sample's player,
     // so they survive reloads (e.g. switching spatialise) and apply the moment they change.
