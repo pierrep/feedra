@@ -737,7 +737,7 @@ bool SoundPadWidget::hasDelay() const
 {
     // The delay is picked between min and max (max wins if they're crossed), so any
     // non-zero value means the pad can wait before playing.
-    return m_player.getMinDelay() > 0 || m_player.getMaxDelay() > 0;
+    return m_player.hasDelay();
 }
 
 QString SoundPadWidget::currentSamplePath() const
@@ -1151,8 +1151,6 @@ void SoundPadWidget::submitReload(const SampleLoadJob& job, DecodedAudio audio)
     OpenALSoundPlayer* player = sample->audioPlayer;
     const bool resume = index == m_player.curSound && player->isPlaying();
     const int positionMs = player->getPositionMS();
-    const float reverb = player->getReverbSend();
-    const float reverb2 = player->getReverbSend2();
 
     if (!player->uploadDecoded(std::move(audio), spatialise)) {
         qWarning() << "SoundPadWidget: couldn't reload" << job.path;
@@ -1160,8 +1158,9 @@ void SoundPadWidget::submitReload(const SampleLoadJob& job, DecodedAudio audio)
         return;
     }
     sample->setPitch(sample->getPitch());
-    player->setReverbSend(reverb);
-    player->setReverbSend2(reverb2);
+    for (int bus = 0; bus < OpenALSoundPlayer::kSendCount; ++bus) {
+        player->setSend(bus, m_sends[bus]);
+    }
     if (resume) {
         player->setPositionMS(positionMs);
         player->setPaused(false);
@@ -1199,8 +1198,9 @@ bool SoundPadWidget::commitDecoded(int slotIndex, DecodedAudio audio)
     m_player.player.push_back(sample);
     setupLoadedSound(slot.path);
     m_player.recalculateDelay(static_cast<int>(m_player.player.size()) - 1);
-    m_player.setReverbSend(m_reverb);
-    m_player.setReverbSend2(m_reverb2);
+    for (int bus = 0; bus < OpenALSoundPlayer::kSendCount; ++bus) {
+        m_player.setSend(bus, m_sends[bus]);
+    }
     return true;
 }
 
@@ -1284,6 +1284,7 @@ void SoundPadWidget::loadFromJson(const QJsonObject& root)
     m_stream = pad.value(QStringLiteral("isstream")).toBool(true);
     m_player.minDelay = pad.value(QStringLiteral("mindelay")).toInt();
     m_player.maxDelay = pad.value(QStringLiteral("maxdelay")).toInt();
+    m_player.bDelayEnabled = pad.value(QStringLiteral("delayon")).toBool(true);
     m_player.bRandomPlayback = pad.value(QStringLiteral("playrandom")).toBool();
     // Files before sample loops stored the pad's repeat as "loop". A pad that repeated a
     // single sample with no delay was a continuous ambience: its sample now loops seamlessly.
@@ -1294,11 +1295,15 @@ void SoundPadWidget::loadFromJson(const QJsonObject& root)
     setPadVolume(static_cast<float>(pad.value(QStringLiteral("volume")).toDouble(0.7)));
     m_sampleRate = pad.value(QStringLiteral("samplerate")).toInt();
     m_channels = pad.value(QStringLiteral("channels")).toInt();
-    m_reverb = static_cast<float>(pad.value(QStringLiteral("reverbsend")).toDouble());
-    m_reverb2 = static_cast<float>(pad.value(QStringLiteral("reverbsend2")).toDouble());
+    // "reverbsend"/"reverbsend2" are the first EAX and first convolution sends, as before.
+    m_sends[0] = static_cast<float>(pad.value(QStringLiteral("reverbsend")).toDouble());
+    m_sends[1] = static_cast<float>(pad.value(QStringLiteral("eaxsend2")).toDouble());
+    m_sends[2] = static_cast<float>(pad.value(QStringLiteral("reverbsend2")).toDouble());
+    m_sends[3] = static_cast<float>(pad.value(QStringLiteral("convsend2")).toDouble());
     m_player.setup(m_config, m_padId);
-    m_player.setReverbSend(m_reverb);
-    m_player.setReverbSend2(m_reverb2);
+    for (int bus = 0; bus < OpenALSoundPlayer::kSendCount; ++bus) {
+        m_player.setSend(bus, m_sends[bus]);
+    }
 
     const QJsonObject samples = pad.value(QStringLiteral("samples")).toObject();
     int sampleCount = 0;
@@ -1351,10 +1356,13 @@ void SoundPadWidget::saveToJson(QJsonObject& sceneObj) const
     pad.insert(QStringLiteral("channels"), m_channels);
     pad.insert(QStringLiteral("playrandom"), m_player.bRandomPlayback);
     pad.insert(QStringLiteral("panrandom"), m_player.isRandomPan());
-    pad.insert(QStringLiteral("reverbsend"), m_player.getReverbSend());
-    pad.insert(QStringLiteral("reverbsend2"), m_player.player.empty() ? m_reverb2 : m_player.getReverbSend2());
+    pad.insert(QStringLiteral("reverbsend"), m_sends[0]);
+    pad.insert(QStringLiteral("eaxsend2"), m_sends[1]);
+    pad.insert(QStringLiteral("reverbsend2"), m_sends[2]);
+    pad.insert(QStringLiteral("convsend2"), m_sends[3]);
     pad.insert(QStringLiteral("mindelay"), m_player.minDelay);
     pad.insert(QStringLiteral("maxdelay"), m_player.maxDelay);
+    pad.insert(QStringLiteral("delayon"), m_player.isDelayEnabled());
 
     QJsonObject samples;
     const int count = std::min(static_cast<int>(m_player.player.size()), static_cast<int>(m_soundPaths.size()));
@@ -1414,26 +1422,40 @@ void SoundPadWidget::clearPad()
     setPadVolume(0.7f);
     m_player.minDelay = 0;
     m_player.maxDelay = 0;
+    m_player.bDelayEnabled = true;
     m_player.bRandomPlayback = false;
     m_player.bRandomPan = false;
     m_playhead->setProgress(0.0f);
     m_playhead->setTimeText(QString());
     m_playhead->setVisible(false);
-    m_reverb = 0.0f;
-    m_reverb2 = 0.0f;
+    for (float& send : m_sends) {
+        send = 0.0f;
+    }
     update(); // drops the delay border
 }
 
 void SoundPadWidget::setReverbSend(float send)
 {
-    m_reverb = send;
-    m_player.setReverbSend(send);
+    setSend(0, send);
 }
 
 void SoundPadWidget::setReverbSend2(float send)
 {
-    m_reverb2 = send;
-    m_player.setReverbSend2(send);
+    setSend(OpenALSoundPlayer::kEaxReverbCount, send);
+}
+
+void SoundPadWidget::setSend(int bus, float send)
+{
+    if (bus < 0 || bus >= OpenALSoundPlayer::kSendCount) {
+        return;
+    }
+    m_sends[bus] = send;
+    m_player.setSend(bus, send);
+}
+
+float SoundPadWidget::sendLevel(int bus) const
+{
+    return bus >= 0 && bus < OpenALSoundPlayer::kSendCount ? m_sends[bus] : 0.0f;
 }
 
 SoundPadWidget::PadClip SoundPadWidget::clip() const
@@ -1445,12 +1467,14 @@ SoundPadWidget::PadClip SoundPadWidget::clip() const
     clip.repeat = isRepeating();
     clip.minDelay = m_player.minDelay;
     clip.maxDelay = m_player.maxDelay;
+    clip.delayOn = m_player.isDelayEnabled();
     clip.randomPlayback = m_player.bRandomPlayback;
     clip.randomPan = m_player.isRandomPan();
     clip.name = soundName();
     clip.volume = padVolume();
-    clip.reverb = (isLoading() || m_player.player.empty()) ? m_reverb : m_player.getReverbSend();
-    clip.reverb2 = (isLoading() || m_player.player.empty()) ? m_reverb2 : m_player.getReverbSend2();
+    for (int bus = 0; bus < OpenALSoundPlayer::kSendCount; ++bus) {
+        clip.sends[bus] = m_sends[bus];
+    }
     for (const LoadSlot& spec : sampleSpecs()) {
         PadClip::Sample sample;
         sample.path = spec.path;
@@ -1478,12 +1502,14 @@ void SoundPadWidget::pasteClip(const PadClip& clip)
     setRepeating(clip.repeat);
     m_player.minDelay = clip.minDelay;
     m_player.maxDelay = clip.maxDelay;
+    m_player.bDelayEnabled = clip.delayOn;
     m_player.bRandomPlayback = clip.randomPlayback;
     m_player.setRandomPan(clip.randomPan);
     setSoundName(clip.name);
     setPadVolume(clip.volume);
-    m_reverb = clip.reverb;
-    m_reverb2 = clip.reverb2;
+    for (int bus = 0; bus < OpenALSoundPlayer::kSendCount; ++bus) {
+        m_sends[bus] = clip.sends[bus];
+    }
     m_notifyWhenDone = true;
     for (const PadClip::Sample& sample : clip.samples) {
         enqueueSample(sample.path, sample.pitch, sample.gain, sample.pan, sample.panRandom, sample.spatialise, sample.loop);

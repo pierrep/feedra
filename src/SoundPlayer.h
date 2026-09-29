@@ -71,7 +71,18 @@ public:
     void setReverbSend(float send);
     float getReverbSend2() const;
     void setReverbSend2(float send);
+    // Any of the four effect sends (see OpenALSoundPlayer::kSendCount).
+    float getSend(int bus) const;
+    void setSend(int bus, float send);
     void recalculateDelay(int id);
+    // The delay can be switched off without losing min/max. While off, samples follow on
+    // straight away (and hand over seamlessly).
+    void setDelayEnabled(bool on);
+    bool isDelayEnabled() const { return bDelayEnabled; }
+    // Delay on and a non-zero min or max.
+    bool hasDelay() const { return bDelayEnabled && (minDelay > 0 || maxDelay > 0); }
+    // Seconds left of the delay countdown now running, or 0.
+    float getRemainingDelay() const;
 
     void setRandomPlayback(bool val) { bRandomPlayback = val; }
     bool isPlayingRandom() const { return bRandomPlayback; }
@@ -93,6 +104,7 @@ public:
     bool bCheckPlayBackEnded = false;
     bool bRandomPlayback = false;
     bool bRandomPan = false;
+    bool bDelayEnabled = true;
 
 signals:
     void panRandomised(int sampleIndex, float pan);

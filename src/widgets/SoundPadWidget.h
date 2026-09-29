@@ -134,6 +134,9 @@ public:
     void loadFiles(const QStringList& paths, bool clearExisting);
     void setReverbSend(float send);
     void setReverbSend2(float send);
+    // Effect send `bus`: 0 and 1 are the EAX reverbs, 2 and 3 the convolution reverbs.
+    void setSend(int bus, float send);
+    float sendLevel(int bus) const;
     void clearPad();
     void copyFrom(SoundPadWidget& other);
 
@@ -145,14 +148,14 @@ public:
         int sampleRate = 0;
         int channels = 0;
         bool repeat = false;
+        bool delayOn = true;
         int minDelay = 0;
         int maxDelay = 0;
         bool randomPlayback = false;
         bool randomPan = false;
         QString name;
         float volume = 0.7f;
-        float reverb = 0.0f;
-        float reverb2 = 0.0f;
+        float sends[OpenALSoundPlayer::kSendCount] = { 0.0f, 0.0f, 0.0f, 0.0f };
         struct Sample {
             QString path;
             float pitch = 1.0f;
@@ -255,8 +258,8 @@ private:
     int m_nextCommit = 0;
     bool m_finishSent = false;
     bool m_notifyWhenDone = false;
-    float m_reverb = 0.0f;
-    float m_reverb2 = 0.0f;
+    // Send levels, kept here too so they survive loading (bus order: EAX 1, EAX 2, conv 1, conv 2).
+    float m_sends[OpenALSoundPlayer::kSendCount] = { 0.0f, 0.0f, 0.0f, 0.0f };
     int m_sceneId = 0;
     int m_padId = 0;
     bool m_stream = true;

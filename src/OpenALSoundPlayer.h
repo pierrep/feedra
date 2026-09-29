@@ -189,24 +189,32 @@ public:
     int getSampleRate() const { return samplerate; }
     int getNumChannels() const { return channels; }
     bool isStreamEnd() const { return stream_end; }
-    float getReverbSend() const { return reverbSend; }
-    void setReverbSend(float send) { reverbSend = send; }
-    float getReverbSend2() const { return reverbSend2; }
-    void setReverbSend2(float send) { reverbSend2 = send; }
+    // Effect buses and sends: 0 and 1 are the EAX reverbs, 2 and 3 the convolution reverbs.
+    static constexpr int kEaxReverbCount = 2;
+    static constexpr int kConvolutionCount = 2;
+    static constexpr int kSendCount = kEaxReverbCount + kConvolutionCount;
+    static bool sendAvailable(int bus);
+    float getSend(int bus) const { return bus >= 0 && bus < kSendCount ? sends[bus] : 0.0f; }
+    void setSend(int bus, float send) { if (bus >= 0 && bus < kSendCount) sends[bus] = send; }
+    // The first EAX reverb and the first convolution reverb (older API).
+    float getReverbSend() const { return sends[0]; }
+    void setReverbSend(float send) { sends[0] = send; }
+    float getReverbSend2() const { return sends[kEaxReverbCount]; }
+    void setReverbSend2(float send) { sends[kEaxReverbCount] = send; }
 
     static int reverbPresetCount();
     static std::string reverbPresetId(int index);
     static std::string reverbPresetLabel(int index);
-    static int reverbPresetIndex();
-    static void setReverbPreset(int index);
-    static bool setReverbPresetById(const std::string& id);
+    static int reverbPresetIndex(int which = 0);
+    static void setReverbPreset(int index, int which = 0);
+    static bool setReverbPresetById(const std::string& id, int which = 0);
 
     static float defaultConvolutionGain();
-    static float convolutionGain();
-    static void setConvolutionGain(float gain);
+    static float convolutionGain(int which = 0);
+    static void setConvolutionGain(float gain, int which = 0);
     static bool convolutionAvailable();
-    static std::filesystem::path convolutionImpulsePath();
-    static bool setConvolutionImpulse(const std::filesystem::path& path);
+    static std::filesystem::path convolutionImpulsePath(int which = 0);
+    static bool setConvolutionImpulse(const std::filesystem::path& path, int which = 0);
 
     int getFileFormat() const { return fileformat; }
     ALenum getOpenALFormat() const { return openALformat; }
@@ -395,8 +403,8 @@ private:
 
     std::atomic<int64_t> pendingSeekFrame{-1};
 
-    ALuint filters[2] = { 0, 0 };
-    float reverbSend = 0.0f;
-    float reverbSend2 = 0.0f;
+    void applySends();
+    ALuint filters[kSendCount] = { 0, 0, 0, 0 };
+    float sends[kSendCount] = { 0.0f, 0.0f, 0.0f, 0.0f };
     bool bUseFilter = false;
 };

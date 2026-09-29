@@ -230,9 +230,11 @@ MainWindow::MainWindow(QWidget* parent)
     PeakStore::instance().setCacheDir(m_config.waveformCacheDir());
     m_loads = new SampleLoadQueue(this);
     OpenALSoundPlayer::initialize();
-    OpenALSoundPlayer::setConvolutionGain(OpenALSoundPlayer::defaultConvolutionGain());
-    if (!OpenALSoundPlayer::setConvolutionImpulse(toImpulsePath(defaultImpulsePath(m_config)))) {
-        qWarning() << "Convolution impulse not loaded" << defaultImpulsePath(m_config);
+    for (int which = 0; which < OpenALSoundPlayer::kConvolutionCount; ++which) {
+        OpenALSoundPlayer::setConvolutionGain(OpenALSoundPlayer::defaultConvolutionGain(), which);
+        if (!OpenALSoundPlayer::setConvolutionImpulse(toImpulsePath(defaultImpulsePath(m_config)), which)) {
+            qWarning() << "Convolution impulse not loaded" << defaultImpulsePath(m_config);
+        }
     }
     m_curDevice = QString::fromStdString(OpenALSoundPlayer::getDefaultDeviceString());
 
@@ -702,8 +704,12 @@ void MainWindow::buildUi()
     sampleLayout->addStretch();
 
     auto* padPage = new QWidget(m_bottomStack);
-    auto* padGrid = new QGridLayout(padPage);
-    padGrid->setContentsMargins(20, 12, 20, 12);
+    // Delay and playback options on the left, the four effect sends on the right.
+    auto* padRow = new QHBoxLayout(padPage);
+    padRow->setContentsMargins(20, 12, 20, 12);
+    padRow->setSpacing(36);
+    auto* padGrid = new QGridLayout();
+    padGrid->setContentsMargins(0, 0, 0, 0);
     padGrid->setHorizontalSpacing(14);
     padGrid->setVerticalSpacing(10);
     m_minDelay = new QSpinBox(padPage);
@@ -720,34 +726,51 @@ void MainWindow::buildUi()
     m_maxDelay->setMinimumWidth(72);
     m_maxDelay->setMaximumWidth(140);
     m_maxDelay->setSuffix(tr(" s"));
-    m_reverbSend = new QSlider(Qt::Horizontal, padPage);
-    m_reverbSend->setRange(0, 1000);
-    m_reverbSend2 = new QSlider(Qt::Horizontal, padPage);
-    m_reverbSend2->setRange(0, 1000);
-    m_reverbSend2->setToolTip(tr("Send into the convolution reverb"));
+    for (int bus = 0; bus < OpenALSoundPlayer::kSendCount; ++bus) {
+        m_sendSliders[bus] = new QSlider(Qt::Horizontal, padPage);
+        m_sendSliders[bus]->setRange(0, 1000);
+        m_sendSliders[bus]->setMinimumWidth(240);
+        m_sendSliders[bus]->setEnabled(false);
+        m_sendLabels[bus] = new QLabel(padPage);
+    }
     m_randomPlayback = new QCheckBox(tr("Random Playback"), padPage);
     m_randomPlayback->hide();
     m_repeat = new QCheckBox(tr("Repeat"), padPage);
     m_repeat->setToolTip(tr("After the last sample, start the list again after the delay.\n"
                             "To loop one sample seamlessly, use the pad's loop icon instead."));
     m_repeat->setEnabled(false);
-    padGrid->addWidget(new QLabel(tr("Min delay"), padPage), 0, 0);
-    padGrid->addWidget(m_minDelay, 0, 1);
-    padGrid->addWidget(new QLabel(tr("Max delay"), padPage), 0, 2);
-    padGrid->addWidget(m_maxDelay, 0, 3);
-    padGrid->addWidget(new QLabel(tr("EAX Reverb send"), padPage), 1, 0);
-    padGrid->addWidget(m_reverbSend, 1, 1, 1, 3);
-    padGrid->addWidget(new QLabel(tr("Convolution send"), padPage), 2, 0);
-    padGrid->addWidget(m_reverbSend2, 2, 1, 1, 3);
-    padGrid->addWidget(m_repeat, 3, 0, 1, 1);
-    padGrid->addWidget(m_randomPlayback, 3, 1, 1, 3);
-    padGrid->setRowStretch(4, 1);
-    padGrid->setColumnStretch(1, 1);
-    // Keep the controls together on the left; the spare width goes to an empty last column.
-    padGrid->setColumnStretch(4, 1);
+    m_delayOn = new QCheckBox(tr("Delay"), padPage);
+    m_delayOn->setToolTip(tr("Wait a random time between min and max before each sample.\n"
+                             "Off: samples follow on straight away; min and max are kept."));
+    m_delayOn->setEnabled(false);
+    m_delayReadout = new QLabel(padPage);
+    m_delayReadout->setObjectName(QStringLiteral("FieldHint"));
+    m_delayReadout->setToolTip(tr("The delay picked for the current sample, and the time left while it counts down"));
+    padGrid->addWidget(m_delayOn, 0, 0);
+    padGrid->addWidget(m_delayReadout, 0, 1, 1, 3);
+    padGrid->addWidget(new QLabel(tr("Min delay"), padPage), 1, 0);
+    padGrid->addWidget(m_minDelay, 1, 1);
+    padGrid->addWidget(new QLabel(tr("Max delay"), padPage), 1, 2);
+    padGrid->addWidget(m_maxDelay, 1, 3);
+    padGrid->addWidget(m_repeat, 2, 0, 1, 1);
+    padGrid->addWidget(m_randomPlayback, 2, 1, 1, 3);
+    padGrid->setRowStretch(3, 1);
     padGrid->setColumnMinimumWidth(0, 130);
-    m_reverbSend->setMinimumWidth(360);
-    m_reverbSend2->setMinimumWidth(360);
+
+    // EAX reverbs on top, convolution reverbs below.
+    auto* sendGrid = new QGridLayout();
+    sendGrid->setContentsMargins(0, 0, 0, 0);
+    sendGrid->setHorizontalSpacing(14);
+    sendGrid->setVerticalSpacing(10);
+    for (int bus = 0; bus < OpenALSoundPlayer::kSendCount; ++bus) {
+        sendGrid->addWidget(m_sendLabels[bus], bus, 0);
+        sendGrid->addWidget(m_sendSliders[bus], bus, 1);
+    }
+    sendGrid->setColumnStretch(1, 1);
+    sendGrid->setRowStretch(OpenALSoundPlayer::kSendCount, 1);
+    padRow->addLayout(padGrid, 0);
+    padRow->addLayout(sendGrid, 1);
+    refreshSendLabels();
 
     m_bottomStack->addWidget(samplePage);
     m_bottomStack->addWidget(padPage);
@@ -905,22 +928,28 @@ void MainWindow::buildUi()
             updateMainControls();
         }
     });
-    connect(m_reverbSend, &QSlider::valueChanged, this, [this](int v) {
-        if (m_updatingControls) return;
-        if (auto* pad = activePad()) {
-            pad->setReverbSend(v / 1000.0f);
-        }
-    });
-    connect(m_reverbSend2, &QSlider::valueChanged, this, [this](int v) {
-        if (m_updatingControls) return;
-        if (auto* pad = activePad()) {
-            pad->setReverbSend2(v / 1000.0f);
-        }
-    });
+    for (int bus = 0; bus < OpenALSoundPlayer::kSendCount; ++bus) {
+        connect(m_sendSliders[bus], &QSlider::valueChanged, this, [this, bus](int v) {
+            if (m_updatingControls) return;
+            if (auto* pad = activePad()) {
+                pad->setSend(bus, v / 1000.0f);
+            }
+        });
+    }
     connect(m_randomPlayback, &QCheckBox::toggled, this, [this](bool on) {
         if (m_updatingControls) return;
         if (auto* pad = activePad()) {
             pad->soundPlayer().setRandomPlayback(on);
+        }
+    });
+    connect(m_delayOn, &QCheckBox::toggled, this, [this](bool on) {
+        if (m_updatingControls) return;
+        if (auto* pad = activePad()) {
+            pad->soundPlayer().setDelayEnabled(on);
+            m_minDelay->setEnabled(on);
+            m_maxDelay->setEnabled(on);
+            pad->update(); // the delay border comes and goes with the delay
+            refreshDelayReadout();
         }
     });
     connect(m_repeat, &QCheckBox::toggled, this, [this](bool on) {
@@ -1202,8 +1231,9 @@ void MainWindow::updateMainControls()
     if (pad && pad->isLoaded()) {
         m_minDelay->setValue(pad->soundPlayer().getMinDelay());
         m_maxDelay->setValue(pad->soundPlayer().getMaxDelay());
-        m_reverbSend->setValue(static_cast<int>(pad->soundPlayer().getReverbSend() * 1000.0f));
-        m_reverbSend2->setValue(static_cast<int>(pad->soundPlayer().getReverbSend2() * 1000.0f));
+        for (int bus = 0; bus < OpenALSoundPlayer::kSendCount; ++bus) {
+            m_sendSliders[bus]->setValue(static_cast<int>(pad->sendLevel(bus) * 1000.0f));
+        }
         m_randomPlayback->setChecked(pad->soundPlayer().isPlayingRandom());
         m_randomPlayback->setVisible(pad->soundPlayer().player.size() > 1);
         m_repeat->setChecked(pad->isRepeating());
@@ -1211,19 +1241,25 @@ void MainWindow::updateMainControls()
         m_infoPad = nullptr;
         m_infoSound = -1;
         refreshSampleInfo();
-        m_minDelay->setEnabled(true);
-        m_maxDelay->setEnabled(true);
-        m_reverbSend->setEnabled(true);
-        m_reverbSend2->setEnabled(OpenALSoundPlayer::convolutionAvailable());
+        const bool delayOn = pad->soundPlayer().isDelayEnabled();
+        m_delayOn->setChecked(delayOn);
+        m_delayOn->setEnabled(true);
+        m_minDelay->setEnabled(delayOn);
+        m_maxDelay->setEnabled(delayOn);
+        for (int bus = 0; bus < OpenALSoundPlayer::kSendCount; ++bus) {
+            m_sendSliders[bus]->setEnabled(OpenALSoundPlayer::sendAvailable(bus));
+        }
     } else {
-        m_infoLabel->setText(tr("channels: —\nformat: —\nsub-format: —\nsample rate: —\npath: —\nNum sounds: —  Random delay: — secs"));
+        m_infoLabel->setText(tr("channels: —\nformat: —\nsub-format: —\nsample rate: —\npath: —\nNum sounds: —"));
         m_randomPlayback->hide();
         m_repeat->setChecked(false);
         m_repeat->setEnabled(false);
+        m_delayOn->setEnabled(false);
         m_minDelay->setEnabled(false);
         m_maxDelay->setEnabled(false);
-        m_reverbSend->setEnabled(false);
-        m_reverbSend2->setEnabled(false);
+        for (QSlider* slider : m_sendSliders) {
+            slider->setEnabled(false);
+        }
     }
     m_updatingControls = false;
 
@@ -1252,14 +1288,39 @@ void MainWindow::refreshSampleInfo()
     if (cur < static_cast<int>(pad->soundPaths().size())) {
         path = QString::fromStdString(pad->soundPaths()[static_cast<size_t>(cur)]);
     }
-    m_infoLabel->setText(tr("channels: %1\nformat: %2\nsub-format: %3\nsample rate: %4\npath: %5\nNum sounds: %6  Random delay: %7 secs")
+    m_infoLabel->setText(tr("channels: %1\nformat: %2\nsub-format: %3\nsample rate: %4\npath: %5\nNum sounds: %6")
         .arg(audio->getNumChannels())
         .arg(QString::fromStdString(audio->getFormatString()))
         .arg(QString::fromStdString(audio->getSubFormatString()))
         .arg(audio->getSampleRate())
         .arg(path)
-        .arg(player.player.size())
-        .arg(player.getTotalDelay(), 0, 'f', 2));
+        .arg(player.player.size()));
+}
+
+void MainWindow::refreshDelayReadout()
+{
+    if (!m_delayReadout) {
+        return;
+    }
+    auto* pad = activePad();
+    QString text;
+    if (!pad || !pad->isLoaded() || pad->soundPlayer().player.empty()) {
+        text = QStringLiteral("—");
+    } else {
+        const SoundPlayer& player = pad->soundPlayer();
+        if (!player.isDelayEnabled()) {
+            text = tr("Off");
+        } else if (!player.hasDelay()) {
+            text = tr("No delay set");
+        } else if (player.isPlayingDelay()) {
+            text = tr("Next in %1 s of %2 s").arg(player.getRemainingDelay(), 0, 'f', 1).arg(player.getTotalDelay(), 0, 'f', 2);
+        } else {
+            text = tr("Current delay %1 s").arg(player.getTotalDelay(), 0, 'f', 2);
+        }
+    }
+    if (m_delayReadout->text() != text) {
+        m_delayReadout->setText(text);
+    }
 }
 
 void MainWindow::refreshWaveform()
@@ -1867,50 +1928,55 @@ void MainWindow::buildSettingsPage()
 
     // Reverb
     SettingsCard reverb = makeCard(host, tr("Reverb"),
-        tr("The two sends on each pad feed these effects."));
-    m_reverbPreset = new QComboBox(reverb.frame);
-    m_reverbPreset->setMaxVisibleItems(24);
-    m_reverbPreset->setMaximumWidth(320);
-    for (int i = 0; i < OpenALSoundPlayer::reverbPresetCount(); ++i) {
-        m_reverbPreset->addItem(
-            QString::fromStdString(OpenALSoundPlayer::reverbPresetLabel(i)),
-            QString::fromStdString(OpenALSoundPlayer::reverbPresetId(i)));
+        tr("Each pad has a send into each of these four reverbs, on its Pad tab."));
+    for (int which = 0; which < OpenALSoundPlayer::kEaxReverbCount; ++which) {
+        m_reverbPreset[which] = new QComboBox(reverb.frame);
+        m_reverbPreset[which]->setMaxVisibleItems(24);
+        m_reverbPreset[which]->setMaximumWidth(320);
+        for (int i = 0; i < OpenALSoundPlayer::reverbPresetCount(); ++i) {
+            m_reverbPreset[which]->addItem(
+                QString::fromStdString(OpenALSoundPlayer::reverbPresetLabel(i)),
+                QString::fromStdString(OpenALSoundPlayer::reverbPresetId(i)));
+        }
+        reverb.addRow(tr("EAX reverb %1 preset").arg(which + 1), m_reverbPreset[which],
+            tr("Used by each pad's EAX reverb %1 send, which is named after the preset.").arg(which + 1));
     }
-    reverb.addRow(tr("EAX Reverb preset"), m_reverbPreset, tr("Used by each pad's EAX Reverb send."));
 
-    m_convolutionGain = new QSlider(Qt::Horizontal, reverb.frame);
-    m_convolutionGain->setRange(0, VolumeDb::sliderSpan(VolumeDb::kFloorDb, VolumeDb::kUnityDb));
-    m_convolutionGain->setToolTip(tr("Output level of the convolution reverb. The bundled impulse is loud, so the default is low."));
-    m_convolutionGainValue = new QLabel(reverb.frame);
-    m_convolutionGainValue->setObjectName(QStringLiteral("MainVolumeValue"));
-    m_convolutionGainValue->setMinimumWidth(72);
-    m_convolutionGainValue->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
-    m_convolutionGain->setValue(VolumeDb::toSliderClamped(
-        OpenALSoundPlayer::convolutionGain(), VolumeDb::kFloorDb, VolumeDb::kUnityDb));
-    m_convolutionGainValue->setText(VolumeDb::format(
-        VolumeDb::fromSlider(m_convolutionGain->value(), VolumeDb::kFloorDb)));
-    auto* convolutionRow = new QWidget(reverb.frame);
-    auto* convolutionLayout = new QHBoxLayout(convolutionRow);
-    convolutionLayout->setContentsMargins(0, 0, 0, 0);
-    convolutionLayout->addWidget(m_convolutionGain, 1);
-    convolutionLayout->addWidget(m_convolutionGainValue);
-    reverb.addRow(tr("Convolution level"), convolutionRow);
-
-    m_impulsePath = new QLineEdit(reverb.frame);
-    m_impulseBrowse = new QPushButton(tr("Browse..."), reverb.frame);
-    auto* impulseRow = new QWidget(reverb.frame);
-    auto* impulseLayout = new QHBoxLayout(impulseRow);
-    impulseLayout->setContentsMargins(0, 0, 0, 0);
-    impulseLayout->setSpacing(8);
-    impulseLayout->addWidget(m_impulsePath, 1);
-    impulseLayout->addWidget(m_impulseBrowse);
     const bool convolution = OpenALSoundPlayer::convolutionAvailable();
-    reverb.addRow(tr("Impulse response"), impulseRow,
-        convolution ? tr("A recording of a space. Used by each pad's Convolution send.")
-                    : tr("Convolution reverb isn't available with the current audio device."));
-    m_convolutionGain->setEnabled(convolution);
-    m_impulsePath->setEnabled(convolution);
-    m_impulseBrowse->setEnabled(convolution);
+    for (int which = 0; which < OpenALSoundPlayer::kConvolutionCount; ++which) {
+        m_convolutionGain[which] = new QSlider(Qt::Horizontal, reverb.frame);
+        m_convolutionGain[which]->setRange(0, VolumeDb::sliderSpan(VolumeDb::kFloorDb, VolumeDb::kUnityDb));
+        m_convolutionGain[which]->setToolTip(tr("Output level of this convolution reverb. The bundled impulse is loud, so the default is low."));
+        m_convolutionGainValue[which] = new QLabel(reverb.frame);
+        m_convolutionGainValue[which]->setObjectName(QStringLiteral("MainVolumeValue"));
+        m_convolutionGainValue[which]->setMinimumWidth(72);
+        m_convolutionGainValue[which]->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
+        m_convolutionGain[which]->setValue(VolumeDb::toSliderClamped(
+            OpenALSoundPlayer::convolutionGain(which), VolumeDb::kFloorDb, VolumeDb::kUnityDb));
+        m_convolutionGainValue[which]->setText(VolumeDb::format(
+            VolumeDb::fromSlider(m_convolutionGain[which]->value(), VolumeDb::kFloorDb)));
+        auto* convolutionRow = new QWidget(reverb.frame);
+        auto* convolutionLayout = new QHBoxLayout(convolutionRow);
+        convolutionLayout->setContentsMargins(0, 0, 0, 0);
+        convolutionLayout->addWidget(m_convolutionGain[which], 1);
+        convolutionLayout->addWidget(m_convolutionGainValue[which]);
+        reverb.addRow(tr("Convolution %1 level").arg(which + 1), convolutionRow);
+
+        m_impulsePath[which] = new QLineEdit(reverb.frame);
+        m_impulseBrowse[which] = new QPushButton(tr("Browse..."), reverb.frame);
+        auto* impulseRow = new QWidget(reverb.frame);
+        auto* impulseLayout = new QHBoxLayout(impulseRow);
+        impulseLayout->setContentsMargins(0, 0, 0, 0);
+        impulseLayout->setSpacing(8);
+        impulseLayout->addWidget(m_impulsePath[which], 1);
+        impulseLayout->addWidget(m_impulseBrowse[which]);
+        reverb.addRow(tr("Convolution %1 impulse").arg(which + 1), impulseRow,
+            convolution ? tr("A recording of a space. Used by each pad's convolution %1 send, which is named after the file.").arg(which + 1)
+                        : tr("Convolution reverb isn't available with the current audio device."));
+        m_convolutionGain[which]->setEnabled(convolution);
+        m_impulsePath[which]->setEnabled(convolution);
+        m_impulseBrowse[which]->setEnabled(convolution);
+    }
     cards->addWidget(reverb.frame);
     cards->addStretch(1);
 
@@ -1959,36 +2025,41 @@ void MainWindow::buildSettingsPage()
         m_libraryPath->setText(path);
         m_config.defaultLibraryLocation = path;
     });
-    connect(m_reverbPreset, qOverload<int>(&QComboBox::currentIndexChanged), this, [this](int index) {
-        if (!m_updatingControls) {
-            OpenALSoundPlayer::setReverbPreset(index);
-        }
-    });
-    connect(m_convolutionGain, &QSlider::valueChanged, this, [this](int value) {
-        const float db = VolumeDb::fromSlider(value, VolumeDb::kFloorDb);
-        m_convolutionGainValue->setText(VolumeDb::format(db));
-        if (!m_updatingControls) {
-            OpenALSoundPlayer::setConvolutionGain(VolumeDb::toLinearMuted(db));
-        }
-    });
-    connect(m_impulsePath, &QLineEdit::editingFinished, this, [this]() {
-        if (m_updatingControls) {
-            return;
-        }
-        applyImpulsePath(m_impulsePath->text().trimmed());
-    });
-    connect(m_impulseBrowse, &QPushButton::clicked, this, [this]() {
-        const QString start = m_impulsePath->text().isEmpty()
-            ? defaultImpulsePath(m_config)
-            : m_impulsePath->text();
-        const QString path = QFileDialog::getOpenFileName(this, tr("Impulse response"), start,
-            tr("Audio (*.wav *.aif *.aiff *.flac *.ogg);;All files (*.*)"));
-        if (path.isEmpty()) {
-            return;
-        }
-        m_impulsePath->setText(path);
-        applyImpulsePath(path);
-    });
+    for (int which = 0; which < OpenALSoundPlayer::kEaxReverbCount; ++which) {
+        connect(m_reverbPreset[which], qOverload<int>(&QComboBox::currentIndexChanged), this, [this, which](int index) {
+            if (!m_updatingControls) {
+                OpenALSoundPlayer::setReverbPreset(index, which);
+                refreshSendLabels();
+            }
+        });
+    }
+    for (int which = 0; which < OpenALSoundPlayer::kConvolutionCount; ++which) {
+        connect(m_convolutionGain[which], &QSlider::valueChanged, this, [this, which](int value) {
+            const float db = VolumeDb::fromSlider(value, VolumeDb::kFloorDb);
+            m_convolutionGainValue[which]->setText(VolumeDb::format(db));
+            if (!m_updatingControls) {
+                OpenALSoundPlayer::setConvolutionGain(VolumeDb::toLinearMuted(db), which);
+            }
+        });
+        connect(m_impulsePath[which], &QLineEdit::editingFinished, this, [this, which]() {
+            if (m_updatingControls) {
+                return;
+            }
+            applyImpulsePath(m_impulsePath[which]->text().trimmed(), which);
+        });
+        connect(m_impulseBrowse[which], &QPushButton::clicked, this, [this, which]() {
+            const QString start = m_impulsePath[which]->text().isEmpty()
+                ? defaultImpulsePath(m_config)
+                : m_impulsePath[which]->text();
+            const QString path = QFileDialog::getOpenFileName(this, tr("Impulse response"), start,
+                tr("Audio (*.wav *.aif *.aiff *.flac *.ogg);;All files (*.*)"));
+            if (path.isEmpty()) {
+                return;
+            }
+            m_impulsePath[which]->setText(path);
+            applyImpulsePath(path, which);
+        });
+    }
 }
 
 void MainWindow::buildThemePage()
@@ -2133,20 +2204,42 @@ void MainWindow::buildThemePage()
     connect(&Theme::instance(), &Theme::changed, this, &MainWindow::refreshThemeSwatches);
 }
 
-void MainWindow::applyImpulsePath(const QString& path)
+void MainWindow::applyImpulsePath(const QString& path, int which)
 {
     const QString chosen = path.isEmpty() ? defaultImpulsePath(m_config) : path;
-    if (toImpulsePath(chosen) == OpenALSoundPlayer::convolutionImpulsePath()) {
-        m_impulsePath->setText(chosen);
+    if (toImpulsePath(chosen) == OpenALSoundPlayer::convolutionImpulsePath(which)) {
+        m_impulsePath[which]->setText(chosen);
         return;
     }
-    if (!OpenALSoundPlayer::setConvolutionImpulse(toImpulsePath(chosen))) {
+    if (!OpenALSoundPlayer::setConvolutionImpulse(toImpulsePath(chosen), which)) {
         QMessageBox::warning(this, tr("Feedra"),
             tr("Could not load the impulse response:\n%1").arg(chosen));
-        m_impulsePath->setText(fromImpulsePath(OpenALSoundPlayer::convolutionImpulsePath()));
-        return;
     }
-    m_impulsePath->setText(fromImpulsePath(OpenALSoundPlayer::convolutionImpulsePath()));
+    m_impulsePath[which]->setText(fromImpulsePath(OpenALSoundPlayer::convolutionImpulsePath(which)));
+    refreshSendLabels();
+}
+
+void MainWindow::refreshSendLabels()
+{
+    for (int which = 0; which < OpenALSoundPlayer::kEaxReverbCount; ++which) {
+        if (!m_sendLabels[which]) {
+            continue;
+        }
+        const QString preset = QString::fromStdString(
+            OpenALSoundPlayer::reverbPresetLabel(OpenALSoundPlayer::reverbPresetIndex(which)));
+        m_sendLabels[which]->setText(tr("%1 reverb send").arg(preset));
+        m_sendLabels[which]->setToolTip(tr("Send into EAX reverb %1 (%2). Choose the preset in Settings.").arg(which + 1).arg(preset));
+    }
+    for (int which = 0; which < OpenALSoundPlayer::kConvolutionCount; ++which) {
+        QLabel* label = m_sendLabels[OpenALSoundPlayer::kEaxReverbCount + which];
+        if (!label) {
+            continue;
+        }
+        const QString file = fromImpulsePath(OpenALSoundPlayer::convolutionImpulsePath(which));
+        const QString name = file.isEmpty() ? tr("Convolution %1").arg(which + 1) : QFileInfo(file).completeBaseName();
+        label->setText(tr("%1 reverb send").arg(name));
+        label->setToolTip(tr("Send into convolution reverb %1 (%2). Choose the impulse in Settings.").arg(which + 1).arg(file));
+    }
 }
 
 void MainWindow::refreshWaveformCacheInfo()
@@ -2170,10 +2263,17 @@ void MainWindow::syncSettingsPage()
     m_gridColumns->setValue(m_config.gridWidth);
     m_gridRows->setValue(m_config.gridHeight);
     m_libraryPath->setText(m_config.defaultLibraryLocation);
-    m_reverbPreset->setCurrentIndex(OpenALSoundPlayer::reverbPresetIndex());
-    m_convolutionGain->setValue(VolumeDb::toSliderClamped(
-        OpenALSoundPlayer::convolutionGain(), VolumeDb::kFloorDb, VolumeDb::kUnityDb));
-    m_impulsePath->setText(fromImpulsePath(OpenALSoundPlayer::convolutionImpulsePath()));
+    for (int which = 0; which < OpenALSoundPlayer::kEaxReverbCount; ++which) {
+        m_reverbPreset[which]->setCurrentIndex(OpenALSoundPlayer::reverbPresetIndex(which));
+    }
+    for (int which = 0; which < OpenALSoundPlayer::kConvolutionCount; ++which) {
+        m_convolutionGain[which]->setValue(VolumeDb::toSliderClamped(
+            OpenALSoundPlayer::convolutionGain(which), VolumeDb::kFloorDb, VolumeDb::kUnityDb));
+        m_convolutionGainValue[which]->setText(VolumeDb::format(
+            VolumeDb::fromSlider(m_convolutionGain[which]->value(), VolumeDb::kFloorDb)));
+        m_impulsePath[which]->setText(fromImpulsePath(OpenALSoundPlayer::convolutionImpulsePath(which)));
+    }
+    refreshSendLabels();
     m_updatingControls = false;
     refreshThemeSwatches();
     if (m_addScene) {
@@ -2229,21 +2329,28 @@ void MainWindow::applyAppSettings(const QJsonObject& global)
     if (global.contains(QStringLiteral("library"))) {
         m_config.defaultLibraryLocation = global.value(QStringLiteral("library")).toString().trimmed();
     }
-    const QString reverb = global.value(QStringLiteral("reverb")).toString();
-    if (!reverb.isEmpty()) {
-        OpenALSoundPlayer::setReverbPresetById(reverb.toStdString());
+    // Keys for the first reverbs are the original ones; the second ones add a "2".
+    for (int which = 0; which < OpenALSoundPlayer::kEaxReverbCount; ++which) {
+        const QString suffix = which == 0 ? QString() : QString::number(which + 1);
+        const QString reverb = global.value(QStringLiteral("reverb") + suffix).toString();
+        if (!reverb.isEmpty()) {
+            OpenALSoundPlayer::setReverbPresetById(reverb.toStdString(), which);
+        }
     }
-    if (global.contains(QStringLiteral("convolutiongain"))) {
-        OpenALSoundPlayer::setConvolutionGain(static_cast<float>(global.value(QStringLiteral("convolutiongain")).toDouble(
-            OpenALSoundPlayer::defaultConvolutionGain())));
-    }
-    QString impulse = global.value(QStringLiteral("convolutionir")).toString();
-    if (impulse.isEmpty() || !QFile::exists(impulse)) {
-        impulse = defaultImpulsePath(m_config);
-    }
-    if (toImpulsePath(impulse) != OpenALSoundPlayer::convolutionImpulsePath()) {
-        if (!OpenALSoundPlayer::setConvolutionImpulse(toImpulsePath(impulse))) {
-            qWarning() << "Convolution impulse not loaded" << impulse;
+    for (int which = 0; which < OpenALSoundPlayer::kConvolutionCount; ++which) {
+        const QString suffix = which == 0 ? QString() : QString::number(which + 1);
+        if (global.contains(QStringLiteral("convolutiongain") + suffix)) {
+            OpenALSoundPlayer::setConvolutionGain(static_cast<float>(global.value(QStringLiteral("convolutiongain") + suffix).toDouble(
+                OpenALSoundPlayer::defaultConvolutionGain())), which);
+        }
+        QString impulse = global.value(QStringLiteral("convolutionir") + suffix).toString();
+        if (impulse.isEmpty() || !QFile::exists(impulse)) {
+            impulse = defaultImpulsePath(m_config);
+        }
+        if (toImpulsePath(impulse) != OpenALSoundPlayer::convolutionImpulsePath(which)) {
+            if (!OpenALSoundPlayer::setConvolutionImpulse(toImpulsePath(impulse), which)) {
+                qWarning() << "Convolution impulse not loaded" << impulse;
+            }
         }
     }
     if (global.contains(QStringLiteral("theme")) || global.contains(QStringLiteral("themecolors"))) {
@@ -2535,10 +2642,16 @@ bool MainWindow::saveConfigTo(const QString& path, bool copyFiles, bool settings
         global.insert(QStringLiteral("loadlastsettings"), m_config.loadLastSettings);
         global.insert(QStringLiteral("lastsettingspath"), m_config.lastSettingsPath);
     }
-    global.insert(QStringLiteral("reverb"),
-        QString::fromStdString(OpenALSoundPlayer::reverbPresetId(OpenALSoundPlayer::reverbPresetIndex())));
-    global.insert(QStringLiteral("convolutiongain"), static_cast<double>(OpenALSoundPlayer::convolutionGain()));
-    global.insert(QStringLiteral("convolutionir"), fromImpulsePath(OpenALSoundPlayer::convolutionImpulsePath()));
+    for (int which = 0; which < OpenALSoundPlayer::kEaxReverbCount; ++which) {
+        const QString suffix = which == 0 ? QString() : QString::number(which + 1);
+        global.insert(QStringLiteral("reverb") + suffix,
+            QString::fromStdString(OpenALSoundPlayer::reverbPresetId(OpenALSoundPlayer::reverbPresetIndex(which))));
+    }
+    for (int which = 0; which < OpenALSoundPlayer::kConvolutionCount; ++which) {
+        const QString suffix = which == 0 ? QString() : QString::number(which + 1);
+        global.insert(QStringLiteral("convolutiongain") + suffix, static_cast<double>(OpenALSoundPlayer::convolutionGain(which)));
+        global.insert(QStringLiteral("convolutionir") + suffix, fromImpulsePath(OpenALSoundPlayer::convolutionImpulsePath(which)));
+    }
     global.insert(QStringLiteral("theme"), Theme::instance().idName());
     global.insert(QStringLiteral("themecolors"), Theme::instance().colorsJson());
     saveWindowLayout(global);
@@ -3110,6 +3223,7 @@ void MainWindow::tick()
     }
     if (m_page == Page::Main) {
         refreshSampleInfo();
+        refreshDelayReadout();
         refreshWaveform();
     }
     if (m_page == Page::Main && m_sidebar == SidebarView::Editor) {

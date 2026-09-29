@@ -196,7 +196,9 @@ void SoundPlayer::recalculateDelay(int delayId)
     if (player.empty() || delayId < 0 || delayId >= static_cast<int>(player.size())) {
         return;
     }
-    player[delayId]->totalDelay = randomRange(static_cast<float>(minDelay), static_cast<float>(maxDelay));
+    player[delayId]->totalDelay = bDelayEnabled
+        ? randomRange(static_cast<float>(minDelay), static_cast<float>(maxDelay))
+        : 0.0f;
     player[delayId]->curDelay = player[delayId]->totalDelay;
 }
 
@@ -347,6 +349,31 @@ void SoundPlayer::setPositionMS(int ms)
     player[curSound]->audioPlayer->setPositionMS(ms);
 }
 
+void SoundPlayer::setDelayEnabled(bool on)
+{
+    if (bDelayEnabled == on) {
+        return;
+    }
+    bDelayEnabled = on;
+    // New random delays (or none). A countdown already running ends on the next tick when
+    // switched off, so the sample plays straight away.
+    for (int i = 0; i < static_cast<int>(player.size()); ++i) {
+        const bool counting = bPlayingDelay && i == curSound;
+        if (counting && on) {
+            continue; // keep the countdown that's under way
+        }
+        recalculateDelay(i);
+    }
+}
+
+float SoundPlayer::getRemainingDelay() const
+{
+    if (!bPlayingDelay || player.empty() || curSound < 0 || curSound >= static_cast<int>(player.size())) {
+        return 0.0f;
+    }
+    return std::max(0.0f, player[static_cast<size_t>(curSound)]->curDelay);
+}
+
 void SoundPlayer::setMinDelay(int delay)
 {
     minDelay = delay;
@@ -487,6 +514,21 @@ void SoundPlayer::setReverbSend(float send)
     }
 }
 
+float SoundPlayer::getSend(int bus) const
+{
+    if (player.empty()) {
+        return 0;
+    }
+    return player[curSound]->audioPlayer->getSend(bus);
+}
+
+void SoundPlayer::setSend(int bus, float send)
+{
+    for (AudioSample* sample : player) {
+        sample->audioPlayer->setSend(bus, send);
+    }
+}
+
 float SoundPlayer::getReverbSend2() const
 {
     if (player.empty()) {
@@ -528,7 +570,7 @@ void SoundPlayer::tryArmHandover()
 {
     // Only when the next sample follows straight on: no delay between samples, and the
     // current sample is heading for its end rather than looping.
-    if (handover.armed || bPaused || bPlayingDelay || player.empty() || minDelay > 0 || maxDelay > 0) {
+    if (handover.armed || bPaused || bPlayingDelay || player.empty() || hasDelay()) {
         return;
     }
     if (!OpenALSoundPlayer::scheduledStartAvailable()) {
@@ -596,7 +638,7 @@ void SoundPlayer::checkHandover()
         expected = curSound + 1;
     }
     int64_t endNs = 0;
-    const bool stillValid = expected == handover.next && minDelay <= 0 && maxDelay <= 0
+    const bool stillValid = expected == handover.next && !hasDelay()
         && !bPaused && !current->isLoopOn()
         && current->audioPlayer->predictEndDeviceTime(endNs)
         && std::llabs(endNs - handover.endNs) <= kHandoverDriftNs;

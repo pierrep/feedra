@@ -35,15 +35,21 @@ static std::atomic<bool> g_alFloat32{false};
 #define AL_EFFECT_CONVOLUTION_SOFT 0xA000
 #endif
 
+// Effect buses. Bus 0 and 1 are EAX reverbs (each with its own preset), bus 2 and 3 are
+// convolution reverbs (each with its own impulse response). Every source has one aux send
+// per bus, numbered the same, so a pad's four send levels map straight onto them.
+static constexpr int kEaxBuses = OpenALSoundPlayer::kEaxReverbCount;
+static constexpr int kBusCount = OpenALSoundPlayer::kSendCount;
 static bool bUseEffects = false;
 static bool bUseConvolution = false;
 static int g_slotCount = 0;
-static ALuint irBuffer = 0;
-static float g_convolutionGain = 1.0f / 16.0f;
-static std::filesystem::path g_irPath;
-static ALuint effects[3] = { 0, 0, 0 };
-static ALuint effectSlots[3] = { 0, 0, 0 };
-static EFXEAXREVERBPROPERTIES reverbs[2] = {
+static int g_sendCount = 0; // aux sends each source actually has
+static ALuint irBuffer[OpenALSoundPlayer::kConvolutionCount] = { 0, 0 };
+static float g_convolutionGain[OpenALSoundPlayer::kConvolutionCount] = { 1.0f / 16.0f, 1.0f / 16.0f };
+static std::filesystem::path g_irPath[OpenALSoundPlayer::kConvolutionCount];
+static ALuint effects[kBusCount] = { 0, 0, 0, 0 };
+static ALuint effectSlots[kBusCount] = { 0, 0, 0, 0 };
+static EFXEAXREVERBPROPERTIES reverbs[kEaxBuses] = {
     EFX_REVERB_PRESET_ALLEY,
     EFX_REVERB_PRESET_ALLEY
 };
@@ -420,15 +426,16 @@ static ALuint createConvolutionEffect(ALuint effect)
     return effect;
 }
 
-static bool applyConvolutionSlot()
+static bool applyConvolutionSlot(int which)
 {
-    if (!bUseConvolution || effectSlots[2] == 0 || effects[2] == 0 || irBuffer == 0) {
+    const int bus = kEaxBuses + which;
+    if (!bUseConvolution || effectSlots[bus] == 0 || effects[bus] == 0 || irBuffer[which] == 0) {
         return false;
     }
     alGetError();
-    alAuxiliaryEffectSloti(effectSlots[2], AL_BUFFER, static_cast<ALint>(irBuffer));
-    alAuxiliaryEffectSlotf(effectSlots[2], AL_EFFECTSLOT_GAIN, g_convolutionGain);
-    alAuxiliaryEffectSloti(effectSlots[2], AL_EFFECTSLOT_EFFECT, static_cast<ALint>(effects[2]));
+    alAuxiliaryEffectSloti(effectSlots[bus], AL_BUFFER, static_cast<ALint>(irBuffer[which]));
+    alAuxiliaryEffectSlotf(effectSlots[bus], AL_EFFECTSLOT_GAIN, g_convolutionGain[which]);
+    alAuxiliaryEffectSloti(effectSlots[bus], AL_EFFECTSLOT_EFFECT, static_cast<ALint>(effects[bus]));
     const ALenum err = alGetError();
     if (err != AL_NO_ERROR) {
         qWarning() << "Failed to apply convolution reverb:" << alGetString(err);
@@ -621,7 +628,7 @@ const ReverbPreset kReverbPresets[] = {
 
 #undef FEEDRA_REVERB
 
-int g_reverbIndex = -1;
+int g_reverbIndex[kEaxBuses] = { -1, -1 };
 
 int alleyPresetIndex()
 {
@@ -727,18 +734,16 @@ std::string humanizeReverbId(std::string id)
     return label;
 }
 
-void applyReverbPreset(int index)
+void applyReverbPreset(int index, int which)
 {
-    reverbs[0] = kReverbPresets[index].props;
-    reverbs[1] = kReverbPresets[index].props;
-    if (!bUseEffects || effects[0] == 0 || effects[1] == 0) {
+    reverbs[which] = kReverbPresets[index].props;
+    if (!bUseEffects || effects[which] == 0) {
         return;
     }
-    if (!LoadEffect(effects[0], &reverbs[0]) || !LoadEffect(effects[1], &reverbs[1])) {
+    if (!LoadEffect(effects[which], &reverbs[which])) {
         return;
     }
-    alAuxiliaryEffectSloti(effectSlots[0], AL_EFFECTSLOT_EFFECT, static_cast<ALint>(effects[0]));
-    alAuxiliaryEffectSloti(effectSlots[1], AL_EFFECTSLOT_EFFECT, static_cast<ALint>(effects[1]));
+    alAuxiliaryEffectSloti(effectSlots[which], AL_EFFECTSLOT_EFFECT, static_cast<ALint>(effects[which]));
     alGetError();
 }
 
@@ -765,32 +770,41 @@ std::string OpenALSoundPlayer::reverbPresetLabel(int index)
     return humanizeReverbId(kReverbPresets[index].id);
 }
 
-int OpenALSoundPlayer::reverbPresetIndex()
+int OpenALSoundPlayer::reverbPresetIndex(int which)
 {
-    if (g_reverbIndex < 0) {
-        g_reverbIndex = alleyPresetIndex();
+    which = std::clamp(which, 0, kEaxBuses - 1);
+    if (g_reverbIndex[which] < 0) {
+        g_reverbIndex[which] = alleyPresetIndex();
     }
-    return g_reverbIndex;
+    return g_reverbIndex[which];
 }
 
-void OpenALSoundPlayer::setReverbPreset(int index)
+void OpenALSoundPlayer::setReverbPreset(int index, int which)
 {
-    if (index < 0 || index >= reverbPresetCount()) {
+    if (index < 0 || index >= reverbPresetCount() || which < 0 || which >= kEaxBuses) {
         return;
     }
-    g_reverbIndex = index;
-    applyReverbPreset(index);
+    g_reverbIndex[which] = index;
+    applyReverbPreset(index, which);
 }
 
-bool OpenALSoundPlayer::setReverbPresetById(const std::string& id)
+bool OpenALSoundPlayer::setReverbPresetById(const std::string& id, int which)
 {
     for (int i = 0; i < reverbPresetCount(); ++i) {
         if (id == kReverbPresets[i].id) {
-            setReverbPreset(i);
+            setReverbPreset(i, which);
             return true;
         }
     }
     return false;
+}
+
+bool OpenALSoundPlayer::sendAvailable(int bus)
+{
+    if (!bUseEffects || bus < 0 || bus >= kBusCount || bus >= g_sendCount || effectSlots[bus] == 0) {
+        return false;
+    }
+    return bus < kEaxBuses || bUseConvolution;
 }
 
 float OpenALSoundPlayer::defaultConvolutionGain()
@@ -798,21 +812,21 @@ float OpenALSoundPlayer::defaultConvolutionGain()
     return 1.0f / 16.0f;
 }
 
-float OpenALSoundPlayer::convolutionGain()
+float OpenALSoundPlayer::convolutionGain(int which)
 {
-    return g_convolutionGain;
+    return g_convolutionGain[std::clamp(which, 0, kConvolutionCount - 1)];
 }
 
-void OpenALSoundPlayer::setConvolutionGain(float gain)
+void OpenALSoundPlayer::setConvolutionGain(float gain, int which)
 {
-    if (gain < 0.0f) {
-        gain = 0.0f;
-    } else if (gain > 1.0f) {
-        gain = 1.0f;
+    if (which < 0 || which >= kConvolutionCount) {
+        return;
     }
-    g_convolutionGain = gain;
-    if (bUseConvolution && effectSlots[2] != 0 && irBuffer != 0) {
-        alAuxiliaryEffectSlotf(effectSlots[2], AL_EFFECTSLOT_GAIN, g_convolutionGain);
+    gain = std::clamp(gain, 0.0f, 1.0f);
+    g_convolutionGain[which] = gain;
+    const int bus = kEaxBuses + which;
+    if (bUseConvolution && effectSlots[bus] != 0 && irBuffer[which] != 0) {
+        alAuxiliaryEffectSlotf(effectSlots[bus], AL_EFFECTSLOT_GAIN, gain);
         alGetError();
     }
 }
@@ -822,28 +836,28 @@ bool OpenALSoundPlayer::convolutionAvailable()
     return bUseConvolution;
 }
 
-std::filesystem::path OpenALSoundPlayer::convolutionImpulsePath()
+std::filesystem::path OpenALSoundPlayer::convolutionImpulsePath(int which)
 {
-    return g_irPath;
+    return g_irPath[std::clamp(which, 0, kConvolutionCount - 1)];
 }
 
-bool OpenALSoundPlayer::setConvolutionImpulse(const std::filesystem::path& path)
+bool OpenALSoundPlayer::setConvolutionImpulse(const std::filesystem::path& path, int which)
 {
-    if (!bUseConvolution || path.empty()) {
+    if (!bUseConvolution || path.empty() || which < 0 || which >= kConvolutionCount) {
         return false;
     }
     const ALuint buffer = loadImpulseBuffer(path);
     if (!buffer) {
         return false;
     }
-    const ALuint previous = irBuffer;
-    irBuffer = buffer;
-    if (!applyConvolutionSlot()) {
-        irBuffer = previous;
+    const ALuint previous = irBuffer[which];
+    irBuffer[which] = buffer;
+    if (!applyConvolutionSlot(which)) {
+        irBuffer[which] = previous;
         alDeleteBuffers(1, &buffer);
         return false;
     }
-    g_irPath = path;
+    g_irPath[which] = path;
     if (previous != 0 && previous != buffer) {
         alDeleteBuffers(1, &previous);
     }
@@ -873,8 +887,6 @@ OpenALSoundPlayer::OpenALSoundPlayer(){
 	streamf			= 0;
     spatialisedStereo = false;
     bUseFilter = false;
-    reverbSend      = 0.0f;
-    reverbSend2     = 0.0f;
 #ifdef FEEDRA_USING_MPG123
 	mp3streamf		= 0;
 #endif
@@ -1222,32 +1234,34 @@ void OpenALSoundPlayer::initialize(){
             } else {
                 qInfo() << "Device supports " << num_sends <<" effect sends";
 
-                /* Generate FX slots. The third effect is the convolution reverb. */
-                alGenEffects(3, effects);
+                g_sendCount = std::min(num_sends, kBusCount);
+
+                /* Effects 0 and 1 are the two EAX reverbs, 2 and 3 the two convolution reverbs. */
+                alGenEffects(kBusCount, effects);
                 if(!LoadEffect(effects[0], &reverbs[0]) || !LoadEffect(effects[1], &reverbs[1]))
                 {
                     qCritical( ) <<  "Failed to load effects, aborting...";
                     bUseEffects = false;
-                    alDeleteEffects(3, effects);
-                    effects[0] = effects[1] = effects[2] = 0;
+                    alDeleteEffects(kBusCount, effects);
+                    for (ALuint& e : effects) {
+                        e = 0;
+                    }
                     close();
                     return;
                 }
 
-                bUseConvolution = createConvolutionEffect(effects[2]) != 0;
+                bUseConvolution = createConvolutionEffect(effects[2]) != 0 && createConvolutionEffect(effects[3]) != 0;
                 if (!bUseConvolution) {
-                    alDeleteEffects(1, &effects[2]);
-                    effects[2] = 0;
+                    alDeleteEffects(2, &effects[2]);
+                    effects[2] = effects[3] = 0;
                 }
 
-                g_slotCount = bUseConvolution ? 3 : 2;
+                g_slotCount = bUseConvolution ? kBusCount : kEaxBuses;
                 alGenAuxiliaryEffectSlots(g_slotCount, effectSlots);
 
-                /* Tell the effect slots to use the loaded effect objects, with slot 0 for
-                 * Zone 0 and slot 1 for Zone 1. Note that this effectively copies the
-                 * effect properties. Modifying or deleting the effect object afterward
-                 * won't directly affect the effect slot until they're reapplied like this.
-                 * Slot 2 receives the impulse response when one is loaded.
+                /* The slots copy the effect properties when an effect is attached, so
+                 * changing a preset reloads the effect and attaches it again. The convolution
+                 * slots get their effect once an impulse response is loaded.
                  */
                 alAuxiliaryEffectSloti(effectSlots[0], AL_EFFECTSLOT_EFFECT, (ALint)effects[0]);
                 alAuxiliaryEffectSloti(effectSlots[1], AL_EFFECTSLOT_EFFECT, (ALint)effects[1]);
@@ -1302,11 +1316,18 @@ void OpenALSoundPlayer::close(){
                     alDeleteAuxiliaryEffectSlots(g_slotCount, effectSlots);
                     alDeleteEffects(g_slotCount, effects);
                 }
-                if (irBuffer != 0) {
-                    alDeleteBuffers(1, &irBuffer);
-                    irBuffer = 0;
+                for (int i = 0; i < kConvolutionCount; ++i) {
+                    if (irBuffer[i] != 0) {
+                        alDeleteBuffers(1, &irBuffer[i]);
+                        irBuffer[i] = 0;
+                    }
+                    g_irPath[i].clear();
                 }
-                g_irPath.clear();
+                for (int i = 0; i < kBusCount; ++i) {
+                    effects[i] = 0;
+                    effectSlots[i] = 0;
+                }
+                g_sendCount = 0;
                 bUseEffects = false;
                 bUseConvolution = false;
                 g_slotCount = 0;
@@ -2101,18 +2122,16 @@ bool OpenALSoundPlayer::uploadDecoded(DecodedAudio decoded)
     }
 
     if (bUseEffects && !sources.empty()) {
-        reverbSend = 0.0f;
-        reverbSend2 = 0.0f;
-        alGenFilters(1, &filters[0]);
-        alFilteri(filters[0], AL_FILTER_TYPE, AL_FILTER_LOWPASS);
-        alFilterf(filters[0], AL_LOWPASS_GAIN, reverbSend);
-        alSource3i(sources[0], AL_AUXILIARY_SEND_FILTER, static_cast<ALint>(effectSlots[0]), 0, filters[0]);
-        if (bUseConvolution && effectSlots[2] != 0) {
-            alGenFilters(1, &filters[1]);
-            alFilteri(filters[1], AL_FILTER_TYPE, AL_FILTER_LOWPASS);
-            alFilterf(filters[1], AL_LOWPASS_GAIN, reverbSend2);
-            alSource3i(sources[0], AL_AUXILIARY_SEND_FILTER, static_cast<ALint>(effectSlots[2]), 1, filters[1]);
+        // One send per effect bus, on every source (both halves of a spatialised stereo file).
+        for (int bus = 0; bus < kSendCount; ++bus) {
+            sends[bus] = 0.0f;
+            if (!sendAvailable(bus)) {
+                continue;
+            }
+            alGenFilters(1, &filters[bus]);
+            alFilteri(filters[bus], AL_FILTER_TYPE, AL_FILTER_LOWPASS);
         }
+        applySends();
         err = alGetError();
         if (err != AL_NO_ERROR) {
             qCritical() << "OpenALSoundPlayer:" << "attaching FX sends failed..."
@@ -3026,11 +3045,19 @@ void OpenALSoundPlayer::update(){
 
     if(bUseEffects && bUseFilter && !sources.empty())
     {
-        alFilterf(filters[0], AL_LOWPASS_GAIN, reverbSend);
-        alSource3i(sources[0], AL_AUXILIARY_SEND_FILTER, static_cast<ALint>(effectSlots[0]), 0, filters[0]);
-        if (filters[1] != 0 && bUseConvolution && effectSlots[2] != 0) {
-            alFilterf(filters[1], AL_LOWPASS_GAIN, reverbSend2);
-            alSource3i(sources[0], AL_AUXILIARY_SEND_FILTER, static_cast<ALint>(effectSlots[2]), 1, filters[1]);
+        applySends();
+    }
+}
+
+void OpenALSoundPlayer::applySends()
+{
+    for (int bus = 0; bus < kSendCount; ++bus) {
+        if (filters[bus] == 0 || !sendAvailable(bus)) {
+            continue;
+        }
+        alFilterf(filters[bus], AL_LOWPASS_GAIN, sends[bus]);
+        for (ALuint source : sources) {
+            alSource3i(source, AL_AUXILIARY_SEND_FILTER, static_cast<ALint>(effectSlots[bus]), bus, static_cast<ALint>(filters[bus]));
         }
     }
 }
@@ -3058,13 +3085,11 @@ void OpenALSoundPlayer::unload(){
         sources.clear();
         buffers.clear();
         if(bUseFilter) {
-            if (filters[0] != 0) {
-                alDeleteFilters(1, &filters[0]);
-                filters[0] = 0;
-            }
-            if (filters[1] != 0) {
-                alDeleteFilters(1, &filters[1]);
-                filters[1] = 0;
+            for (ALuint& filter : filters) {
+                if (filter != 0) {
+                    alDeleteFilters(1, &filter);
+                    filter = 0;
+                }
             }
             bUseFilter = false;
         }

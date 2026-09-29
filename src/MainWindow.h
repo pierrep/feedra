@@ -55,7 +55,9 @@ private:
     void buildThemePage();
     void syncSettingsPage();
     void refreshWaveformCacheInfo();
-    void applyImpulsePath(const QString& path);
+    void applyImpulsePath(const QString& path, int which);
+    // Pad tab send names follow the reverbs: "<preset> reverb send", "<impulse file> reverb send".
+    void refreshSendLabels();
     void refreshThemeSwatches();
     QWidget* buildPageHeader(QWidget* page, const QString& title, const QString& subtitle);
     void applyAppSettings(const QJsonObject& global);
@@ -80,6 +82,7 @@ private:
     void pasteActivePad();
     void updateMainControls();
     void refreshSampleInfo();
+    void refreshDelayReadout();
     void refreshWaveform();
     void updateEditControls();
     void updatePanControl(AudioSample* sample);
@@ -170,10 +173,13 @@ private:
     int m_bottomPageHeight = 0;
     QSpinBox* m_minDelay = nullptr;
     QSpinBox* m_maxDelay = nullptr;
-    QSlider* m_reverbSend = nullptr;
-    QSlider* m_reverbSend2 = nullptr;
+    // Pad effect sends: EAX reverb 1 and 2, then convolution reverb 1 and 2.
+    QSlider* m_sendSliders[4] = {};
+    QLabel* m_sendLabels[4] = {};
     QCheckBox* m_randomPlayback = nullptr;
     QCheckBox* m_repeat = nullptr;
+    QCheckBox* m_delayOn = nullptr;
+    QLabel* m_delayReadout = nullptr;
     QLabel* m_infoLabel = nullptr;
     SoundPadWidget* m_infoPad = nullptr;
     int m_infoSound = -1;
@@ -204,11 +210,11 @@ private:
     QSpinBox* m_gridColumns = nullptr;
     QSpinBox* m_gridRows = nullptr;
     QLineEdit* m_libraryPath = nullptr;
-    QComboBox* m_reverbPreset = nullptr;
-    QSlider* m_convolutionGain = nullptr;
-    QLabel* m_convolutionGainValue = nullptr;
-    QLineEdit* m_impulsePath = nullptr;
-    QPushButton* m_impulseBrowse = nullptr;
+    QComboBox* m_reverbPreset[2] = {};
+    QSlider* m_convolutionGain[2] = {};
+    QLabel* m_convolutionGainValue[2] = {};
+    QLineEdit* m_impulsePath[2] = {};
+    QPushButton* m_impulseBrowse[2] = {};
     QVector<QAbstractButton*> m_themeTiles;
     QVector<QAbstractButton*> m_accentSwatches;
     QWidget* m_advancedColors = nullptr;
