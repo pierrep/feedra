@@ -1,6 +1,7 @@
 #include "Scene.h"
 #include "AppConfig.h"
 
+#include <algorithm>
 #include <QScrollArea>
 #include <QSizePolicy>
 #include <QVector>
@@ -153,12 +154,25 @@ SoundPadWidget* Scene::padAt(int idx) const
 
 void Scene::play()
 {
-    m_fading = true;
-    m_fadeDirection = 0;
-    m_fadeTimer.restart();
+    // Pads carrying on from a pause fade in, so they don't jump back in mid-sound. Pads
+    // starting from the top start at full level: a fade would swallow their opening.
     m_fadeCallback = {};
+    m_resuming.clear();
+    for (SoundPadWidget* pad : pads) {
+        if (!pad->isLoading() && pad->soundPlayer().isResuming()) {
+            m_resuming.insert(pad);
+        }
+    }
+    // Pressing play during a pause's fade-out carries on from the level reached.
+    const bool wasFadingOut = m_fading && m_fadeDirection == 1;
+    m_fading = !m_resuming.isEmpty();
+    m_fadeDirection = 0;
+    m_fadeFrom = m_fading ? (wasFadingOut ? m_fadeVolume : 0.0f) : 1.0f;
+    m_fadeVolume = m_fadeFrom;
+    m_fadeTimer.restart();
     for (SoundPadWidget* pad : pads) {
         if (!pad->isLoading()) {
+            pad->setFadeVolume(m_resuming.contains(pad) ? m_fadeVolume : 1.0f);
             pad->soundPlayer().setPaused(false);
         }
     }
@@ -166,6 +180,8 @@ void Scene::play()
 
 void Scene::pause()
 {
+    // Carry on from the level reached if already fading out (e.g. stop during a pause).
+    m_fadeFrom = (m_fading && m_fadeDirection == 1) ? m_fadeVolume : 1.0f;
     m_fading = true;
     m_fadeDirection = 1;
     m_fadeTimer.restart();
@@ -178,6 +194,8 @@ void Scene::pause()
 
 void Scene::stop()
 {
+    // Carry on from the level reached if already fading out (e.g. stop during a pause).
+    m_fadeFrom = (m_fading && m_fadeDirection == 1) ? m_fadeVolume : 1.0f;
     m_fading = true;
     m_fadeDirection = 1;
     m_fadeTimer.restart();
@@ -203,14 +221,18 @@ void Scene::update()
     if (m_fading) {
         constexpr float fadeDuration = 500.0f;
         const float elapsed = static_cast<float>(m_fadeTimer.elapsed());
-        m_fadeVolume = std::abs(static_cast<float>(m_fadeDirection) - elapsed / fadeDuration);
+        const float t = std::min(1.0f, elapsed / fadeDuration);
+        const float target = m_fadeDirection == 0 ? 1.0f : 0.0f;
+        m_fadeVolume = m_fadeFrom + (target - m_fadeFrom) * t;
         if (elapsed > fadeDuration) {
             endFade();
         }
     }
     bool audible = false;
+    // A fade-in applies only to the pads resuming from a pause; a fade-out applies to all.
+    const bool fadingIn = m_fading && m_fadeDirection == 0;
     for (SoundPadWidget* pad : pads) {
-        pad->setFadeVolume(m_fadeVolume);
+        pad->setFadeVolume(fadingIn && !m_resuming.contains(pad) ? 1.0f : m_fadeVolume);
         pad->updateAudio();
         audible = audible || pad->isPlaying();
     }
@@ -227,6 +249,7 @@ void Scene::endFade()
         m_fadeCallback();
     }
     m_fadeVolume = 1.0f;
+    m_resuming.clear();
 }
 
 void Scene::setActive(bool active)

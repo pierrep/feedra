@@ -1002,6 +1002,8 @@ void SoundPadWidget::setInteractive(bool enabled)
 void SoundPadWidget::setFadeVolume(float fade)
 {
     m_fadeVolume = fade;
+    // At once, so a pad that is about to start doesn't start at the previous level.
+    applyVolume();
 }
 
 void SoundPadWidget::setLoadQueue(SampleLoadQueue* queue)

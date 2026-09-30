@@ -51,6 +51,8 @@ public:
     int getPositionMS() const;
     bool isPlaying() const;
     bool isPlayingDelay() const;
+    // True when playing would carry on from where it was paused, rather than start afresh.
+    bool isResuming() const { return !player.empty() && !bStartFromBeginning; }
     bool isLoaded() const;
     bool isRepeating() const;
     // Loop (sample): the current sample loops seamlessly in the engine. The pad's loop icon

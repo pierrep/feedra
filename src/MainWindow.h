@@ -6,6 +6,7 @@
 #include <QByteArray>
 #include <QRect>
 #include <QMainWindow>
+#include <QPointer>
 #include <QVector>
 
 #include <memory>
@@ -120,6 +121,7 @@ private:
     bool saveConfigTo(const QString& path, bool copyFiles, bool settingsOnly = false, ExportState* exportTo = nullptr);
     // The sample the Waveform tab shows: the selected pad's current sample.
     AudioSample* waveformSample() const;
+    int waveformSampleIndex() const;
     void applyLoopRegion(AudioSample* sample, const LoopRegion& region);
     void loadConfig();
     void loadConfigFrom(const QString& path);
@@ -162,6 +164,7 @@ private:
     QStackedWidget* m_padStack = nullptr;
     QWidget* m_sceneListHost = nullptr;
     QScrollArea* m_sceneScroll = nullptr;
+    QPointer<QWidget> m_scrollToSceneRow; // a new scene row to bring into view
     QVBoxLayout* m_sceneListLayout = nullptr;
     QPushButton* m_addScene = nullptr;
     QStackedWidget* m_pages = nullptr;

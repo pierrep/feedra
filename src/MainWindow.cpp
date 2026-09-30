@@ -52,6 +52,7 @@
 #include <QThread>
 #include <QSaveFile>
 #include <QScrollArea>
+#include <QScrollBar>
 #include <QShortcut>
 #include <QSizePolicy>
 #include <QSlider>
@@ -615,6 +616,12 @@ void MainWindow::buildUi()
     scenesLayout->setSpacing(10);
     auto* sceneScroll = new QScrollArea(m_scenesPage);
     m_sceneScroll = sceneScroll;
+    // The list grows a moment after a scene is added; scroll once the new length is known.
+    connect(sceneScroll->verticalScrollBar(), &QScrollBar::rangeChanged, this, [this]() {
+        if (m_scrollToSceneRow && m_sceneScroll) {
+            m_sceneScroll->ensureWidgetVisible(m_scrollToSceneRow, 0, 8);
+        }
+    });
     sceneScroll->setFrameShape(QFrame::NoFrame);
     sceneScroll->setWidgetResizable(true);
     sceneScroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
@@ -933,14 +940,13 @@ void MainWindow::buildUi()
     m_waveform = new WaveformWidget(m_bottomStack);
     m_bottomStack->addWidget(m_waveform);
     connect(m_waveform, &WaveformWidget::seekRequested, this, [this](float pct) {
-        // Same sample the waveform is showing: the selected pad's current one.
+        // Same sample the waveform is showing: the one selected in the Editor.
         auto* pad = activePad();
-        if (!pad || !pad->isLoaded() || pad->soundPlayer().player.empty()) {
+        const int shown = waveformSampleIndex();
+        if (!pad || shown < 0) {
             return;
         }
-        SoundPlayer& player = pad->soundPlayer();
-        const int cur = std::clamp(player.getCurSound(), 0, static_cast<int>(player.player.size()) - 1);
-        player.seekSample(cur, pct);
+        pad->soundPlayer().seekSample(shown, pct);
     });
     connect(m_waveform, &WaveformWidget::loopPointsChanged, this, [this](double startPct, double endPct, bool finished) {
         // Applied on release: the waveform shows the drag itself, and the audio changes once.
@@ -1293,16 +1299,16 @@ void MainWindow::scrollToSceneRow(QWidget* row)
     if (!m_sceneScroll || !row) {
         return;
     }
-    const QPointer<QWidget> target(row);
-    QTimer::singleShot(0, this, [this, target]() {
-        if (!target || !m_sceneScroll) {
-            return;
+    // The scroll range only grows once the scroll area has resized the list, which happens
+    // after this returns; rangeChanged (connected in buildUi) scrolls again when it does.
+    m_scrollToSceneRow = row;
+    QTimer::singleShot(0, this, [this]() {
+        if (m_scrollToSceneRow && m_sceneScroll) {
+            m_sceneScroll->ensureWidgetVisible(m_scrollToSceneRow, 0, 8);
         }
-        if (m_sceneListHost && m_sceneListHost->layout()) {
-            m_sceneListHost->layout()->activate();
-        }
-        m_sceneScroll->ensureWidgetVisible(target, 0, 8);
     });
+    // Only for this addition: later changes to the list's length shouldn't pull it back.
+    QTimer::singleShot(500, this, [this]() { m_scrollToSceneRow = nullptr; });
 }
 
 void MainWindow::deleteScene(int sceneId)
@@ -1517,12 +1523,12 @@ void MainWindow::refreshWaveform()
         return;
     }
     auto* pad = activePad();
-    if (!pad || !pad->isLoaded() || pad->soundPlayer().player.empty()) {
+    const int cur = waveformSampleIndex();
+    if (!pad || cur < 0) {
         m_waveform->setSample(QString(), 0.0f);
         return;
     }
     const SoundPlayer& player = pad->soundPlayer();
-    const int cur = std::clamp(player.getCurSound(), 0, static_cast<int>(player.player.size()) - 1);
     const OpenALSoundPlayer* audio = player.player[static_cast<size_t>(cur)]->audioPlayer;
     if (!audio || !audio->isLoaded()) {
         m_waveform->setSample(QString(), 0.0f);
@@ -1538,7 +1544,8 @@ void MainWindow::refreshWaveform()
     if (!m_waveform->isDraggingHandle()) {
         m_loopDragSampleId = -1; // a drag that ended without a release (the sample changed)
     }
-    const bool playing = player.isPlaying() && !player.isPlayingDelay();
+    // A selected sample that isn't the one playing shows a still playhead.
+    const bool playing = cur == player.getCurSound() && player.isPlaying() && !player.isPlayingDelay();
     m_waveform->setPlayhead(audio->getAudiblePosition(), playing);
 
     const double duration = audio->getDuration();
@@ -1559,15 +1566,29 @@ void MainWindow::refreshWaveform()
     m_waveform->setLoopView(view);
 }
 
-AudioSample* MainWindow::waveformSample() const
+// The sample selected in the Editor (which follows the playing sample while the pad plays),
+// or the pad's current one if the selection is out of range.
+int MainWindow::waveformSampleIndex() const
 {
     auto* pad = const_cast<MainWindow*>(this)->activePad();
     if (!pad || !pad->isLoaded() || pad->soundPlayer().player.empty()) {
-        return nullptr;
+        return -1;
     }
     const SoundPlayer& player = pad->soundPlayer();
-    const int cur = std::clamp(player.getCurSound(), 0, static_cast<int>(player.player.size()) - 1);
-    return player.player[static_cast<size_t>(cur)];
+    const int count = static_cast<int>(player.player.size());
+    if (m_config.activeSampleIdx >= 0 && m_config.activeSampleIdx < count) {
+        return m_config.activeSampleIdx;
+    }
+    return std::clamp(player.getCurSound(), 0, count - 1);
+}
+
+AudioSample* MainWindow::waveformSample() const
+{
+    const int index = waveformSampleIndex();
+    if (index < 0) {
+        return nullptr;
+    }
+    return const_cast<MainWindow*>(this)->activePad()->soundPlayer().player[static_cast<size_t>(index)];
 }
 
 void MainWindow::applyLoopRegion(AudioSample* sample, const LoopRegion& region)
@@ -3729,13 +3750,9 @@ void MainWindow::tick()
         scene->update();
     }
     if (m_page == Page::Main) {
-        refreshSampleInfo();
-        refreshDelayReadout();
-        refreshWaveform();
-    }
-    if (m_page == Page::Main && m_sidebar == SidebarView::Editor) {
-        auto* pad = activePad();
-        if (pad) {
+        // The selected sample follows the pad as it moves on to another sample, in every
+        // view, so the Editor and the Waveform tab show the one playing.
+        if (auto* pad = activePad()) {
             const SoundPlayer& player = pad->soundPlayer();
             const int cur = player.getCurSound();
             if (pad != m_followedPad) {
@@ -3752,6 +3769,14 @@ void MainWindow::tick()
                     updateEditControls();
                 }
             }
+        }
+        refreshSampleInfo();
+        refreshDelayReadout();
+        refreshWaveform();
+    }
+    if (m_page == Page::Main && m_sidebar == SidebarView::Editor) {
+        auto* pad = activePad();
+        if (pad) {
             for (int i = 0; i < m_sampleRows.size() && i < static_cast<int>(pad->soundPlayer().player.size()); ++i) {
                 m_sampleRows[i]->setProgress(pad->soundPlayer().player[i]->audioPlayer->getPosition());
                 m_sampleRows[i]->setSelected(i == m_config.activeSampleIdx);

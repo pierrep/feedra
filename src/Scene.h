@@ -6,6 +6,7 @@
 #include <QElapsedTimer>
 #include <QObject>
 #include <QString>
+#include <QSet>
 #include <QVector>
 #include <functional>
 
@@ -49,6 +50,9 @@ private:
     bool m_fading = false;
     int m_fadeDirection = 0;
     float m_fadeVolume = 1.0f;
+    float m_fadeFrom = 1.0f; // level when the current fade began, so a reversed fade doesn't jump
     QElapsedTimer m_fadeTimer;
     std::function<void()> m_fadeCallback;
+    // Pads that carry on from a pause when the scene plays: only these fade in.
+    QSet<SoundPadWidget*> m_resuming;
 };
