@@ -940,8 +940,10 @@ bool FileBrowserWidget::isDir(const QModelIndex& viewIndex) const
 void FileBrowserWidget::connectSelection()
 {
     // The selection model belongs to the view's current model, so this is redone on each switch.
+    // A member function, not a lambda: Qt can't tell lambdas apart, so it refuses a
+    // UniqueConnection to one and makes no connection at all.
     connect(m_view->selectionModel(), &QItemSelectionModel::currentChanged, this,
-        [this](const QModelIndex& current) { onCurrentChanged(current); }, Qt::UniqueConnection);
+        &FileBrowserWidget::onCurrentChanged, Qt::UniqueConnection);
 }
 
 void FileBrowserWidget::setSearching(bool on)

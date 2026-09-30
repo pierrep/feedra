@@ -648,6 +648,17 @@ QSlider::handle:horizontal { background: {{sliderHandle}}; width: 14px; margin: 
 QSlider::handle:horizontal:hover { background: {{text}}; }
 QSlider::sub-page:horizontal:disabled { background: {{sliderGroove}}; }
 
+/* Logs window */
+QWidget#LogWindow { background: {{background}}; }
+QPlainTextEdit#LogText {
+    background: {{fieldBackground}};
+    color: {{fieldText}};
+    border: 1px solid {{fieldBorder}};
+    border-radius: 6px;
+    selection-background-color: {{selection}};
+    selection-color: {{selectionText}};
+}
+
 /* Fields */
 QLineEdit, QComboBox, QSpinBox, QDoubleSpinBox {
     background: {{fieldBackground}};

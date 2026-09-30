@@ -10,6 +10,7 @@
 #include "widgets/SoundPadWidget.h"
 #include "widgets/WaveformWidget.h"
 #include "widgets/FileBrowserWidget.h"
+#include "widgets/LogWindow.h"
 #include "VolumeDb.h"
 
 #include <QAction>
@@ -471,6 +472,17 @@ void MainWindow::buildMenus()
     auto* themeAct = viewMenu->addAction(tr("Theme"));
     themeAct->setShortcut(QKeySequence(QStringLiteral("Ctrl+5")));
     connect(themeAct, &QAction::triggered, this, [this]() { setPage(Page::Theme); });
+    viewMenu->addSeparator();
+    auto* logsAct = viewMenu->addAction(tr("Logs"));
+    logsAct->setShortcut(QKeySequence(QStringLiteral("Ctrl+L")));
+    connect(logsAct, &QAction::triggered, this, [this]() {
+        if (!m_logWindow) {
+            m_logWindow = new LogWindow(this);
+        }
+        m_logWindow->show();
+        m_logWindow->raise();
+        m_logWindow->activateWindow();
+    });
 }
 
 void MainWindow::buildUi()

@@ -1,3 +1,4 @@
+#include "LogCapture.h"
 #include "MainWindow.h"
 #include "OpenALSoundPlayer.h"
 #include "Theme.h"
@@ -10,6 +11,8 @@
 
 int main(int argc, char* argv[])
 {
+    // First, so everything written to the terminal is also kept for View > Logs.
+    LogCapture::install();
     QApplication app(argc, argv);
     QApplication::setApplicationName(QStringLiteral("Feedra"));
     QApplication::setOrganizationName(QStringLiteral("Feedra"));

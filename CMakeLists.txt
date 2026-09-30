@@ -29,6 +29,7 @@ find_package(Qt6 REQUIRED COMPONENTS Widgets)
 
 set(FEEDRA_SOURCES
     src/main.cpp
+    src/LogCapture.cpp
     src/AppConfig.cpp
     src/Theme.cpp
     src/AudioFormats.cpp
@@ -45,6 +46,7 @@ set(FEEDRA_SOURCES
     src/widgets/ReorderListHost.cpp
     src/widgets/WaveformWidget.cpp
     src/widgets/FileBrowserWidget.cpp
+    src/widgets/LogWindow.cpp
     resources/resources.qrc
 )
 

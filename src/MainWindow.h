@@ -16,6 +16,7 @@ class Scene;
 class SampleRowWidget;
 class SampleLoadQueue;
 class WaveformWidget;
+class LogWindow;
 class FileBrowserWidget;
 class QAbstractButton;
 class QAction;
@@ -246,6 +247,7 @@ private:
     bool m_updatingControls = false;
     bool m_savedOnExit = false;
     bool m_reportMissingAfterLoad = false;
+    LogWindow* m_logWindow = nullptr;
 
     SampleLoadQueue* m_loads = nullptr;
     QProgressBar* m_loadBar = nullptr;
