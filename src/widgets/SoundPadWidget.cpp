@@ -8,6 +8,7 @@
 #include "Theme.h"
 #include "VolumeDb.h"
 
+#include <QDir>
 #include <QApplication>
 #include <QColor>
 #include <QDebug>
@@ -1027,7 +1028,7 @@ void SoundPadWidget::cancelLoading()
 }
 
 void SoundPadWidget::enqueueSample(const QString& path, float pitch, float gain, float pan, bool panRandom, bool spatialise,
-                                   const LoopRegion& loop, float width)
+                                   const LoopRegion& loop, float width, const QJsonObject& saved)
 {
     if (path.isEmpty()) {
         return;
@@ -1044,6 +1045,7 @@ void SoundPadWidget::enqueueSample(const QString& path, float pitch, float gain,
     slot.spatialise = spatialise;
     slot.loop = loop;
     slot.width = width;
+    slot.saved = saved;
     m_slots.push_back(slot);
     const int index = m_loadTotal++;
     m_config->lastPath = QFileInfo(path).absolutePath();
@@ -1213,7 +1215,12 @@ void SoundPadWidget::flushIncoming()
         m_incoming.erase(m_nextCommit);
         const int slotIndex = m_nextCommit++;
         if (!commitDecoded(slotIndex, std::move(audio))) {
-            m_slots[static_cast<size_t>(slotIndex)].failed = true;
+            LoadSlot& slot = m_slots[static_cast<size_t>(slotIndex)];
+            slot.failed = true;
+            if (!slot.saved.isEmpty()) {
+                // Keep it in the project so saving doesn't drop it.
+                m_missingSamples.push_back(slot.saved);
+            }
         }
     }
     update();
@@ -1271,7 +1278,7 @@ std::vector<SoundPadWidget::LoadSlot> SoundPadWidget::sampleSpecs() const
     return specs;
 }
 
-void SoundPadWidget::loadFromJson(const QJsonObject& root)
+void SoundPadWidget::loadFromJson(const QJsonObject& root, const QString& baseDir)
 {
     // Older files store pads under "scene<id>" but scene names under "scene<position>", so search every scene.
     const QString prefix = QString("%1-%2").arg(m_sceneId).arg(m_padId);
@@ -1316,13 +1323,18 @@ void SoundPadWidget::loadFromJson(const QJsonObject& root)
     }
     const bool migrateToLoop = !newFormat && oldLoop && sampleCount == 1 && m_player.minDelay <= 0 && m_player.maxDelay <= 0;
     for (int i = 0;; ++i) {
-        const QJsonObject sample = samples.value(QString("sample-%1").arg(i)).toObject();
+        QJsonObject sample = samples.value(QString("sample-%1").arg(i)).toObject();
         if (sample.isEmpty()) {
             break;
         }
-        const QString path = sample.value(QStringLiteral("path")).toString();
+        QString path = sample.value(QStringLiteral("path")).toString();
         if (path.isEmpty()) {
             continue;
+        }
+        // Files inside the project folder are stored relative to the project file.
+        if (QDir::isRelativePath(path) && !baseDir.isEmpty()) {
+            path = QDir::cleanPath(QDir(baseDir).absoluteFilePath(path));
+            sample.insert(QStringLiteral("path"), path);
         }
         LoopRegion loop;
         loop.start = std::max(0.0, sample.value(QStringLiteral("loopstart")).toDouble(0.0));
@@ -1338,14 +1350,16 @@ void SoundPadWidget::loadFromJson(const QJsonObject& root)
             sample.value(QStringLiteral("panrandom")).toBool(),
             sample.value(QStringLiteral("spatialise")).toBool(),
             loop,
-            static_cast<float>(std::clamp(sample.value(QStringLiteral("width")).toDouble(1.0), 0.0, 1.0)));
+            static_cast<float>(std::clamp(sample.value(QStringLiteral("width")).toDouble(1.0), 0.0, 1.0)),
+            sample);
     }
     update();
 }
 
 void SoundPadWidget::saveToJson(QJsonObject& sceneObj) const
 {
-    if (m_soundPaths.empty()) {
+    // A pad whose files are all missing is still saved, so it isn't lost from the project.
+    if (m_soundPaths.empty() && m_missingSamples.empty()) {
         return;
     }
 
@@ -1394,6 +1408,10 @@ void SoundPadWidget::saveToJson(QJsonObject& sceneObj) const
         sample.insert(QStringLiteral("crossfade"), loop.crossfadeMs);
         samples.insert(QString("sample-%1").arg(i), sample);
     }
+    // Samples that couldn't be loaded go back as they were, after the loaded ones.
+    for (size_t j = 0; j < m_missingSamples.size(); ++j) {
+        samples.insert(QString("sample-%1").arg(count + static_cast<int>(j)), m_missingSamples[j]);
+    }
     pad.insert(QStringLiteral("samples"), samples);
     sceneObj.insert(prefix, pad);
 }
@@ -1421,6 +1439,7 @@ void SoundPadWidget::clearPad()
     m_player.stop();
     m_player.close();
     m_soundPaths.clear();
+    m_missingSamples.clear();
     m_sampleRate = 0;
     m_channels = 0;
     m_name->clear();
@@ -1493,7 +1512,8 @@ SoundPadWidget::PadClip SoundPadWidget::clip() const
         sample.loop = spec.loop;
         clip.samples.push_back(sample);
     }
-    clip.valid = !clip.samples.empty();
+    clip.missing = m_missingSamples;
+    clip.valid = !clip.samples.empty() || !clip.missing.empty();
     return clip;
 }
 
@@ -1517,6 +1537,7 @@ void SoundPadWidget::pasteClip(const PadClip& clip)
     for (int bus = 0; bus < OpenALSoundPlayer::kSendCount; ++bus) {
         m_sends[bus] = clip.sends[bus];
     }
+    m_missingSamples = clip.missing;
     m_notifyWhenDone = true;
     for (const PadClip::Sample& sample : clip.samples) {
         enqueueSample(sample.path, sample.pitch, sample.gain, sample.pan, sample.panRandom, sample.spatialise, sample.loop, sample.width);
@@ -1582,7 +1603,7 @@ void SoundPadWidget::removeSampleAt(int index)
     delete m_player.player[index];
     m_player.player.erase(m_player.player.begin() + index);
     m_soundPaths.erase(m_soundPaths.begin() + index);
-    if (m_player.player.empty()) {
+    if (m_player.player.empty() && m_missingSamples.empty()) {
         clearPad();
     }
 }
@@ -1929,6 +1950,15 @@ bool SoundPadWidget::confirmFileCount(QWidget* parent, int count)
                tr("This adds %1 files to one pad. Go ahead?").arg(count),
                QMessageBox::Yes | QMessageBox::Cancel, QMessageBox::Yes)
         == QMessageBox::Yes;
+}
+
+QStringList SoundPadWidget::missingPaths() const
+{
+    QStringList out;
+    for (const QJsonObject& sample : m_missingSamples) {
+        out << QDir::toNativeSeparators(sample.value(QStringLiteral("path")).toString());
+    }
+    return out;
 }
 
 QStringList SoundPadWidget::samplePaths() const

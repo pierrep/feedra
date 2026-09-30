@@ -110,6 +110,7 @@ private:
     bool isExporting() const;
     void pollExport();
     void cancelExport();
+    void reportMissingSamples();
     // `settingsOnly` rewrites just the app settings in the file and leaves its scenes as they are.
     // With `exportTo`, samples are pointed at a "files" folder beside `path`, the copies they
     // need are added to it, and the file itself is not written (it's left in `exportTo->json`).
@@ -244,6 +245,7 @@ private:
     QString m_curDevice;
     bool m_updatingControls = false;
     bool m_savedOnExit = false;
+    bool m_reportMissingAfterLoad = false;
 
     SampleLoadQueue* m_loads = nullptr;
     QProgressBar* m_loadBar = nullptr;

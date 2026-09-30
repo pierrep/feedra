@@ -288,6 +288,20 @@ MainWindow::MainWindow(QWidget* parent)
     qApp->installEventFilter(this);
 }
 
+// `path` relative to `projectDir` ("files/x.wav") when it's inside that folder; otherwise
+// unchanged. Always with forward slashes.
+static QString projectRelativePath(const QString& path, const QString& projectDir)
+{
+    if (path.isEmpty() || projectDir.isEmpty() || QDir::isRelativePath(path)) {
+        return QDir::fromNativeSeparators(path);
+    }
+    const QString rel = QDir(projectDir).relativeFilePath(QDir::cleanPath(path));
+    if (rel.isEmpty() || QDir::isAbsolutePath(rel) || rel == QLatin1String("..") || rel.startsWith(QLatin1String("../"))) {
+        return QDir::fromNativeSeparators(path);
+    }
+    return rel;
+}
+
 // One project export: the copies to make, filled in by saveConfigTo on the UI thread, then
 // worked through by the export thread. The counters are read by the UI thread for the bar.
 struct ExportState {
@@ -2745,6 +2759,39 @@ void MainWindow::exportProject()
     refreshLoadUi();
 }
 
+// Once a project has finished loading, says which samples couldn't be found. They are kept
+// in the project, so they come back when the files are put back and the project reopened.
+void MainWindow::reportMissingSamples()
+{
+    if (!m_reportMissingAfterLoad || (m_loads && m_loads->isBusy())) {
+        return;
+    }
+    m_reportMissingAfterLoad = false;
+    QStringList missing;
+    for (Scene* scene : m_scenes) {
+        for (SoundPadWidget* pad : scene->pads) {
+            for (const QString& path : pad->missingPaths()) {
+                if (!missing.contains(path)) {
+                    missing << path;
+                }
+            }
+        }
+    }
+    if (missing.isEmpty()) {
+        return;
+    }
+    constexpr int kShown = 15;
+    QStringList shown = missing.mid(0, kShown);
+    if (missing.size() > kShown) {
+        shown << tr("…and %1 more").arg(missing.size() - kShown);
+    }
+    const QString text = tr("%n sample file(s) couldn't be loaded. They are kept in the project, "
+                            "so they'll load again once the files are back where the project expects them.", nullptr, int(missing.size()))
+        + QStringLiteral("\n\n") + shown.join(QLatin1Char('\n'));
+    // Shown after this tick, not inside it.
+    QTimer::singleShot(0, this, [this, text]() { QMessageBox::warning(this, tr("Missing files"), text); });
+}
+
 bool MainWindow::isExporting() const
 {
     return m_export != nullptr;
@@ -2809,6 +2856,10 @@ bool MainWindow::saveConfigTo(const QString& path, bool copyFiles, bool settings
         savePath = info.dir().filePath(info.completeBaseName() + QStringLiteral(".json"));
         info.setFile(savePath);
     }
+
+    // Sample paths inside this folder are written relative to it, so the project folder
+    // can be moved or renamed as a whole.
+    const QString projectDir = info.absolutePath();
 
     // Copying files is only done as part of an export.
     copyFiles = copyFiles && exportTo;
@@ -2907,28 +2958,28 @@ bool MainWindow::saveConfigTo(const QString& path, bool copyFiles, bool settings
         sceneObj.insert(QStringLiteral("activesound"), scene->activeSoundIdx);
         for (SoundPadWidget* pad : scene->pads) {
             pad->saveToJson(sceneObj);
-            if (copyFiles) {
-                QJsonObject padObj = sceneObj.value(QString("%1-%2").arg(scene->id).arg(pad->padId())).toObject();
-                if (!padObj.isEmpty()) {
-                    QJsonObject samples = padObj.value(QStringLiteral("samples")).toObject();
-                    for (auto it = samples.begin(); it != samples.end(); ++it) {
-                        QJsonObject sample = it.value().toObject();
-                        const QString srcPath = sample.value(QStringLiteral("path")).toString();
-                        const QFileInfo src(srcPath);
-                        if (!src.isFile()) {
-                            if (!srcPath.isEmpty() && !exportTo->missing.contains(QDir::toNativeSeparators(srcPath))) {
-                                exportTo->missing << QDir::toNativeSeparators(srcPath);
-                            }
-                            continue;
-                        }
-                        const QString dest = exportTo->destinationFor(src);
-                        sample.insert(QStringLiteral("path"), QDir::fromNativeSeparators(dest));
-                        it.value() = sample;
-                    }
-                    padObj.insert(QStringLiteral("samples"), samples);
-                    sceneObj.insert(QString("%1-%2").arg(scene->id).arg(pad->padId()), padObj);
-                }
+            const QString padKey = QString("%1-%2").arg(scene->id).arg(pad->padId());
+            QJsonObject padObj = sceneObj.value(padKey).toObject();
+            if (padObj.isEmpty()) {
+                continue;
             }
+            QJsonObject samples = padObj.value(QStringLiteral("samples")).toObject();
+            for (auto it = samples.begin(); it != samples.end(); ++it) {
+                QJsonObject sample = it.value().toObject();
+                QString path = sample.value(QStringLiteral("path")).toString();
+                if (copyFiles && !path.isEmpty()) {
+                    const QFileInfo src(path);
+                    if (src.isFile()) {
+                        path = exportTo->destinationFor(src);
+                    } else if (!exportTo->missing.contains(QDir::toNativeSeparators(path))) {
+                        exportTo->missing << QDir::toNativeSeparators(path);
+                    }
+                }
+                sample.insert(QStringLiteral("path"), projectRelativePath(path, projectDir));
+                it.value() = sample;
+            }
+            padObj.insert(QStringLiteral("samples"), samples);
+            sceneObj.insert(padKey, padObj);
         }
         root.insert(QString("scene%1").arg(i), sceneObj);
     }
@@ -3062,7 +3113,8 @@ void MainWindow::importScenesFrom(const QString& path)
         scene->activeSoundIdx = std::max(0, mapPad(sceneObj.value(QStringLiteral("activesound")).toInt(0)));
         connectScene(scene);
         for (SoundPadWidget* pad : scene->pads) {
-            pad->loadFromJson(padRoot);
+            pad->loadFromJson(padRoot, QFileInfo(path).absolutePath());
+            m_reportMissingAfterLoad = true;
         }
         m_scenes.push_back(scene);
         m_padStack->addWidget(scene->grid());
@@ -3113,6 +3165,8 @@ void MainWindow::loadConfigFrom(const QString& path)
     m_config.settingsPath = QFileInfo(path).absoluteFilePath();
     refreshSettingsPathLabel();
     const QJsonObject root = m_config.json();
+    const QString projectDir = QFileInfo(path).absolutePath();
+    m_reportMissingAfterLoad = true;
     const QJsonObject global = root.value(QStringLiteral("global")).toObject();
     applyAppSettings(global);
     m_mainVolume->setValue(VolumeDb::toSliderClamped(
@@ -3144,7 +3198,7 @@ void MainWindow::loadConfigFrom(const QString& path)
         scene->activeSoundIdx = sceneObj.value(QStringLiteral("activesound")).toInt(0);
         connectScene(scene);
         for (SoundPadWidget* pad : scene->pads) {
-            pad->loadFromJson(root);
+            pad->loadFromJson(root, projectDir);
         }
         m_scenes.push_back(scene);
         m_padStack->addWidget(scene->grid());
@@ -3440,6 +3494,7 @@ void MainWindow::tick()
 {
     drainLoads(8);
     pollExport();
+    reportMissingSamples();
     refreshLoadUi();
     OpenALSoundPlayer::updateAll();
     m_fileBrowser->tick();

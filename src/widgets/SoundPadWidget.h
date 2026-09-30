@@ -129,7 +129,8 @@ public:
     void setSpatialisedStereo(int index, bool on);
     bool isSpatialisedStereo(int index) const;
     void submitReload(const SampleLoadJob& job, DecodedAudio audio);
-    void loadFromJson(const QJsonObject& root);
+    // Relative sample paths in the file are resolved against `baseDir` (the project file's folder).
+    void loadFromJson(const QJsonObject& root, const QString& baseDir = QString());
     void saveToJson(QJsonObject& sceneObj) const;
     void loadFiles(const QStringList& paths, bool clearExisting);
     void setReverbSend(float send);
@@ -167,6 +168,8 @@ public:
             LoopRegion loop;
         };
         std::vector<Sample> samples;
+        // Samples whose files couldn't be loaded, as they were saved. Kept so they aren't lost.
+        std::vector<QJsonObject> missing;
     };
     PadClip clip() const;
     void pasteClip(const PadClip& clip);
@@ -182,6 +185,9 @@ public:
     bool hasDelay() const;
     // Every sample path on the pad, in order.
     QStringList samplePaths() const;
+    // Samples from the project file that couldn't be loaded (file missing or unreadable).
+    // They stay in the project when it's saved.
+    QStringList missingPaths() const;
 
     // Asks before a drop brings in a lot of files at once (e.g. a big folder). True to go on.
     static bool confirmFileCount(QWidget* parent, int count);
@@ -221,6 +227,7 @@ private:
         float width = 1.0f;
         LoopRegion loop;
         bool failed = false;
+        QJsonObject saved; // the sample as the project file had it, if it came from one
     };
 
     struct PendingReload {
@@ -231,7 +238,7 @@ private:
     void chooseFiles();
     void cancelLoading();
     void enqueueSample(const QString& path, float pitch, float gain, float pan, bool panRandom, bool spatialise,
-                       const LoopRegion& loop = LoopRegion{}, float width = 1.0f);
+                       const LoopRegion& loop = LoopRegion{}, float width = 1.0f, const QJsonObject& saved = QJsonObject());
     bool commitDecoded(int slotIndex, DecodedAudio audio);
     void flushIncoming();
     std::vector<LoadSlot> sampleSpecs() const;
@@ -253,6 +260,7 @@ private:
     SoundPlayer m_player;
     std::shared_ptr<std::atomic<int>> m_loadGeneration = std::make_shared<std::atomic<int>>(0);
     std::vector<LoadSlot> m_slots;
+    std::vector<QJsonObject> m_missingSamples;
     std::map<int, DecodedAudio> m_incoming;
     std::map<int, PendingReload> m_reloads; // keyed by AudioSample::id
     int m_reloadSerial = 0;
