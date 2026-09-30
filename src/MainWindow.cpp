@@ -749,11 +749,15 @@ void MainWindow::buildUi()
     m_delayOn->setToolTip(tr("Wait a random time between min and max before each sample.\n"
                              "Off: samples follow on straight away; min and max are kept."));
     m_delayOn->setEnabled(false);
+    m_resetDelay = new QPushButton(tr("Reset delay"), padPage);
+    m_resetDelay->setToolTip(tr("Set min and max delay to 0"));
+    m_resetDelay->setEnabled(false);
     m_delayReadout = new QLabel(padPage);
     m_delayReadout->setObjectName(QStringLiteral("FieldHint"));
     m_delayReadout->setToolTip(tr("The delay picked for the current sample, and the time left while it counts down"));
     padGrid->addWidget(m_delayOn, 0, 0);
-    padGrid->addWidget(m_delayReadout, 0, 1, 1, 3);
+    padGrid->addWidget(m_resetDelay, 0, 1);
+    padGrid->addWidget(m_delayReadout, 0, 2, 1, 2);
     padGrid->addWidget(new QLabel(tr("Min delay"), padPage), 1, 0);
     padGrid->addWidget(m_minDelay, 1, 1);
     padGrid->addWidget(new QLabel(tr("Max delay"), padPage), 1, 2);
@@ -947,6 +951,12 @@ void MainWindow::buildUi()
         if (auto* pad = activePad()) {
             pad->soundPlayer().setRandomPlayback(on);
         }
+    });
+    connect(m_resetDelay, &QPushButton::clicked, this, [this]() {
+        // Through the spin boxes, so the pad, its samples' delays and the border all follow.
+        m_minDelay->setValue(0);
+        m_maxDelay->setValue(0);
+        refreshDelayReadout();
     });
     connect(m_delayOn, &QCheckBox::toggled, this, [this](bool on) {
         if (m_updatingControls) return;
@@ -1250,6 +1260,7 @@ void MainWindow::updateMainControls()
         const bool delayOn = pad->soundPlayer().isDelayEnabled();
         m_delayOn->setChecked(delayOn);
         m_delayOn->setEnabled(true);
+        m_resetDelay->setEnabled(true);
         m_minDelay->setEnabled(delayOn);
         m_maxDelay->setEnabled(delayOn);
         for (int bus = 0; bus < OpenALSoundPlayer::kSendCount; ++bus) {
@@ -1261,6 +1272,7 @@ void MainWindow::updateMainControls()
         m_repeat->setChecked(false);
         m_repeat->setEnabled(false);
         m_delayOn->setEnabled(false);
+        m_resetDelay->setEnabled(false);
         m_minDelay->setEnabled(false);
         m_maxDelay->setEnabled(false);
         for (QSlider* slider : m_sendSliders) {

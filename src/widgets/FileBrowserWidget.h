@@ -3,8 +3,10 @@
 #include <QAbstractButton>
 #include <QTreeView>
 #include <QWidget>
+#include <atomic>
 #include <functional>
 #include <memory>
+#include <vector>
 
 class AppConfig;
 class OpenALSoundPlayer;
@@ -16,6 +18,8 @@ class QLineEdit;
 class QSlider;
 class QSortFilterProxyModel;
 class QStyledItemDelegate;
+class QStandardItemModel;
+class QTimer;
 class FileBrowserWidget;
 struct DecodedAudio;
 
@@ -106,6 +110,9 @@ public:
     QStringList selectedPaths() const;
     FileTreeView* view() const { return m_view; }
     void setSearchText(const QString& text);
+    // True while the search box has text: the list shows matching audio files from the
+    // current folder and every folder below it, best match first.
+    bool isSearching() const { return m_searching; }
 
     // --- Preview ---
     void previewFile(const QString& path);
@@ -140,6 +147,19 @@ private:
     void onCurrentChanged(const QModelIndex& current);
     void openIndex(const QModelIndex& index);
 
+    // --- Recursive fuzzy search ---
+    struct SearchEntry {
+        QString path;   // full path
+        QString rel;    // relative to the searched folder, '/' separated
+        QString lower;  // rel, lower case
+        int nameStart = 0; // where the file name starts in rel
+    };
+    void setSearching(bool on);
+    void startSearchIndex();
+    void addSearchBatch(std::vector<SearchEntry> batch, bool done);
+    void refreshSearchResults();
+    void connectSelection();
+
     AppConfig* m_config;
     std::function<QStringList()> m_projectFolders;
     QString m_dir;
@@ -151,6 +171,14 @@ private:
     FileIconButton* m_upButton = nullptr;
     FileIconButton* m_goToButton = nullptr;
     QLineEdit* m_search = nullptr;
+    QLabel* m_searchInfo = nullptr;
+    QStandardItemModel* m_results = nullptr;
+    QTimer* m_searchTimer = nullptr;
+    bool m_searching = false;
+    bool m_indexing = false;
+    QString m_indexRoot;
+    std::vector<SearchEntry> m_index;
+    std::shared_ptr<std::atomic<bool>> m_scanCancel;
 
     QWidget* m_previewBox = nullptr;
     FileIconButton* m_previewButton = nullptr;

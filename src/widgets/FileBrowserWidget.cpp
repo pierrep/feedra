@@ -14,6 +14,7 @@
 #include <QCoreApplication>
 #include <QDateTime>
 #include <QDir>
+#include <QDirIterator>
 #include <QDrag>
 #include <QEvent>
 #include <QFileDialog>
@@ -33,7 +34,9 @@
 #include <QPointer>
 #include <QSlider>
 #include <QSortFilterProxyModel>
+#include <QStandardItemModel>
 #include <QStandardPaths>
+#include <QTimer>
 #include <QStyle>
 #include <QStyledItemDelegate>
 #include <QThreadPool>
@@ -50,6 +53,77 @@ constexpr int kRowHeight = 26;      // matches the Editor's sample rows
 constexpr int kPlayButton = 22;     // the round play button on a row
 constexpr int kRowRightInset = 4;
 constexpr float kDefaultPreviewDb = -6.0f;
+constexpr int kMaxSearchResults = 500;
+constexpr int kSearchPathRole = Qt::UserRole + 1;   // full path of a search result
+constexpr int kSearchFolderRole = Qt::UserRole + 2; // its folder, relative to the searched one
+
+// Fuzzy match of one query word within one part of a path (a folder name or the file name),
+// hay[from, to). The letters must appear in order and close together: the matched stretch may
+// be only a little longer than the word (half as long again). Returns the best score, or -1.
+int fuzzyInPart(const QString& hay, int from, int to, const QString& word)
+{
+    const int len = static_cast<int>(word.size());
+    const int maxSpan = len + std::max(1, len / 2); // e.g. "drk" fits "dark", not "soundtracks"
+    int best = -1;
+    for (int start = hay.indexOf(word.at(0), from); start >= 0 && start < to; start = hay.indexOf(word.at(0), start + 1)) {
+        int score = 0;
+        int at = start;
+        int last = start - 2;
+        bool ok = true;
+        for (int i = 0; i < len; ++i) {
+            at = i == 0 ? start : hay.indexOf(word.at(i), last + 1);
+            if (at < 0 || at >= to || at - start >= maxSpan) {
+                ok = false;
+                break;
+            }
+            score += 10;
+            if (at == last + 1) {
+                score += 15; // consecutive letters
+            }
+            if (at == from || !hay.at(at - 1).isLetterOrNumber()) {
+                score += 20; // start of a word
+            }
+            last = at;
+        }
+        if (ok) {
+            best = std::max(best, score - (last - start + 1 - len) * 3);
+        }
+    }
+    return best;
+}
+
+// Scores one query word against a lower-case relative path whose file name starts at
+// nameStart. Best: the word as-is in the file name. Then letters in order within the file
+// name. Then the word as-is in a folder name, then letters in order within one folder name.
+// Letters never count across a '/'. Returns -1 when it doesn't match.
+int fuzzyScore(const QString& hay, int nameStart, const QString& word)
+{
+    if (word.isEmpty()) {
+        return 0;
+    }
+    const int inName = hay.indexOf(word, nameStart);
+    if (inName >= 0) {
+        const bool wordStart = inName == nameStart || !hay.at(inName - 1).isLetterOrNumber();
+        return 3000 + static_cast<int>(word.size()) * 20 + (wordStart ? 200 : 0) - (inName - nameStart);
+    }
+    const int nameFuzzy = fuzzyInPart(hay, nameStart, static_cast<int>(hay.size()), word);
+    if (nameFuzzy >= 0) {
+        return 2000 + nameFuzzy;
+    }
+    const int inFolder = hay.indexOf(word);
+    if (inFolder >= 0 && inFolder + static_cast<int>(word.size()) < nameStart) {
+        return 1000 + static_cast<int>(word.size()) * 10;
+    }
+    int best = -1;
+    int partStart = 0;
+    while (partStart < nameStart) {
+        const int slash = hay.indexOf(QLatin1Char('/'), partStart);
+        const int partEnd = slash < 0 || slash >= nameStart ? nameStart - 1 : slash;
+        best = std::max(best, fuzzyInPart(hay, partStart, partEnd, word));
+        partStart = partEnd + 1;
+    }
+    return best;
+}
 
 QColor withAlpha(QColor color, qreal alpha)
 {
@@ -252,8 +326,26 @@ public:
         p->setFont(font);
         p->setPen(theme.text); // accent text is too faint on the light themes; the glyph and tint carry it
         const QString name = index.data(Qt::DisplayRole).toString();
-        p->drawText(textRect, Qt::AlignVCenter | Qt::AlignLeft,
-            QFontMetrics(font).elidedText(name, Qt::ElideMiddle, static_cast<int>(textRect.width())));
+        const QString folder = index.data(kSearchFolderRole).toString();
+        if (folder.isEmpty()) {
+            p->drawText(textRect, Qt::AlignVCenter | Qt::AlignLeft,
+                QFontMetrics(font).elidedText(name, Qt::ElideMiddle, static_cast<int>(textRect.width())));
+        } else {
+            // Search results: the name, then the folder it's in (relative), muted.
+            const QFontMetrics fm(font);
+            const int nameWidth = std::min(fm.horizontalAdvance(name), static_cast<int>(textRect.width() * 0.7));
+            p->drawText(QRectF(textRect.left(), textRect.top(), nameWidth + 2, textRect.height()), Qt::AlignVCenter | Qt::AlignLeft,
+                fm.elidedText(name, Qt::ElideMiddle, nameWidth + 2));
+            QFont small = option.font;
+            small.setPixelSize(11);
+            p->setFont(small);
+            p->setPen(theme.textMuted);
+            const QRectF rest(textRect.left() + nameWidth + 10, textRect.top(), textRect.width() - nameWidth - 10, textRect.height());
+            p->drawText(rest, Qt::AlignVCenter | Qt::AlignLeft,
+                QFontMetrics(small).elidedText(folder, Qt::ElideLeft, static_cast<int>(std::max<qreal>(0, rest.width()))));
+            p->setFont(font);
+            p->setPen(theme.text);
+        }
 
         if (!dir) {
             const QRectF button(r.right() - kPlayButton, r.center().y() - kPlayButton / 2.0, kPlayButton, kPlayButton);
@@ -654,10 +746,25 @@ FileBrowserWidget::FileBrowserWidget(AppConfig* config, QWidget* parent)
     searchRow->setContentsMargins(0, 0, 8, 0);
     m_search = new QLineEdit(this);
     m_search->setObjectName(QStringLiteral("FileSearch"));
-    m_search->setPlaceholderText(tr("Filter this folder"));
+    m_search->setPlaceholderText(tr("Search this folder and below"));
+    m_search->setToolTip(tr("Finds audio files in this folder and every folder inside it.\n"
+                            "Letters only need to appear in order, so \"drk fst\" finds \"dark_forest\".\n"
+                            "Several words must all match."));
     m_search->setClearButtonEnabled(true);
     searchRow->addWidget(m_search);
     outer->addLayout(searchRow);
+    m_searchInfo = new QLabel(this);
+    m_searchInfo->setObjectName(QStringLiteral("FilePath"));
+    m_searchInfo->hide();
+    auto* infoRow = new QHBoxLayout();
+    infoRow->setContentsMargins(2, 0, 8, 0);
+    infoRow->addWidget(m_searchInfo);
+    outer->addLayout(infoRow);
+    m_results = new QStandardItemModel(this);
+    m_searchTimer = new QTimer(this);
+    m_searchTimer->setSingleShot(true);
+    m_searchTimer->setInterval(120);
+    connect(m_searchTimer, &QTimer::timeout, this, &FileBrowserWidget::refreshSearchResults);
 
     // The tree.
     m_model = new QFileSystemModel(this);
@@ -756,7 +863,13 @@ FileBrowserWidget::FileBrowserWidget(AppConfig* config, QWidget* parent)
     connect(m_upButton, &QAbstractButton::clicked, this, &FileBrowserWidget::goUp);
     connect(m_goToButton, &QAbstractButton::clicked, this, &FileBrowserWidget::buildGoToMenu);
     connect(m_search, &QLineEdit::textChanged, this, [this](const QString& text) {
-        static_cast<AudioFileFilter*>(m_filter)->setSearch(text.trimmed());
+        const bool on = !text.trimmed().isEmpty();
+        if (on != m_searching) {
+            setSearching(on);
+        }
+        if (on) {
+            m_searchTimer->start(); // after a short pause in typing
+        }
     });
     connect(m_view, &FileTreeView::playClicked, this, [this](const QModelIndex& index) {
         togglePreview(filePath(index));
@@ -771,8 +884,7 @@ FileBrowserWidget::FileBrowserWidget(AppConfig* config, QWidget* parent)
             stopPreview();
         }
     });
-    connect(m_view->selectionModel(), &QItemSelectionModel::currentChanged, this,
-        [this](const QModelIndex& current) { onCurrentChanged(current); });
+    connectSelection();
     connect(m_previewButton, &QAbstractButton::clicked, this, [this]() {
         if (isPreviewing()) {
             stopPreview();
@@ -811,12 +923,190 @@ bool FileBrowserWidget::eventFilter(QObject* watched, QEvent* event)
 
 QString FileBrowserWidget::filePath(const QModelIndex& viewIndex) const
 {
+    if (viewIndex.model() == m_results) {
+        return viewIndex.data(kSearchPathRole).toString();
+    }
     return m_model->filePath(m_filter->mapToSource(viewIndex));
 }
 
 bool FileBrowserWidget::isDir(const QModelIndex& viewIndex) const
 {
+    if (viewIndex.model() == m_results) {
+        return false;
+    }
     return m_model->isDir(m_filter->mapToSource(viewIndex));
+}
+
+void FileBrowserWidget::connectSelection()
+{
+    // The selection model belongs to the view's current model, so this is redone on each switch.
+    connect(m_view->selectionModel(), &QItemSelectionModel::currentChanged, this,
+        [this](const QModelIndex& current) { onCurrentChanged(current); }, Qt::UniqueConnection);
+}
+
+void FileBrowserWidget::setSearching(bool on)
+{
+    m_searching = on;
+    m_searchInfo->setVisible(on);
+    if (on) {
+        m_results->clear();
+        m_view->setModel(m_results);
+        m_view->setRootIsDecorated(false);
+        connectSelection();
+        if (m_indexRoot != m_dir || m_index.empty() || !m_indexing) {
+            startSearchIndex(); // a fresh scan each time a search starts, so new files show up
+        }
+    } else {
+        if (m_scanCancel) {
+            m_scanCancel->store(true);
+        }
+        m_indexing = false;
+        m_searchTimer->stop();
+        m_view->setModel(m_filter);
+        m_view->setRootIsDecorated(true);
+        for (int c = 1; c < m_model->columnCount(); ++c) {
+            m_view->hideColumn(c);
+        }
+        m_view->setRootIndex(m_filter->mapFromSource(m_model->index(m_dir)));
+        connectSelection();
+        m_results->clear();
+    }
+}
+
+void FileBrowserWidget::startSearchIndex()
+{
+    if (m_scanCancel) {
+        m_scanCancel->store(true);
+    }
+    auto cancel = std::make_shared<std::atomic<bool>>(false);
+    m_scanCancel = cancel;
+    m_index.clear();
+    m_indexRoot = m_dir;
+    m_indexing = true;
+    const QString root = m_dir;
+    QPointer<FileBrowserWidget> self(this);
+    // Walks the folder tree on a pool thread and hands the files over in batches, so the list
+    // fills in while a big library is still being read.
+    QThreadPool::globalInstance()->start([self, root, cancel]() {
+        const QString prefix = root.endsWith(QLatin1Char('/')) ? root : root + QLatin1Char('/');
+        std::vector<SearchEntry> batch;
+        auto post = [&](bool done) {
+            std::vector<SearchEntry> out;
+            out.swap(batch);
+            QMetaObject::invokeMethod(qApp, [self, cancel, out = std::move(out), done]() mutable {
+                if (self && !cancel->load()) {
+                    self->addSearchBatch(std::move(out), done);
+                }
+            }, Qt::QueuedConnection);
+        };
+        QDirIterator it(root, QDir::Files | QDir::Readable | QDir::NoDotAndDotDot, QDirIterator::Subdirectories);
+        while (it.hasNext()) {
+            if (cancel->load()) {
+                return;
+            }
+            const QString path = it.next();
+            if (!AudioFormats::isPlayable(path)) {
+                continue;
+            }
+            SearchEntry entry;
+            entry.path = path;
+            entry.rel = path.startsWith(prefix) ? path.mid(prefix.size()) : it.fileName();
+            entry.lower = entry.rel.toLower();
+            entry.nameStart = static_cast<int>(entry.rel.lastIndexOf(QLatin1Char('/')) + 1);
+            batch.push_back(std::move(entry));
+            if (batch.size() >= 2000) {
+                post(false);
+            }
+        }
+        post(true);
+    });
+    refreshSearchResults();
+}
+
+void FileBrowserWidget::addSearchBatch(std::vector<SearchEntry> batch, bool done)
+{
+    for (SearchEntry& entry : batch) {
+        m_index.push_back(std::move(entry));
+    }
+    if (done) {
+        m_indexing = false;
+    }
+    // Throttled: while a big folder is still being read, re-sort at most every 120 ms.
+    if (m_searching && (!m_searchTimer->isActive() || done)) {
+        m_searchTimer->start();
+    }
+}
+
+void FileBrowserWidget::refreshSearchResults()
+{
+    if (!m_searching) {
+        return;
+    }
+    const QStringList words = m_search->text().trimmed().toLower().split(QLatin1Char(' '), Qt::SkipEmptyParts);
+    struct Hit {
+        int score;
+        int index;
+    };
+    std::vector<Hit> hits;
+    for (int i = 0; i < static_cast<int>(m_index.size()); ++i) {
+        const SearchEntry& entry = m_index[static_cast<size_t>(i)];
+        int total = 0;
+        for (const QString& word : words) {
+            const int s = fuzzyScore(entry.lower, entry.nameStart, word);
+            if (s < 0) {
+                total = -1;
+                break;
+            }
+            total += s;
+        }
+        if (total >= 0) {
+            // Shallower and shorter paths first when scores tie closely.
+            hits.push_back({ total * 8 - static_cast<int>(entry.rel.size()), i });
+        }
+    }
+    const int shown = std::min<int>(kMaxSearchResults, static_cast<int>(hits.size()));
+    std::partial_sort(hits.begin(), hits.begin() + shown, hits.end(), [&](const Hit& a, const Hit& b) {
+        if (a.score != b.score) {
+            return a.score > b.score;
+        }
+        return m_index[static_cast<size_t>(a.index)].lower < m_index[static_cast<size_t>(b.index)].lower;
+    });
+
+    // Rebuild, keeping the current file selected if it is still in the list.
+    const QString keep = m_view->currentIndex().isValid() ? filePath(m_view->currentIndex()) : QString();
+    m_results->clear();
+    QModelIndex restore;
+    for (int k = 0; k < shown; ++k) {
+        const SearchEntry& entry = m_index[static_cast<size_t>(hits[static_cast<size_t>(k)].index)];
+        auto* item = new QStandardItem(entry.rel.mid(entry.nameStart));
+        item->setData(entry.path, kSearchPathRole);
+        const QString folder = entry.nameStart > 0 ? entry.rel.left(entry.nameStart - 1) : QStringLiteral(".");
+        item->setData(folder, kSearchFolderRole);
+        item->setToolTip(QDir::toNativeSeparators(entry.path));
+        item->setEditable(false);
+        item->setDragEnabled(true);
+        m_results->appendRow(item);
+        if (!keep.isEmpty() && entry.path == keep) {
+            restore = item->index();
+        }
+    }
+    if (restore.isValid()) {
+        const QSignalBlocker blocker(m_view->selectionModel());
+        m_view->setCurrentIndex(restore);
+    }
+
+    const int files = static_cast<int>(m_index.size());
+    QString info;
+    if (m_indexing) {
+        info = tr("Searching… %1 matches in %2 audio files so far").arg(hits.size()).arg(files);
+    } else if (hits.empty()) {
+        info = tr("No matches in %1 audio files").arg(files);
+    } else if (static_cast<int>(hits.size()) > shown) {
+        info = tr("Best %1 of %2 matches").arg(shown).arg(hits.size());
+    } else {
+        info = hits.size() == 1 ? tr("1 match") : tr("%1 matches").arg(hits.size());
+    }
+    m_searchInfo->setText(info);
 }
 
 QStringList FileBrowserWidget::selectedPaths() const
@@ -847,7 +1137,11 @@ void FileBrowserWidget::setCurrentDir(const QString& dir)
     m_dir = clean;
     static_cast<AudioFileFilter*>(m_filter)->setRoot(clean);
     const QModelIndex source = m_model->setRootPath(clean);
-    m_view->setRootIndex(m_filter->mapFromSource(source));
+    if (m_searching) {
+        startSearchIndex(); // same search, new folder
+    } else {
+        m_view->setRootIndex(m_filter->mapFromSource(source));
+    }
     m_view->selectionModel()->clearSelection();
     m_view->scrollToTop();
     m_upButton->setEnabled(!QDir(clean).isRoot());
@@ -862,6 +1156,9 @@ void FileBrowserWidget::goUp()
     }
     const QString from = m_dir;
     setCurrentDir(dir.absolutePath());
+    if (m_searching) {
+        return; // the search now covers the wider folder
+    }
     // Land on the folder we just left, so Backspace then Enter goes straight back.
     const QModelIndex index = m_filter->mapFromSource(m_model->index(from));
     if (index.isValid()) {
