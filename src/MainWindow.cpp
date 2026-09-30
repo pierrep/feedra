@@ -2,6 +2,7 @@
 #include "AudioFormats.h"
 #include "OpenALSoundPlayer.h"
 #include "PeakStore.h"
+#include "ProjectBackups.h"
 #include "SampleLoadQueue.h"
 #include "Scene.h"
 #include "Theme.h"
@@ -59,6 +60,12 @@
 #include <QTimer>
 #include <QVBoxLayout>
 #include <QDateTime>
+#include <QDesktopServices>
+#include <QDialog>
+#include <QDialogButtonBox>
+#include <QHeaderView>
+#include <QTreeWidget>
+#include <QUrl>
 #include <QSet>
 #include <algorithm>
 #include <atomic>
@@ -258,11 +265,8 @@ MainWindow::MainWindow(QWidget* parent)
     if (loadLast && !lastPath.isEmpty() && QFile::exists(lastPath)) {
         toLoad = QFileInfo(lastPath).absoluteFilePath();
     }
-    if (QFile::exists(settings)) {
-        const QString backup = QDir(m_config.dataDir()).filePath(QStringLiteral("settings/settings_backup.json"));
-        QFile::remove(backup);
-        QFile::copy(settings, backup);
-    }
+    // Opening a project backs it up (see ProjectBackups).
+    ProjectBackups::setRoot(m_config.dataDir());
     if (QFile::exists(toLoad)) {
         loadConfigFrom(toLoad);
     } else {
@@ -441,6 +445,10 @@ void MainWindow::buildMenus()
     m_exportAction = fileMenu->addAction(tr("Export &Project..."));
     m_exportAction->setShortcut(QKeySequence::SaveAs);
     connect(m_exportAction, &QAction::triggered, this, [this]() { exportProject(); });
+
+    m_restoreAction = fileMenu->addAction(tr("Restore &Backup..."));
+    m_restoreAction->setToolTip(tr("Go back to an earlier copy of the open project"));
+    connect(m_restoreAction, &QAction::triggered, this, [this]() { restoreBackup(); });
 
     fileMenu->addSeparator();
     auto* quitAct = fileMenu->addAction(tr("E&xit"));
@@ -2696,9 +2704,12 @@ QString MainWindow::resolvedSettingsPath() const
 void MainWindow::saveConfig()
 {
     const QString path = resolvedSettingsPath();
+    m_saveDeclined = false;
     if (!saveConfigTo(path, false)) {
-        QMessageBox::warning(this, tr("Feedra"),
-            tr("Could not save settings to:\n%1").arg(path));
+        if (!m_saveDeclined) {
+            QMessageBox::warning(this, tr("Feedra"),
+                tr("Could not save settings to:\n%1").arg(path));
+        }
         return;
     }
     const QString saved = QFileInfo(path).absoluteFilePath();
@@ -2716,6 +2727,7 @@ void MainWindow::saveOnExit()
     m_savedOnExit = true;
     m_config.lastSettingsPath = currentSettingsFilePath();
     const QString path = currentSettingsFilePath();
+    ProjectBackups::backup(path, true);
     // Autosave off: keep the file's scenes as they were last saved, update only app settings.
     saveConfigTo(path, false, !m_config.autosave);
 
@@ -2802,6 +2814,121 @@ void MainWindow::reportMissingSamples()
         + QStringLiteral("\n\n") + shown.join(QLatin1Char('\n'));
     // Shown after this tick, not inside it.
     QTimer::singleShot(0, this, [this, text]() { QMessageBox::warning(this, tr("Missing files"), text); });
+}
+
+// Lists the open project's backups and puts the chosen one back in place of the project file.
+void MainWindow::restoreBackup()
+{
+    if (isExporting() || (m_loads && m_loads->isBusy())) {
+        return;
+    }
+    const QString project = QFileInfo(currentSettingsFilePath()).absoluteFilePath();
+    const QString name = QFileInfo(project).fileName();
+    const QList<ProjectBackups::Entry> entries = ProjectBackups::list(project);
+    const QString folder = ProjectBackups::folderFor(project);
+    if (entries.isEmpty()) {
+        QMessageBox::information(this, tr("Restore backup"),
+            tr("There are no backups of %1 yet.\n\nBackups are made when a project is opened, "
+               "as it's saved (at most every 10 minutes) and on quit.").arg(name));
+        return;
+    }
+
+    QDialog dialog(this);
+    dialog.setWindowTitle(tr("Restore backup — %1").arg(name));
+    dialog.resize(560, 420);
+    auto* layout = new QVBoxLayout(&dialog);
+    auto* intro = new QLabel(tr("Pick the copy of %1 to go back to. Newest first.").arg(name), &dialog);
+    intro->setWordWrap(true);
+    layout->addWidget(intro);
+
+    auto* tree = new QTreeWidget(&dialog);
+    tree->setRootIsDecorated(false);
+    tree->setUniformRowHeights(true);
+    tree->setHeaderLabels({ tr("Saved"), tr("Scenes"), tr("Pads"), tr("Samples") });
+    for (int i = 0; i < entries.size(); ++i) {
+        const ProjectBackups::Entry& entry = entries[i];
+        auto* item = new QTreeWidgetItem(tree);
+        item->setText(0, QLocale().toString(entry.time, QStringLiteral("ddd d MMM yyyy, HH:mm:ss")));
+        if (entry.readable) {
+            item->setText(1, QString::number(entry.counts.scenes));
+            item->setText(2, QString::number(entry.counts.pads));
+            item->setText(3, QString::number(entry.counts.samples));
+        } else {
+            item->setText(1, tr("unreadable"));
+            item->setDisabled(true);
+        }
+        for (int c = 1; c < 4; ++c) {
+            item->setTextAlignment(c, Qt::AlignRight | Qt::AlignVCenter);
+        }
+        item->setData(0, Qt::UserRole, i);
+    }
+    tree->header()->setSectionResizeMode(0, QHeaderView::Stretch);
+    for (int c = 1; c < 4; ++c) {
+        tree->header()->setSectionResizeMode(c, QHeaderView::ResizeToContents);
+    }
+    layout->addWidget(tree, 1);
+
+    auto* buttons = new QDialogButtonBox(&dialog);
+    QPushButton* restore = buttons->addButton(tr("Restore"), QDialogButtonBox::AcceptRole);
+    buttons->addButton(QDialogButtonBox::Cancel);
+    QPushButton* showFolder = buttons->addButton(tr("Show folder"), QDialogButtonBox::ActionRole);
+    restore->setEnabled(false);
+    layout->addWidget(buttons);
+    connect(tree, &QTreeWidget::currentItemChanged, &dialog, [restore](QTreeWidgetItem* current) {
+        restore->setEnabled(current && !current->isDisabled());
+    });
+    connect(tree, &QTreeWidget::itemDoubleClicked, &dialog, [&dialog](QTreeWidgetItem* item) {
+        if (item && !item->isDisabled()) {
+            dialog.accept();
+        }
+    });
+    connect(buttons, &QDialogButtonBox::accepted, &dialog, &QDialog::accept);
+    connect(buttons, &QDialogButtonBox::rejected, &dialog, &QDialog::reject);
+    connect(showFolder, &QPushButton::clicked, &dialog, [folder]() {
+        QDesktopServices::openUrl(QUrl::fromLocalFile(folder));
+    });
+    if (dialog.exec() != QDialog::Accepted || !tree->currentItem() || tree->currentItem()->isDisabled()) {
+        return;
+    }
+    const ProjectBackups::Entry chosen = entries[tree->currentItem()->data(0, Qt::UserRole).toInt()];
+
+    QString question = tr("Replace %1 with the copy from %2?\n\nThe project as it is now is backed up first, "
+                          "so this can be undone from the same list.")
+        .arg(name, QLocale().toString(chosen.time, QStringLiteral("ddd d MMM yyyy, HH:mm")));
+    if (!m_config.autosave) {
+        question += QStringLiteral("\n\n") + tr("Autosave is off: changes since you last saved will be lost.");
+    }
+    if (QMessageBox::question(this, tr("Restore backup"), question,
+            QMessageBox::Yes | QMessageBox::Cancel, QMessageBox::Cancel) != QMessageBox::Yes) {
+        return;
+    }
+
+    QFile source(chosen.path);
+    if (!source.open(QIODevice::ReadOnly)) {
+        QMessageBox::warning(this, tr("Restore backup"), tr("Couldn't read the backup:\n%1").arg(QDir::toNativeSeparators(chosen.path)));
+        return;
+    }
+    const QByteArray bytes = source.readAll();
+    if (!QJsonDocument::fromJson(bytes).isObject()) {
+        QMessageBox::warning(this, tr("Restore backup"), tr("That backup isn't a readable project file."));
+        return;
+    }
+
+    // Keep what's there now: with autosave on, the current scenes are saved first.
+    if (m_config.autosave) {
+        m_saveDeclined = false;
+        saveConfigTo(project, false);
+    }
+    ProjectBackups::backup(project, true);
+
+    QSaveFile out(project);
+    if (!out.open(QIODevice::WriteOnly) || out.write(bytes) != bytes.size() || !out.commit()) {
+        QMessageBox::warning(this, tr("Restore backup"),
+            tr("Couldn't write %1:\n%2").arg(QDir::toNativeSeparators(project), out.errorString()));
+        return;
+    }
+    loadConfigFrom(project);
+    enableScene(std::clamp(m_config.activeSceneIdx, 0, std::max(0, static_cast<int>(m_scenes.size()) - 1)));
 }
 
 bool MainWindow::isExporting() const
@@ -3008,6 +3135,26 @@ bool MainWindow::saveConfigTo(const QString& path, bool copyFiles, bool settings
         exportTo->json = bytes;
         return true;
     }
+    if (!settingsOnly && QFile::exists(savePath)) {
+        // Never quietly replace a project with one that has far fewer pads in it.
+        bool readable = false;
+        const ProjectBackups::Counts before = ProjectBackups::countFile(savePath, &readable);
+        const ProjectBackups::Counts after = ProjectBackups::count(root);
+        if (readable && before.pads >= 4 && after.pads * 2 < before.pads) {
+            ProjectBackups::backup(savePath, true); // keep the fuller one whatever the answer
+            const auto answer = QMessageBox::question(this, tr("Save project"),
+                tr("%1 has %2 pads with sounds. Saving now would leave %3.\n\n"
+                   "Save anyway? The file as it is now has been backed up (File > Restore Backup...).")
+                    .arg(QFileInfo(savePath).fileName()).arg(before.pads).arg(after.pads),
+                QMessageBox::Save | QMessageBox::Cancel, QMessageBox::Cancel);
+            if (answer != QMessageBox::Save) {
+                m_saveDeclined = true;
+                return false;
+            }
+        } else {
+            ProjectBackups::backup(savePath, false);
+        }
+    }
     QSaveFile file(savePath);
     if (!file.open(QIODevice::WriteOnly)) {
         qWarning() << "Failed to open settings file" << savePath << file.errorString();
@@ -3174,6 +3321,8 @@ void MainWindow::loadConfigFrom(const QString& path)
     if (!m_config.loadJson(path)) {
         return;
     }
+    // A copy as it was when opened, whatever happens to it later.
+    ProjectBackups::backup(path, true);
     m_config.settingsPath = QFileInfo(path).absoluteFilePath();
     refreshSettingsPathLabel();
     const QJsonObject root = m_config.json();
@@ -3430,6 +3579,9 @@ void MainWindow::refreshLoadUi()
     }
     if (m_exportAction) {
         m_exportAction->setEnabled(!busy);
+    }
+    if (m_restoreAction) {
+        m_restoreAction->setEnabled(!busy);
     }
     if (!m_loadBar || !m_loadLabel) {
         return;

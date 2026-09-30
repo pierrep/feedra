@@ -38,6 +38,7 @@ set(FEEDRA_SOURCES
     src/SoundPlayer.cpp
     src/SampleLoadQueue.cpp
     src/PeakStore.cpp
+    src/ProjectBackups.cpp
     src/Scene.cpp
     src/MainWindow.cpp
     src/widgets/SoundPadWidget.cpp

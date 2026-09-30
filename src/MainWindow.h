@@ -112,6 +112,7 @@ private:
     void pollExport();
     void cancelExport();
     void reportMissingSamples();
+    void restoreBackup();
     // `settingsOnly` rewrites just the app settings in the file and leaves its scenes as they are.
     // With `exportTo`, samples are pointed at a "files" folder beside `path`, the copies they
     // need are added to it, and the file itself is not written (it's left in `exportTo->json`).
@@ -248,6 +249,8 @@ private:
     bool m_savedOnExit = false;
     bool m_reportMissingAfterLoad = false;
     LogWindow* m_logWindow = nullptr;
+    QAction* m_restoreAction = nullptr;
+    bool m_saveDeclined = false; // the last save was cancelled at the "far fewer pads" question
 
     SampleLoadQueue* m_loads = nullptr;
     QProgressBar* m_loadBar = nullptr;
