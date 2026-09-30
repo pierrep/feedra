@@ -57,7 +57,12 @@
 #include <QStyle>
 #include <QTimer>
 #include <QVBoxLayout>
+#include <QDateTime>
+#include <QSet>
 #include <algorithm>
+#include <atomic>
+#include <mutex>
+#include <vector>
 #include <cmath>
 #include <filesystem>
 
@@ -283,8 +288,113 @@ MainWindow::MainWindow(QWidget* parent)
     qApp->installEventFilter(this);
 }
 
+// One project export: the copies to make, filled in by saveConfigTo on the UI thread, then
+// worked through by the export thread. The counters are read by the UI thread for the bar.
+struct ExportState {
+    struct Copy {
+        QString src;
+        QString dest;
+        qint64 bytes = 0;
+    };
+    QString jsonPath;
+    QString filesDir;
+    QByteArray json;
+    std::vector<Copy> copies;
+    QHash<QString, QString> destBySource; // absolute source path -> destination
+    QSet<QString> usedNames;              // lower-cased names taken in the files folder
+    QStringList missing;                  // sources that weren't found when exporting
+    qint64 totalBytes = 0;
+
+    std::atomic<qint64> doneBytes { 0 };
+    std::atomic<int> doneFiles { 0 };
+    std::atomic<bool> cancel { false };
+    std::atomic<bool> finished { false };
+    std::mutex failedMutex;
+    QStringList failed;
+
+    // The file a sample is copied to. The same source always gets the same copy; a different
+    // source with a name already taken gets "name (2).ext", "name (3).ext" and so on.
+    QString destinationFor(const QFileInfo& src)
+    {
+        const QString key = src.absoluteFilePath();
+        const auto found = destBySource.constFind(key);
+        if (found != destBySource.constEnd()) {
+            return found.value();
+        }
+        const QString base = src.completeBaseName();
+        const QString suffix = src.suffix().isEmpty() ? QString() : QStringLiteral(".") + src.suffix();
+        QString name = src.fileName();
+        for (int n = 2; usedNames.contains(name.toLower()); ++n) {
+            name = QStringLiteral("%1 (%2)%3").arg(base).arg(n).arg(suffix);
+        }
+        usedNames.insert(name.toLower());
+        const QString dest = QDir(filesDir).filePath(name);
+        destBySource.insert(key, dest);
+        if (QFileInfo(dest).absoluteFilePath() != key) {
+            copies.push_back({ key, dest, src.size() });
+            totalBytes += src.size();
+        }
+        return dest;
+    }
+
+    void fail(const QString& path)
+    {
+        std::lock_guard<std::mutex> lock(failedMutex);
+        failed << QDir::toNativeSeparators(path);
+    }
+
+    // Runs on the export thread.
+    void run()
+    {
+        constexpr qint64 kBlock = 1 << 20;
+        QByteArray block;
+        for (const Copy& copy : copies) {
+            if (cancel.load()) {
+                break;
+            }
+            const QFileInfo srcInfo(copy.src);
+            const QFileInfo destInfo(copy.dest);
+            // Already there from an earlier export of the same file: leave it.
+            if (destInfo.exists() && destInfo.size() == copy.bytes && destInfo.lastModified() >= srcInfo.lastModified()) {
+                doneBytes += copy.bytes;
+                ++doneFiles;
+                continue;
+            }
+            QFile in(copy.src);
+            QSaveFile out(copy.dest); // written to a temporary file, so a stopped copy leaves nothing behind
+            qint64 copied = 0;
+            bool ok = in.open(QIODevice::ReadOnly) && out.open(QIODevice::WriteOnly);
+            while (ok && !cancel.load()) {
+                block = in.read(kBlock);
+                if (block.isEmpty()) {
+                    ok = in.atEnd();
+                    break;
+                }
+                if (out.write(block) != block.size()) {
+                    ok = false;
+                    break;
+                }
+                copied += block.size();
+                doneBytes += block.size();
+            }
+            if (cancel.load()) {
+                out.cancelWriting();
+                break;
+            }
+            if (!ok || !out.commit()) {
+                fail(copy.src);
+            }
+            // Keep the bar honest when a file turned out a different size or failed part way.
+            doneBytes += copy.bytes - copied;
+            ++doneFiles;
+        }
+        finished.store(true);
+    }
+};
+
 MainWindow::~MainWindow()
 {
+    cancelExport();
     waitForLoads();
     saveOnExit();
     if (m_fileBrowser) {
@@ -313,9 +423,9 @@ void MainWindow::buildMenus()
     m_saveAction->setShortcut(QKeySequence::Save);
     connect(m_saveAction, &QAction::triggered, this, [this]() { saveConfig(); });
 
-    m_saveAsAction = fileMenu->addAction(tr("Save &As..."));
-    m_saveAsAction->setShortcut(QKeySequence::SaveAs);
-    connect(m_saveAsAction, &QAction::triggered, this, [this]() { saveConfigAs(); });
+    m_exportAction = fileMenu->addAction(tr("Export &Project..."));
+    m_exportAction->setShortcut(QKeySequence::SaveAs);
+    connect(m_exportAction, &QAction::triggered, this, [this]() { exportProject(); });
 
     fileMenu->addSeparator();
     auto* quitAct = fileMenu->addAction(tr("E&xit"));
@@ -2615,23 +2725,80 @@ void MainWindow::saveOnExit()
     }
 }
 
-void MainWindow::saveConfigAs()
+void MainWindow::exportProject()
 {
-    const QString path = QFileDialog::getSaveFileName(this, tr("Save Feedra scenes"),
+    if (isExporting() || (m_loads && m_loads->isBusy())) {
+        return;
+    }
+    const QString path = QFileDialog::getSaveFileName(this, tr("Export project"),
         currentSettingsFilePath(), tr("JSON (*.json)"));
     if (path.isEmpty()) {
         return;
     }
-    if (!saveConfigTo(path, true)) {
-        QMessageBox::warning(this, tr("Feedra"), tr("Could not save settings to:\n%1").arg(path));
-    } else {
-        // Save As copies the samples into a "files" folder beside the new file.
-        m_config.settingsPath = QFileInfo(path).absoluteFilePath();
-        refreshSettingsPathLabel();
+    auto state = std::make_shared<ExportState>();
+    if (!saveConfigTo(path, true, false, state.get())) {
+        QMessageBox::warning(this, tr("Export project"), tr("Could not export the project to:\n%1").arg(QDir::toNativeSeparators(path)));
+        return;
+    }
+    m_export = state;
+    m_exportThread = std::thread([state]() { state->run(); });
+    refreshLoadUi();
+}
+
+bool MainWindow::isExporting() const
+{
+    return m_export != nullptr;
+}
+
+// Called from tick(): once the copies are done, writes the project file.
+void MainWindow::pollExport()
+{
+    if (!m_export || !m_export->finished.load()) {
+        return;
+    }
+    if (m_exportThread.joinable()) {
+        m_exportThread.join();
+    }
+    const std::shared_ptr<ExportState> state = std::move(m_export);
+    m_export.reset();
+    refreshLoadUi();
+
+    const QString jsonPath = QDir::toNativeSeparators(state->jsonPath);
+    QSaveFile file(state->jsonPath);
+    if (!file.open(QIODevice::WriteOnly) || file.write(state->json) != state->json.size() || !file.commit()) {
+        QMessageBox::warning(this, tr("Export project"),
+            tr("The files were copied, but the project file couldn't be written:\n%1\n%2").arg(jsonPath, file.errorString()));
+        return;
+    }
+    QStringList problems;
+    if (!state->failed.isEmpty()) {
+        problems << tr("These files couldn't be copied:") << state->failed;
+    }
+    if (!state->missing.isEmpty()) {
+        problems << tr("These files weren't found, so the project still points at them:") << state->missing;
+    }
+    if (!problems.isEmpty()) {
+        QMessageBox::warning(this, tr("Export project"),
+            tr("Exported to %1, with problems.").arg(jsonPath) + QStringLiteral("\n\n") + problems.join(QLatin1Char('\n')));
     }
 }
 
-bool MainWindow::saveConfigTo(const QString& path, bool copyFiles, bool settingsOnly)
+// Stops a running export and waits for its thread. Files already copied stay; the one being
+// copied is dropped and the project file isn't written.
+void MainWindow::cancelExport()
+{
+    if (!m_export) {
+        return;
+    }
+    m_export->cancel.store(true);
+    if (m_exportThread.joinable()) {
+        m_exportThread.join();
+    }
+    m_export.reset();
+    refreshLoadUi();
+}
+
+bool MainWindow::saveConfigTo(const QString& path, bool copyFiles, bool settingsOnly, ExportState* exportTo)
 {
     if (path.isEmpty() || (m_loads && m_loads->isBusy())) {
         return false;
@@ -2643,10 +2810,29 @@ bool MainWindow::saveConfigTo(const QString& path, bool copyFiles, bool settings
         info.setFile(savePath);
     }
 
-    QString filesDir;
+    // Copying files is only done as part of an export.
+    copyFiles = copyFiles && exportTo;
     if (copyFiles) {
-        filesDir = info.dir().filePath(QStringLiteral("files"));
-        QDir().mkpath(filesDir);
+        exportTo->jsonPath = info.absoluteFilePath();
+        exportTo->filesDir = info.dir().filePath(QStringLiteral("files"));
+        if (!QDir().mkpath(exportTo->filesDir)) {
+            qWarning() << "Failed to create" << exportTo->filesDir;
+            return false;
+        }
+        // Samples already in the folder (exporting over an earlier export) stay where they
+        // are, and keep their names from being given to other files.
+        const QString filesAbs = QFileInfo(exportTo->filesDir).absoluteFilePath();
+        for (Scene* scene : m_scenes) {
+            for (SoundPadWidget* pad : scene->pads) {
+                for (const QString& samplePath : pad->samplePaths()) {
+                    const QFileInfo sample(samplePath);
+                    if (sample.isFile() && sample.absolutePath() == filesAbs) {
+                        exportTo->usedNames.insert(sample.fileName().toLower());
+                        exportTo->destBySource.insert(sample.absoluteFilePath(), sample.absoluteFilePath());
+                    }
+                }
+            }
+        }
     }
 
     QJsonObject root;
@@ -2727,11 +2913,15 @@ bool MainWindow::saveConfigTo(const QString& path, bool copyFiles, bool settings
                     QJsonObject samples = padObj.value(QStringLiteral("samples")).toObject();
                     for (auto it = samples.begin(); it != samples.end(); ++it) {
                         QJsonObject sample = it.value().toObject();
-                        const QFileInfo src(sample.value(QStringLiteral("path")).toString());
-                        const QString dest = QDir(filesDir).filePath(src.fileName());
-                        if (src.exists() && QFileInfo(dest) != src) {
-                            QFile::copy(src.absoluteFilePath(), dest);
+                        const QString srcPath = sample.value(QStringLiteral("path")).toString();
+                        const QFileInfo src(srcPath);
+                        if (!src.isFile()) {
+                            if (!srcPath.isEmpty() && !exportTo->missing.contains(QDir::toNativeSeparators(srcPath))) {
+                                exportTo->missing << QDir::toNativeSeparators(srcPath);
+                            }
+                            continue;
                         }
+                        const QString dest = exportTo->destinationFor(src);
                         sample.insert(QStringLiteral("path"), QDir::fromNativeSeparators(dest));
                         it.value() = sample;
                     }
@@ -2750,6 +2940,11 @@ bool MainWindow::saveConfigTo(const QString& path, bool copyFiles, bool settings
     }
 
     const QByteArray bytes = QJsonDocument(root).toJson(QJsonDocument::Indented);
+    if (exportTo) {
+        // Written by pollExport once the files are copied.
+        exportTo->json = bytes;
+        return true;
+    }
     QSaveFile file(savePath);
     if (!file.open(QIODevice::WriteOnly)) {
         qWarning() << "Failed to open settings file" << savePath << file.errorString();
@@ -3161,12 +3356,14 @@ void MainWindow::drainLoads(int budgetMs)
 
 void MainWindow::refreshLoadUi()
 {
-    const bool busy = m_loads && m_loads->isBusy();
+    const bool loading = m_loads && m_loads->isBusy();
+    const bool exporting = isExporting();
+    const bool busy = loading || exporting;
     if (m_saveAction) {
         m_saveAction->setEnabled(!busy);
     }
-    if (m_saveAsAction) {
-        m_saveAsAction->setEnabled(!busy);
+    if (m_exportAction) {
+        m_exportAction->setEnabled(!busy);
     }
     if (!m_loadBar || !m_loadLabel) {
         return;
@@ -3186,11 +3383,26 @@ void MainWindow::refreshLoadUi()
     if (m_settingsPathLabel) {
         m_settingsPathLabel->hide();
     }
-    setWindowTitle(tr("Feedra — Loading"));
+    const QString title = loading ? tr("Feedra — Loading") : tr("Feedra — Exporting");
+    if (windowTitle() != title) {
+        setWindowTitle(title);
+    }
     if (m_scenesFocus) {
         // No room in the strip's header; the window title still says it's loading.
         m_loadBar->hide();
         m_loadLabel->hide();
+        return;
+    }
+    if (!loading) {
+        // Export: the bar follows bytes copied, the label counts files.
+        const qint64 totalBytes = std::max<qint64>(1, m_export->totalBytes);
+        const qint64 doneBytes = std::clamp<qint64>(m_export->doneBytes.load(), 0, totalBytes);
+        m_loadBar->setRange(0, 1000);
+        m_loadBar->setValue(static_cast<int>(doneBytes * 1000 / totalBytes));
+        m_loadBar->show();
+        const int files = static_cast<int>(m_export->copies.size());
+        m_loadLabel->setText(tr("Exporting %1 / %2").arg(std::min(m_export->doneFiles.load() + 1, files)).arg(files));
+        m_loadLabel->show();
         return;
     }
     const int total = std::max(1, m_loads->total());
@@ -3227,6 +3439,7 @@ SoundPadWidget* MainWindow::findPad(int sceneId, int padId) const
 void MainWindow::tick()
 {
     drainLoads(8);
+    pollExport();
     refreshLoadUi();
     OpenALSoundPlayer::updateAll();
     m_fileBrowser->tick();
@@ -3348,6 +3561,16 @@ void MainWindow::releaseGridPaint()
 
 void MainWindow::closeEvent(QCloseEvent* event)
 {
+    if (isExporting()) {
+        const auto answer = QMessageBox::question(this, tr("Export project"),
+            tr("The project is still being exported. Stop the export and quit?"),
+            QMessageBox::Yes | QMessageBox::No, QMessageBox::No);
+        if (answer != QMessageBox::Yes) {
+            event->ignore();
+            return;
+        }
+        cancelExport();
+    }
     waitForLoads();
     saveOnExit();
     QMainWindow::closeEvent(event);

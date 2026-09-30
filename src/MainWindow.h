@@ -8,6 +8,9 @@
 #include <QMainWindow>
 #include <QVector>
 
+#include <memory>
+#include <thread>
+
 class AudioSample;
 class Scene;
 class SampleRowWidget;
@@ -32,6 +35,7 @@ class QSpinBox;
 class QStackedWidget;
 class QVBoxLayout;
 class QWidget;
+struct ExportState;
 
 class MainWindow : public QMainWindow
 {
@@ -99,9 +103,17 @@ private:
     QString resolvedSettingsPath() const;
     void saveConfig();
     void saveOnExit();
-    void saveConfigAs();
+    // Export project: writes the scenes to a new file and copies every sample into a "files"
+    // folder beside it. The copying runs on a background thread; the file is written when
+    // it finishes.
+    void exportProject();
+    bool isExporting() const;
+    void pollExport();
+    void cancelExport();
     // `settingsOnly` rewrites just the app settings in the file and leaves its scenes as they are.
-    bool saveConfigTo(const QString& path, bool copyFiles, bool settingsOnly = false);
+    // With `exportTo`, samples are pointed at a "files" folder beside `path`, the copies they
+    // need are added to it, and the file itself is not written (it's left in `exportTo->json`).
+    bool saveConfigTo(const QString& path, bool copyFiles, bool settingsOnly = false, ExportState* exportTo = nullptr);
     // The sample the Waveform tab shows: the selected pad's current sample.
     AudioSample* waveformSample() const;
     void applyLoopRegion(AudioSample* sample, const LoopRegion& region);
@@ -239,5 +251,7 @@ private:
     QLabel* m_settingsPathLabel = nullptr;
     QLabel* m_waveformCacheInfo = nullptr;
     QAction* m_saveAction = nullptr;
-    QAction* m_saveAsAction = nullptr;
+    QAction* m_exportAction = nullptr;
+    std::shared_ptr<ExportState> m_export;
+    std::thread m_exportThread;
 };
