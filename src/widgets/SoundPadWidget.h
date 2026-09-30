@@ -173,6 +173,11 @@ public:
     };
     PadClip clip() const;
     void pasteClip(const PadClip& clip);
+    // Adds the clip's samples after this pad's own, each with its own editor settings
+    // (pitch, gain, pan, width, loop). Nothing else about this pad changes.
+    void appendClip(const PadClip& clip);
+    // True when the pad has samples: loaded, still loading, or missing from disk.
+    bool hasSounds() const;
     void removeSampleAt(int index);
     int moveSample(int from, int insertIndex);
 

@@ -23,6 +23,7 @@ class QAction;
 class QFrame;
 class QHBoxLayout;
 class QProgressBar;
+class QScrollArea;
 class QCheckBox;
 class QComboBox;
 class QDoubleSpinBox;
@@ -127,6 +128,9 @@ private:
     void clearActivePad();
     void copyPad(int fromIdx, int toIdx);
     void movePad(int fromIdx, int toIdx);
+    // Adds the samples of one pad after those of another that already has some.
+    void mergePad(int fromIdx, int toIdx, bool keepSource);
+    void scrollToSceneRow(QWidget* row);
     void clearActiveSample();
     void tick();
     void checkAudioDevice();
@@ -157,6 +161,7 @@ private:
 
     QStackedWidget* m_padStack = nullptr;
     QWidget* m_sceneListHost = nullptr;
+    QScrollArea* m_sceneScroll = nullptr;
     QVBoxLayout* m_sceneListLayout = nullptr;
     QPushButton* m_addScene = nullptr;
     QStackedWidget* m_pages = nullptr;

@@ -1544,6 +1544,27 @@ void SoundPadWidget::pasteClip(const PadClip& clip)
     }    update();
 }
 
+void SoundPadWidget::appendClip(const PadClip& clip)
+{
+    if (!clip.valid) {
+        return;
+    }
+    for (const QJsonObject& missing : clip.missing) {
+        m_missingSamples.push_back(missing);
+    }
+    m_notifyWhenDone = true;
+    for (const PadClip::Sample& sample : clip.samples) {
+        // Random pan is a setting of the pad, so the incoming pad's doesn't carry over.
+        enqueueSample(sample.path, sample.pitch, sample.gain, sample.pan, false, sample.spatialise, sample.loop, sample.width);
+    }
+    update();
+}
+
+bool SoundPadWidget::hasSounds() const
+{
+    return !m_player.player.empty() || isLoading() || !m_missingSamples.empty();
+}
+
 void SoundPadWidget::copyFrom(SoundPadWidget& other)
 {
     pasteClip(other.clip());

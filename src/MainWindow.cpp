@@ -45,6 +45,7 @@
 #include <QMenu>
 #include <QMenuBar>
 #include <QMessageBox>
+#include <QPointer>
 #include <QProgressBar>
 #include <QPushButton>
 #include <QResizeEvent>
@@ -613,6 +614,7 @@ void MainWindow::buildUi()
     scenesLayout->setContentsMargins(12, 12, 4, 12);
     scenesLayout->setSpacing(10);
     auto* sceneScroll = new QScrollArea(m_scenesPage);
+    m_sceneScroll = sceneScroll;
     sceneScroll->setFrameShape(QFrame::NoFrame);
     sceneScroll->setWidgetResizable(true);
     sceneScroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
@@ -1194,8 +1196,11 @@ void MainWindow::connectScene(Scene* scene)
     connect(scene->row(), &SceneRowWidget::deleteRequested, this, &MainWindow::deleteScene);
     for (SoundPadWidget* pad : scene->pads) {
         pad->setLoadQueue(m_loads);
-        connect(pad, &SoundPadWidget::padDropped, this, [this](int from, int to, bool copy) {
-            if (copy) {
+        connect(pad, &SoundPadWidget::padDropped, this, [this, pad](int from, int to, bool copy) {
+            if (pad->hasSounds()) {
+                // Onto a pad with sounds: add to them rather than replace them.
+                mergePad(from, to, copy);
+            } else if (copy) {
                 copyPad(from, to);
             } else {
                 movePad(from, to);
@@ -1279,6 +1284,25 @@ void MainWindow::addNewScene()
     connectScene(scene);
     m_addScene->setEnabled(static_cast<unsigned int>(m_scenes.size()) < m_config.maxScenes);
     enableScene(m_scenes.size() - 1);
+    scrollToSceneRow(scene->row());
+}
+
+// Scrolls the scene list so `row` is in view, once the list has laid out its new size.
+void MainWindow::scrollToSceneRow(QWidget* row)
+{
+    if (!m_sceneScroll || !row) {
+        return;
+    }
+    const QPointer<QWidget> target(row);
+    QTimer::singleShot(0, this, [this, target]() {
+        if (!target || !m_sceneScroll) {
+            return;
+        }
+        if (m_sceneListHost && m_sceneListHost->layout()) {
+            m_sceneListHost->layout()->activate();
+        }
+        m_sceneScroll->ensureWidgetVisible(target, 0, 8);
+    });
 }
 
 void MainWindow::deleteScene(int sceneId)
@@ -3537,6 +3561,36 @@ void MainWindow::movePad(int fromIdx, int toIdx)
     }
     copyPad(fromIdx, toIdx); // reads the source's samples before it is cleared
     from->clearPad();
+    if (m_sidebar == SidebarView::Editor) {
+        refreshEditorPage();
+    }
+}
+
+// Dragging a pad onto one that already has sounds adds the dragged pad's samples after the
+// target's own, with their editor settings. The target's name, volume, delay, repeat, sends and
+// so on stay as they are. A plain drag then clears the dragged pad; Ctrl/Alt keeps it.
+void MainWindow::mergePad(int fromIdx, int toIdx, bool keepSource)
+{
+    Scene* scene = activeScene();
+    if (!scene) {
+        return;
+    }
+    SoundPadWidget* from = scene->padAt(fromIdx);
+    SoundPadWidget* to = scene->padAt(toIdx);
+    if (!from || !to || from == to) {
+        return;
+    }
+    const SoundPadWidget::PadClip clip = from->clip();
+    if (!clip.valid) {
+        return; // an empty pad adds nothing, and the target is left alone
+    }
+    to->appendClip(clip);
+    if (!keepSource) {
+        from->clearPad();
+    }
+    m_config.activeSoundIdx = toIdx;
+    scene->activeSoundIdx = toIdx;
+    updateMainControls();
     if (m_sidebar == SidebarView::Editor) {
         refreshEditorPage();
     }
