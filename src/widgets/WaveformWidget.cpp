@@ -140,7 +140,11 @@ void WaveformWidget::setPlayhead(float pct, bool playing)
     }
     const int oldX = m_playhead < 0.0f ? -1 : static_cast<int>(m_playhead * waveRect().width());
     const int newX = pct < 0.0f ? -1 : static_cast<int>(pct * waveRect().width());
-    const bool changed = oldX != newX || playing != m_playing;
+    // The time readout changes every second even when the playhead hasn't moved a whole
+    // pixel, which takes several seconds on a long file.
+    const int oldSecond = m_playhead < 0.0f ? -1 : static_cast<int>(m_playhead * m_duration);
+    const int newSecond = pct < 0.0f ? -1 : static_cast<int>(pct * m_duration);
+    const bool changed = oldX != newX || oldSecond != newSecond || playing != m_playing;
     m_playhead = pct;
     m_playing = playing;
     if (changed) {
