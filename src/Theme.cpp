@@ -104,7 +104,7 @@ Theme::Palette midnightPalette()
     p.accentButtonText = QColor(QStringLiteral("#e8eaf0"));
     p.accentButtonBorder = QColor(QStringLiteral("#343a47"));
     p.padFill = QColor(QStringLiteral("#171a21"));
-    p.padBorder = QColor(QStringLiteral("#2a2f3a"));
+    p.padBorder = QColor(QStringLiteral("#343a47"));
     p.padSelected = QColor(QStringLiteral("#7aa2ff"));
     p.padDelayBorder = QColor(QStringLiteral("#b48cf2"));
     p.padScene = QColor(QStringLiteral("#4fd1a5"));
@@ -224,7 +224,7 @@ Theme::Palette nightPalette()
     p.accentButtonText = QColor(QStringLiteral("#fbe9d8"));
     p.accentButtonBorder = QColor(QStringLiteral("#4a1c08"));
     p.padFill = QColor(QStringLiteral("#2c2622"));
-    p.padBorder = QColor(QStringLiteral("#0e0c0b"));
+    p.padBorder = QColor(QStringLiteral("#5e5c64"));
     p.padSelected = QColor(QStringLiteral("#7ec4d6"));
     p.padDelayBorder = QColor(QStringLiteral("#b99ad8"));
     p.padScene = QColor(QStringLiteral("#7cc47f"));
@@ -390,11 +390,19 @@ Theme& Theme::instance()
 Theme::Theme()
     : m_palette(midnightPalette())
 {
+    for (int i = 0; i < kPresetCount; ++i) {
+        m_palettes[static_cast<size_t>(i)] = preset(static_cast<Id>(i));
+    }
 }
 
 QString Theme::idName() const
 {
-    switch (m_id) {
+    return nameOf(m_id);
+}
+
+QString Theme::nameOf(Id id)
+{
+    switch (id) {
     case Id::Midnight:
         return QStringLiteral("midnight");
     case Id::Night:
@@ -468,10 +476,23 @@ QColor Theme::colorAt(int index) const
     return m_palette.*(kRoles[index].color);
 }
 
+Theme::Palette Theme::themePalette(Id id) const
+{
+    return id == m_id ? m_palette : m_palettes[static_cast<size_t>(id)];
+}
+
 void Theme::setTheme(Id id)
 {
+    m_palettes[static_cast<size_t>(m_id)] = m_palette; // keep this theme's changes
     m_id = id;
-    m_palette = preset(id);
+    m_palette = m_palettes[static_cast<size_t>(id)];
+    apply();
+}
+
+void Theme::resetToPreset()
+{
+    m_palette = preset(m_id);
+    m_palettes[static_cast<size_t>(m_id)] = m_palette;
     apply();
 }
 
@@ -511,31 +532,65 @@ void Theme::setColorAt(int index, const QColor& color)
     apply();
 }
 
-void Theme::load(const QString& themeId, const QJsonObject& colors)
+namespace {
+// Built-in colours that have since changed. A file from before colour sets stores the whole
+// palette, so a value equal to the old built-in one is taken as "not changed by you" and the
+// new built-in value is used instead.
+struct OldPresetColor {
+    Theme::Id id;
+    const char* key;
+    const char* oldValue;
+};
+constexpr OldPresetColor kOldPresetColors[] = {
+    { Theme::Id::Midnight, "padBorder", "#2a2f3a" },
+    { Theme::Id::Night, "padBorder", "#0e0c0b" },
+};
+
+bool isOldPresetColor(Theme::Id id, const QString& key, const QColor& color)
+{
+    for (const OldPresetColor& old : kOldPresetColors) {
+        if (old.id == id && key == QLatin1String(old.key) && color == QColor(QLatin1String(old.oldValue))) {
+            return true;
+        }
+    }
+    return false;
+}
+}
+
+void Theme::load(const QString& themeId, const QJsonObject& colors, const QJsonValue& colorSetsValue)
 {
     // Settings saved before a theme was stored get the default look.
-    Id id = Id::Midnight;
-    if (themeId == QLatin1String("parchment")) {
-        id = Id::Parchment;
-    } else if (themeId == QLatin1String("night")) {
-        id = Id::Night;
-    } else if (themeId == QLatin1String("forest")) {
-        id = Id::Forest;
-    } else if (themeId == QLatin1String("ink")) {
-        id = Id::Ink;
-    }
-    m_id = id;
-    m_palette = preset(id);
-    for (int i = 0; i < roleCount(); ++i) {
-        const QString key = roleKey(i);
-        if (!colors.contains(key)) {
-            continue;
-        }
-        const QColor color(colors.value(key).toString());
-        if (color.isValid()) {
-            m_palette.*(kRoles[i].color) = color;
+    Id current = Id::Midnight;
+    for (int i = 0; i < kPresetCount; ++i) {
+        if (themeId == nameOf(static_cast<Id>(i))) {
+            current = static_cast<Id>(i);
         }
     }
+    const bool hasSets = colorSetsValue.isObject();
+    const QJsonObject colorSets = colorSetsValue.toObject();
+    // Each theme: its preset, then your changes to it.
+    for (int t = 0; t < kPresetCount; ++t) {
+        const Id id = static_cast<Id>(t);
+        Palette palette = preset(id);
+        QJsonObject changes = colorSets.value(nameOf(id)).toObject();
+        const bool legacy = id == current && !hasSets;
+        if (legacy) {
+            changes = colors; // older files: the current theme's whole palette
+        }
+        for (int i = 0; i < roleCount(); ++i) {
+            const QString key = roleKey(i);
+            if (!changes.contains(key)) {
+                continue;
+            }
+            const QColor color(changes.value(key).toString());
+            if (color.isValid() && !(legacy && isOldPresetColor(id, key, color))) {
+                palette.*(kRoles[i].color) = color;
+            }
+        }
+        m_palettes[static_cast<size_t>(t)] = palette;
+    }
+    m_id = current;
+    m_palette = m_palettes[static_cast<size_t>(current)];
     apply();
 }
 
@@ -546,6 +601,28 @@ QJsonObject Theme::colorsJson() const
         colors.insert(roleKey(i), hex(colorAt(i)));
     }
     return colors;
+}
+
+QJsonObject Theme::colorSetsJson() const
+{
+    // Only what differs from each preset, so later changes to a preset still reach colours
+    // you never touched.
+    QJsonObject sets;
+    for (int t = 0; t < kPresetCount; ++t) {
+        const Id id = static_cast<Id>(t);
+        const Palette palette = themePalette(id);
+        const Palette base = preset(id);
+        QJsonObject changes;
+        for (const Role& role : kRoles) {
+            if (palette.*(role.color) != base.*(role.color)) {
+                changes.insert(QString::fromLatin1(role.key), hex(palette.*(role.color)));
+            }
+        }
+        if (!changes.isEmpty()) {
+            sets.insert(nameOf(id), changes);
+        }
+    }
+    return sets;
 }
 
 void Theme::apply()
@@ -606,10 +683,11 @@ QToolTip { background: {{panelBackground}}; color: {{text}}; border: 1px solid {
 /* Menus */
 QMenuBar { background: {{menuBackground}}; color: {{menuText}}; border-bottom: 1px solid {{panelBorder}}; padding: 2px 6px; }
 QMenuBar::item { background: transparent; padding: 4px 10px; border-radius: 4px; }
-QMenuBar::item:selected { background: {{fieldBackground}}; }
+QMenuBar::item:selected, QMenuBar::item:pressed { background: {{selection}}; color: {{selectionText}}; }
 QMenu { background: {{menuBackground}}; color: {{menuText}}; border: 1px solid {{panelBorder}}; padding: 4px; }
 QMenu::item { padding: 6px 22px; border-radius: 4px; }
 QMenu::item:selected { background: {{selection}}; color: {{selectionText}}; }
+QMenu::item:disabled { color: {{menuTextMuted}}; background: transparent; }
 QMenu::separator { height: 1px; background: {{panelBorder}}; margin: 4px 8px; }
 
 /* Buttons */
@@ -803,6 +881,10 @@ QPushButton#DisclosureButton:hover { color: {{focusBorder}}; }
     for (int i = 0; i < roleCount(); ++i) {
         qss.replace(QStringLiteral("{{%1}}").arg(roleKey(i)), hex(colorAt(i)));
     }
+    // Greyed-out menu items: the menu's own text colour, faded, so they read on its background.
+    const QColor menuText = p.menuText;
+    qss.replace(QStringLiteral("{{menuTextMuted}}"),
+        QStringLiteral("rgba(%1, %2, %3, 120)").arg(menuText.red()).arg(menuText.green()).arg(menuText.blue()));
     // A translucent tint of the progress colour for the sample rows' playback fill.
     const QColor chunk = p.progressChunk;
     qss.replace(QStringLiteral("{{sampleProgress}}"),

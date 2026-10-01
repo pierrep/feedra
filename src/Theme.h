@@ -2,8 +2,11 @@
 
 #include <QColor>
 #include <QJsonObject>
+#include <QJsonValue>
 #include <QObject>
 #include <QString>
+
+#include <array>
 
 class Theme : public QObject
 {
@@ -89,17 +92,27 @@ public:
     QColor colorAt(int index) const;
 
     static constexpr int kPresetCount = 5;
-    // A preset's colours without switching to it (for preview tiles).
+    // A preset's colours without switching to it.
     static Palette presetPalette(Id id) { return preset(id); }
+    // A theme's colours as they are now, including your changes to it (for preview tiles).
+    Palette themePalette(Id id) const;
     // The "live" colour: play buttons, loops, played waveform, progress and selection.
     QColor accent() const { return m_palette.playLoaded; }
     bool isModified() const;
 
+    // Switches theme. Each theme keeps its own colour changes, so switching back restores them.
     void setTheme(Id id);
+    // Puts the current theme back to its built-in colours. Other themes keep their changes.
+    void resetToPreset();
     void setAccent(const QColor& color);
     void setColorAt(int index, const QColor& color);
-    void load(const QString& themeId, const QJsonObject& colors);
+    // `colorSets` holds each theme's changes ("themecolorsets"); `colors` is the current theme's
+    // full palette ("themecolors"), used only when the file has no colour sets (older files).
+    void load(const QString& themeId, const QJsonObject& colors, const QJsonValue& colorSets = QJsonValue());
+    // The current theme's full palette.
     QJsonObject colorsJson() const;
+    // Every theme's changes from its preset, by theme name; themes left as they are aren't listed.
+    QJsonObject colorSetsJson() const;
     void apply();
     QString styleSheet() const;
 
@@ -109,7 +122,9 @@ signals:
 private:
     Theme();
     static Palette preset(Id id);
+    static QString nameOf(Id id);
 
     Id m_id = Id::Midnight;
-    Palette m_palette;
+    Palette m_palette;                          // the current theme, as shown
+    std::array<Palette, 5> m_palettes;          // every theme, with its changes (current one synced on switch)
 };

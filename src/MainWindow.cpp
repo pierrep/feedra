@@ -673,6 +673,7 @@ void MainWindow::buildUi()
     editLayout->addLayout(editTop);
 
     auto* sampleScroll = new QScrollArea(m_editorPage);
+    m_sampleScroll = sampleScroll;
     sampleScroll->setFrameShape(QFrame::NoFrame);
     sampleScroll->setWidgetResizable(true);
     sampleScroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
@@ -1308,8 +1309,7 @@ void MainWindow::addNewScene()
     m_sceneListLayout->insertWidget(m_sceneListLayout->count() - 1, scene->row());
     connectScene(scene);
     m_addScene->setEnabled(static_cast<unsigned int>(m_scenes.size()) < m_config.maxScenes);
-    enableScene(m_scenes.size() - 1);
-    scrollToSceneRow(scene->row());
+    enableScene(m_scenes.size() - 1); // also scrolls it into view
 }
 
 // Scrolls the scene list so `row` is in view, once the list has laid out its new size.
@@ -1319,15 +1319,28 @@ void MainWindow::scrollToSceneRow(QWidget* row)
         return;
     }
     // The scroll range only grows once the scroll area has resized the list, which happens
-    // after this returns; rangeChanged (connected in buildUi) scrolls again when it does.
+    // after this returns (and at startup, after the window first appears); rangeChanged
+    // (connected in buildUi) scrolls again when it does.
     m_scrollToSceneRow = row;
+    const int serial = ++m_scrollToSceneSerial;
     QTimer::singleShot(0, this, [this]() {
         if (m_scrollToSceneRow && m_sceneScroll) {
             m_sceneScroll->ensureWidgetVisible(m_scrollToSceneRow, 0, 8);
         }
     });
-    // Only for this addition: later changes to the list's length shouldn't pull it back.
-    QTimer::singleShot(500, this, [this]() { m_scrollToSceneRow = nullptr; });
+    // Only for a moment: later changes to the list's length shouldn't pull it back.
+    QTimer::singleShot(1500, this, [this, serial]() {
+        if (serial == m_scrollToSceneSerial) {
+            m_scrollToSceneRow = nullptr;
+        }
+    });
+}
+
+void MainWindow::scrollToActiveScene()
+{
+    if (Scene* active = activeScene()) {
+        scrollToSceneRow(active->row());
+    }
 }
 
 void MainWindow::deleteScene(int sceneId)
@@ -1403,6 +1416,9 @@ void MainWindow::enableScene(int idx)
     if (m_sidebar == SidebarView::Editor) {
         setSidebarView(SidebarView::Editor);
     }
+    // Opening a project, restoring a backup, adding or deleting a scene, or stepping through
+    // scenes with the keys: the active scene may be below or above what the list shows.
+    scrollToSceneRow(m_scenes[idx]->row());
 }
 
 void MainWindow::moveScene(int fromIndex, int insertIndex)
@@ -1895,7 +1911,7 @@ protected:
         QPainter p(this);
         p.setRenderHint(QPainter::Antialiasing, true);
         const Theme::Palette& ui = Theme::instance().palette();
-        const Theme::Palette t = Theme::presetPalette(m_id);
+        const Theme::Palette t = Theme::instance().themePalette(m_id); // with your changes
         const QRectF tile = QRectF(rect()).adjusted(2, 2, -2, -2);
 
         p.setPen(QPen(isChecked() ? ui.focusBorder : (underMouse() ? ui.textMuted : ui.panelBorder),
@@ -2365,7 +2381,7 @@ void MainWindow::buildThemePage()
     m_advancedToggle->setCursor(Qt::PointingHandCursor);
     m_advancedToggle->setCheckable(true);
     m_resetTheme = new QPushButton(tr("Reset to preset"), advanced.frame);
-    m_resetTheme->setToolTip(tr("Undo accent and colour changes"));
+    m_resetTheme->setToolTip(tr("Undo accent and colour changes to this theme. Other themes keep theirs."));
     auto* advancedBar = new QWidget(advanced.frame);
     auto* advancedBarRow = new QHBoxLayout(advancedBar);
     advancedBarRow->setContentsMargins(0, 0, 0, 0);
@@ -2432,7 +2448,7 @@ void MainWindow::buildThemePage()
     updateToggle(false);
     connect(m_advancedToggle, &QPushButton::toggled, this, updateToggle);
     connect(m_resetTheme, &QPushButton::clicked, this, []() {
-        Theme::instance().setTheme(Theme::instance().id());
+        Theme::instance().resetToPreset();
     });
     connect(&Theme::instance(), &Theme::changed, this, &MainWindow::refreshThemeSwatches);
 }
@@ -2588,7 +2604,8 @@ void MainWindow::applyAppSettings(const QJsonObject& global)
     }
     if (global.contains(QStringLiteral("theme")) || global.contains(QStringLiteral("themecolors"))) {
         Theme::instance().load(global.value(QStringLiteral("theme")).toString(),
-            global.value(QStringLiteral("themecolors")).toObject());
+            global.value(QStringLiteral("themecolors")).toObject(),
+            global.value(QStringLiteral("themecolorsets")));
     }
     if (m_fileBrowser) {
         m_fileBrowser->applySettings(global);
@@ -2698,6 +2715,8 @@ void MainWindow::setScenesFocus(bool on)
             }
         });
     }
+    // The list changes height with the window either way.
+    scrollToActiveScene();
 }
 
 void MainWindow::setSidebarView(SidebarView view)
@@ -2726,6 +2745,9 @@ void MainWindow::setSidebarView(SidebarView view)
         break;
     }
     m_addScene->setVisible(view == SidebarView::Scenes);
+    if (view == SidebarView::Scenes) {
+        scrollToActiveScene(); // the list may have been laid out while hidden
+    }
     refreshTabButton(m_scenesTab, view == SidebarView::Scenes);
     refreshTabButton(m_editorTab, view == SidebarView::Editor);
     refreshTabButton(m_filesTab, view == SidebarView::Files);
@@ -3119,6 +3141,7 @@ bool MainWindow::saveConfigTo(const QString& path, bool copyFiles, bool settings
     }
     global.insert(QStringLiteral("theme"), Theme::instance().idName());
     global.insert(QStringLiteral("themecolors"), Theme::instance().colorsJson());
+    global.insert(QStringLiteral("themecolorsets"), Theme::instance().colorSetsJson());
     saveWindowLayout(global);
     m_fileBrowser->saveSettings(global);
 
@@ -3803,6 +3826,19 @@ void MainWindow::tick()
             for (int i = 0; i < m_sampleRows.size() && i < static_cast<int>(pad->soundPlayer().player.size()); ++i) {
                 m_sampleRows[i]->setProgress(pad->soundPlayer().player[i]->audioPlayer->getPosition());
                 m_sampleRows[i]->setSelected(i == m_config.activeSampleIdx);
+            }
+            // The selected sample changed (arrow keys, or the pad moving on while it plays):
+            // keep its row in view. After this tick, once a rebuilt list has been laid out.
+            const int idx = m_config.activeSampleIdx;
+            if ((pad != m_shownSamplePad || idx != m_shownSampleIdx) && idx >= 0 && idx < m_sampleRows.size()) {
+                m_shownSamplePad = pad;
+                m_shownSampleIdx = idx;
+                const QPointer<QWidget> row(m_sampleRows[idx]);
+                QTimer::singleShot(0, this, [this, row]() {
+                    if (row && m_sampleScroll) {
+                        m_sampleScroll->ensureWidgetVisible(row, 0, 6);
+                    }
+                });
             }
         }
     }

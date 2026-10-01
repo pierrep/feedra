@@ -133,6 +133,7 @@ private:
     // Adds the samples of one pad after those of another that already has some.
     void mergePad(int fromIdx, int toIdx, bool keepSource);
     void scrollToSceneRow(QWidget* row);
+    void scrollToActiveScene();
     void clearActiveSample();
     void tick();
     void checkAudioDevice();
@@ -164,7 +165,11 @@ private:
     QStackedWidget* m_padStack = nullptr;
     QWidget* m_sceneListHost = nullptr;
     QScrollArea* m_sceneScroll = nullptr;
-    QPointer<QWidget> m_scrollToSceneRow; // a new scene row to bring into view
+    QPointer<QWidget> m_scrollToSceneRow; // a scene row to bring into view
+    int m_scrollToSceneSerial = 0;
+    QScrollArea* m_sampleScroll = nullptr;
+    SoundPadWidget* m_shownSamplePad = nullptr; // the Editor sample last scrolled into view
+    int m_shownSampleIdx = -1;
     QVBoxLayout* m_sceneListLayout = nullptr;
     QPushButton* m_addScene = nullptr;
     QStackedWidget* m_pages = nullptr;
