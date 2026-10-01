@@ -170,6 +170,7 @@ public:
         std::vector<Sample> samples;
         // Samples whose files couldn't be loaded, as they were saved. Kept so they aren't lost.
         std::vector<QJsonObject> missing;
+        bool scenePad = false;
     };
     PadClip clip() const;
     void pasteClip(const PadClip& clip);
@@ -178,6 +179,10 @@ public:
     void appendClip(const PadClip& clip);
     // True when the pad has samples: loaded, still loading, or missing from disk.
     bool hasSounds() const;
+    // A scene pad starts when its scene is played from the scene list. If a scene has any,
+    // only they start; otherwise every pad with sounds does. Ctrl+click toggles it.
+    bool isScenePad() const { return m_scene_pad; }
+    void setScenePad(bool on);
     void removeSampleAt(int index);
     int moveSample(int from, int insertIndex);
 
@@ -202,6 +207,7 @@ signals:
     void padDragStarted(int padId);
     // `copy` is true for Ctrl+drag (copy the pad), false for a plain drag (move it).
     void padDropped(int fromPadId, int toPadId, bool copy);
+    void scenePadChanged();
     void filesDropped();
     void requestEdit();
     void loadStateChanged();
@@ -266,6 +272,8 @@ private:
     std::shared_ptr<std::atomic<int>> m_loadGeneration = std::make_shared<std::atomic<int>>(0);
     std::vector<LoadSlot> m_slots;
     std::vector<QJsonObject> m_missingSamples;
+    bool m_scene_pad = false;
+    bool m_ctrlClickPending = false; // Ctrl held at press: toggles the scene pad mark on release unless it becomes a drag
     std::map<int, DecodedAudio> m_incoming;
     std::map<int, PendingReload> m_reloads; // keyed by AudioSample::id
     int m_reloadSerial = 0;

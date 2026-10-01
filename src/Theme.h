@@ -37,6 +37,7 @@ public:
         QColor padBorder;
         QColor padSelected;
         QColor padDelayBorder; // border of a pad with a start delay set
+        QColor padScene;       // corner of a scene pad (starts when its scene is played)
         QColor playLoaded;
         QColor playEmpty;
         QColor playOutline;

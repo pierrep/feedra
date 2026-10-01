@@ -156,25 +156,40 @@ void Scene::play()
 {
     // Pads carrying on from a pause fade in, so they don't jump back in mid-sound. Pads
     // starting from the top start at full level: a fade would swallow their opening.
-    m_fadeCallback = {};
-    m_resuming.clear();
-    for (SoundPadWidget* pad : pads) {
-        if (!pad->isLoading() && pad->soundPlayer().isResuming()) {
-            m_resuming.insert(pad);
-        }
-    }
     // Pressing play during a pause's fade-out carries on from the level reached.
     const bool wasFadingOut = m_fading && m_fadeDirection == 1;
+    m_fadeCallback = {};
+    m_resuming.clear();
+    bool anyScenePads = false;
+    for (SoundPadWidget* pad : pads) {
+        if (pad->isLoading()) {
+            continue;
+        }
+        // Paused part-way (or still fading out from a pause): carries on, scene pad or not.
+        // A pad already playing by itself is left as it is.
+        const SoundPlayer& player = pad->soundPlayer();
+        if (player.isResuming() && (wasFadingOut || !player.isPlaying())) {
+            m_resuming.insert(pad);
+        }
+        anyScenePads = anyScenePads || (pad->isScenePad() && pad->isLoaded());
+    }
     m_fading = !m_resuming.isEmpty();
     m_fadeDirection = 0;
     m_fadeFrom = m_fading ? (wasFadingOut ? m_fadeVolume : 0.0f) : 1.0f;
     m_fadeVolume = m_fadeFrom;
     m_fadeTimer.restart();
     for (SoundPadWidget* pad : pads) {
-        if (!pad->isLoading()) {
-            pad->setFadeVolume(m_resuming.contains(pad) ? m_fadeVolume : 1.0f);
-            pad->soundPlayer().setPaused(false);
+        if (pad->isLoading()) {
+            continue;
         }
+        const bool resume = m_resuming.contains(pad);
+        // Starting fresh: the scene pads if there are any, otherwise every pad with sounds.
+        const bool start = resume || (anyScenePads ? pad->isScenePad() : true);
+        if (!start) {
+            continue;
+        }
+        pad->setFadeVolume(resume ? m_fadeVolume : 1.0f);
+        pad->soundPlayer().setPaused(false);
     }
 }
 
@@ -237,6 +252,17 @@ void Scene::update()
         audible = audible || pad->isPlaying();
     }
     m_row->setAudible(audible);
+
+    int scenePads = 0;
+    for (SoundPadWidget* pad : pads) {
+        scenePads += pad->isScenePad() ? 1 : 0;
+    }
+    if (scenePads != m_scenePadCount) {
+        m_scenePadCount = scenePads;
+        m_row->setPlayToolTip(scenePads > 0
+            ? tr("Play / pause scene: starts its %n scene pad(s)", nullptr, scenePads)
+            : tr("Play / pause scene: starts every pad"));
+    }
 }
 
 void Scene::endFade()

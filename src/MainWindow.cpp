@@ -917,7 +917,12 @@ void MainWindow::buildUi()
     padGrid->addWidget(m_maxDelay, 1, 3);
     padGrid->addWidget(m_repeat, 2, 0, 1, 1);
     padGrid->addWidget(m_randomPlayback, 2, 1, 1, 3);
-    padGrid->setRowStretch(3, 1);
+    m_scenePad = new QCheckBox(tr("Plays with scene"), padPage);
+    m_scenePad->setToolTip(tr("When the scene is played from the scene list, only its scene pads start "
+                              "(or every pad, if it has none).\nCtrl+click a pad to switch this on or off."));
+    m_scenePad->setEnabled(false);
+    padGrid->addWidget(m_scenePad, 3, 0, 1, 4);
+    padGrid->setRowStretch(4, 1);
     padGrid->setColumnMinimumWidth(0, 130);
 
     // EAX reverbs on top, convolution reverbs below.
@@ -1104,6 +1109,12 @@ void MainWindow::buildUi()
             pad->soundPlayer().setRandomPlayback(on);
         }
     });
+    connect(m_scenePad, &QCheckBox::toggled, this, [this](bool on) {
+        if (m_updatingControls) return;
+        if (auto* pad = activePad()) {
+            pad->setScenePad(on);
+        }
+    });
     connect(m_resetDelay, &QPushButton::clicked, this, [this]() {
         // Through the spin boxes, so the pad, its samples' delays and the border all follow.
         m_minDelay->setValue(0);
@@ -1213,6 +1224,14 @@ void MainWindow::connectScene(Scene* scene)
             }
         });
         connect(pad, &SoundPadWidget::filesDropped, this, [this]() { updateMainControls(); });
+        connect(pad, &SoundPadWidget::scenePadChanged, this, [this, pad]() {
+            if (pad == activePad() && m_scenePad) {
+                const bool was = m_updatingControls;
+                m_updatingControls = true;
+                m_scenePad->setChecked(pad->isScenePad());
+                m_updatingControls = was;
+            }
+        });
         connect(pad, &SoundPadWidget::sampleLoopChanged, this, [this, pad]() {
             if (pad == activePad()) {
                 updateEditControls();
@@ -1435,6 +1454,8 @@ void MainWindow::updateMainControls()
         m_delayOn->setChecked(delayOn);
         m_delayOn->setEnabled(true);
         m_resetDelay->setEnabled(true);
+        m_scenePad->setChecked(pad->isScenePad());
+        m_scenePad->setEnabled(true);
         m_minDelay->setEnabled(delayOn);
         m_maxDelay->setEnabled(delayOn);
         for (int bus = 0; bus < OpenALSoundPlayer::kSendCount; ++bus) {
@@ -1447,6 +1468,8 @@ void MainWindow::updateMainControls()
         m_repeat->setEnabled(false);
         m_delayOn->setEnabled(false);
         m_resetDelay->setEnabled(false);
+        m_scenePad->setChecked(false);
+        m_scenePad->setEnabled(false);
         m_minDelay->setEnabled(false);
         m_maxDelay->setEnabled(false);
         for (QSlider* slider : m_sendSliders) {

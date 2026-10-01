@@ -226,6 +226,13 @@ bool SceneRowWidget::event(QEvent* event)
     return QWidget::event(event);
 }
 
+void SceneRowWidget::setPlayToolTip(const QString& text)
+{
+    if (m_play && m_play->toolTip() != text) {
+        m_play->setToolTip(text);
+    }
+}
+
 QString SceneRowWidget::sceneName() const
 {
     return m_name->text();

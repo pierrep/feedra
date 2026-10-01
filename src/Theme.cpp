@@ -40,6 +40,7 @@ const Role kRoles[] = {
     {"padBorder", "Pads", "Pad border", &Theme::Palette::padBorder},
     {"padSelected", "Pads", "Pad selection", &Theme::Palette::padSelected},
     {"padDelayBorder", "Pads", "Pad with delay", &Theme::Palette::padDelayBorder},
+    {"padScene", "Pads", "Scene pad", &Theme::Palette::padScene},
     {"playLoaded", "Pads", "Play", &Theme::Palette::playLoaded},
     {"playEmpty", "Pads", "Play empty", &Theme::Palette::playEmpty},
     {"playOutline", "Pads", "Play outline", &Theme::Palette::playOutline},
@@ -106,6 +107,7 @@ Theme::Palette midnightPalette()
     p.padBorder = QColor(QStringLiteral("#2a2f3a"));
     p.padSelected = QColor(QStringLiteral("#7aa2ff"));
     p.padDelayBorder = QColor(QStringLiteral("#b48cf2"));
+    p.padScene = QColor(QStringLiteral("#4fd1a5"));
     p.playLoaded = QColor(QStringLiteral("#ff7a3d"));
     p.playEmpty = QColor(QStringLiteral("#262b35"));
     p.playOutline = QColor(QStringLiteral("#343a47"));
@@ -165,6 +167,7 @@ Theme::Palette parchmentPalette()
     p.padBorder = QColor(QStringLiteral("#202020"));
     p.padSelected = QColor(QStringLiteral("#65aecd"));
     p.padDelayBorder = QColor(QStringLiteral("#7a3e9d"));
+    p.padScene = QColor(QStringLiteral("#3f8f4a"));
     p.playLoaded = QColor(QStringLiteral("#d08331"));
     p.playEmpty = QColor(QStringLiteral("#998c84"));
     p.playOutline = QColor(QStringLiteral("#c0c0c0"));
@@ -224,6 +227,7 @@ Theme::Palette nightPalette()
     p.padBorder = QColor(QStringLiteral("#0e0c0b"));
     p.padSelected = QColor(QStringLiteral("#7ec4d6"));
     p.padDelayBorder = QColor(QStringLiteral("#b99ad8"));
+    p.padScene = QColor(QStringLiteral("#7cc47f"));
     p.playLoaded = QColor(QStringLiteral("#e09a45"));
     p.playEmpty = QColor(QStringLiteral("#6a5c52"));
     p.playOutline = QColor(QStringLiteral("#d9cbbd"));
@@ -283,6 +287,7 @@ Theme::Palette forestPalette()
     p.padBorder = QColor(QStringLiteral("#172016"));
     p.padSelected = QColor(QStringLiteral("#2f7f86"));
     p.padDelayBorder = QColor(QStringLiteral("#7b4a9c"));
+    p.padScene = QColor(QStringLiteral("#4a8f2a"));
     p.playLoaded = QColor(QStringLiteral("#d0893a"));
     p.playEmpty = QColor(QStringLiteral("#8b987c"));
     p.playOutline = QColor(QStringLiteral("#d5deca"));
@@ -342,6 +347,7 @@ Theme::Palette inkPalette()
     p.padBorder = QColor(QStringLiteral("#1b1e24"));
     p.padSelected = QColor(QStringLiteral("#2b6cb0"));
     p.padDelayBorder = QColor(QStringLiteral("#6b46c1"));
+    p.padScene = QColor(QStringLiteral("#2f855a"));
     p.playLoaded = QColor(QStringLiteral("#c4493a"));
     p.playEmpty = QColor(QStringLiteral("#b7b1a6"));
     p.playOutline = QColor(QStringLiteral("#8d93a0"));

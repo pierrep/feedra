@@ -203,6 +203,7 @@ private:
     QCheckBox* m_repeat = nullptr;
     QCheckBox* m_delayOn = nullptr;
     QPushButton* m_resetDelay = nullptr;
+    QCheckBox* m_scenePad = nullptr;
     QLabel* m_delayReadout = nullptr;
     QLabel* m_infoLabel = nullptr;
     SoundPadWidget* m_infoPad = nullptr;

@@ -55,4 +55,5 @@ private:
     std::function<void()> m_fadeCallback;
     // Pads that carry on from a pause when the scene plays: only these fade in.
     QSet<SoundPadWidget*> m_resuming;
+    int m_scenePadCount = -1; // last count shown in the play button's tooltip
 };

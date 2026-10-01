@@ -841,6 +841,23 @@ void SoundPadWidget::paintEvent(QPaintEvent*)
     }
     p.drawRoundedRect(card, radius, radius);
 
+    // A scene pad: a plain triangle in the top-left corner, inside the card's rounded edge.
+    if (m_scene_pad && !empty) {
+        const qreal size = 26.0 * s;
+        QPainterPath cardPath;
+        cardPath.addRoundedRect(card, radius, radius);
+        QPainterPath corner;
+        corner.moveTo(card.topLeft());
+        corner.lineTo(card.left() + size, card.top());
+        corner.lineTo(card.left(), card.top() + size);
+        corner.closeSubpath();
+        p.save();
+        p.setPen(Qt::NoPen);
+        p.setBrush(theme.padScene);
+        p.drawPath(cardPath.intersected(corner));
+        p.restore();
+    }
+
     QFont captionFont = font();
     captionFont.setPixelSize(std::max(9, qRound(12 * s)));
     QFont monoFont(QStringLiteral("Geist Mono"));
@@ -1355,6 +1372,7 @@ void SoundPadWidget::loadFromJson(const QJsonObject& root, const QString& baseDi
             static_cast<float>(std::clamp(sample.value(QStringLiteral("width")).toDouble(1.0), 0.0, 1.0)),
             sample);
     }
+    setScenePad(pad.value(QStringLiteral("scenepad")).toBool(false));
     update();
 }
 
@@ -1384,6 +1402,9 @@ void SoundPadWidget::saveToJson(QJsonObject& sceneObj) const
     pad.insert(QStringLiteral("mindelay"), m_player.minDelay);
     pad.insert(QStringLiteral("maxdelay"), m_player.maxDelay);
     pad.insert(QStringLiteral("delayon"), m_player.isDelayEnabled());
+    if (m_scene_pad) {
+        pad.insert(QStringLiteral("scenepad"), true);
+    }
 
     QJsonObject samples;
     const int count = std::min(static_cast<int>(m_player.player.size()), static_cast<int>(m_soundPaths.size()));
@@ -1442,6 +1463,10 @@ void SoundPadWidget::clearPad()
     m_player.close();
     m_soundPaths.clear();
     m_missingSamples.clear();
+    if (m_scene_pad) {
+        m_scene_pad = false;
+        emit scenePadChanged();
+    }
     m_sampleRate = 0;
     m_channels = 0;
     m_name->clear();
@@ -1515,6 +1540,7 @@ SoundPadWidget::PadClip SoundPadWidget::clip() const
         clip.samples.push_back(sample);
     }
     clip.missing = m_missingSamples;
+    clip.scenePad = m_scene_pad;
     clip.valid = !clip.samples.empty() || !clip.missing.empty();
     return clip;
 }
@@ -1543,7 +1569,9 @@ void SoundPadWidget::pasteClip(const PadClip& clip)
     m_notifyWhenDone = true;
     for (const PadClip::Sample& sample : clip.samples) {
         enqueueSample(sample.path, sample.pitch, sample.gain, sample.pan, sample.panRandom, sample.spatialise, sample.loop, sample.width);
-    }    update();
+    }
+    setScenePad(clip.scenePad);
+    update();
 }
 
 void SoundPadWidget::appendClip(const PadClip& clip)
@@ -1565,6 +1593,17 @@ void SoundPadWidget::appendClip(const PadClip& clip)
 bool SoundPadWidget::hasSounds() const
 {
     return !m_player.player.empty() || isLoading() || !m_missingSamples.empty();
+}
+
+void SoundPadWidget::setScenePad(bool on)
+{
+    on = on && hasSounds(); // only pads with sounds can be scene pads
+    if (m_scene_pad == on) {
+        return;
+    }
+    m_scene_pad = on;
+    update();
+    emit scenePadChanged();
 }
 
 void SoundPadWidget::copyFrom(SoundPadWidget& other)
@@ -1750,6 +1789,7 @@ void SoundPadWidget::mousePressEvent(QMouseEvent* event)
 {
     if (event->button() == Qt::LeftButton) {
         m_dragStart = event->pos();
+        m_ctrlClickPending = event->modifiers() & Qt::ControlModifier;
         emit padClicked(m_padId);
     }
     QWidget::mousePressEvent(event);
@@ -1759,6 +1799,13 @@ void SoundPadWidget::mouseReleaseEvent(QMouseEvent* event)
 {
     if (event->button() == Qt::LeftButton) {
         m_volumeDragIgnored = false;
+        // Ctrl+click (not Ctrl+drag, which copies the pad) marks or unmarks a scene pad.
+        const bool toggle = m_ctrlClickPending && (event->modifiers() & Qt::ControlModifier)
+            && (event->pos() - m_dragStart).manhattanLength() < QApplication::startDragDistance();
+        m_ctrlClickPending = false;
+        if (toggle && hasSounds()) {
+            setScenePad(!m_scene_pad);
+        }
     }
     QWidget::mouseReleaseEvent(event);
 }
@@ -1858,6 +1905,7 @@ void SoundPadWidget::mouseMoveEvent(QMouseEvent* event)
     if (isLoading() || !isLoaded()) {
         return;
     }
+    m_ctrlClickPending = false; // a drag, not a click
     emit padDragStarted(m_padId);
     auto* drag = new QDrag(this);
     auto* mime = new QMimeData();

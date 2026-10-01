@@ -22,6 +22,7 @@ public:
     // True while any pad in the scene is playing; drives the live meter beside the name.
     void setAudible(bool audible);
     void setInteractive(bool enabled);
+    void setPlayToolTip(const QString& text);
 
 signals:
     void selected(int sceneId);
