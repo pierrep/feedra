@@ -24,11 +24,29 @@
 #endif
 #endif
 
+#ifdef _WIN32
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#include <windows.h>
+#endif
+
 using namespace std;
 
 static ALCdevice * alDevice = nullptr;
 static ALCcontext * alContext = nullptr;
 static std::atomic<bool> g_alFloat32{false};
+
+// Mix at 48 kHz even when Windows' shared-mode format is 96 kHz. OpenAL Soft
+// resamples the finished mix to the device rate; mixing every source at 96 kHz
+// halves the buffer time and doubles mixer work.
+static const ALCint kContextAttribs[] = {
+    ALC_FREQUENCY, 48000,
+    ALC_MAX_AUXILIARY_SENDS, 4,
+    ALC_MONO_SOURCES, 1024,
+    ALC_STEREO_SOURCES, 256,
+    0
+};
 
 #ifndef AL_SOFT_convolution_effect
 #define AL_SOFT_convolution_effect
@@ -988,7 +1006,7 @@ int OpenALSoundPlayer::reopenDevice(const char* deviceName)
         ALCboolean (ALC_APIENTRY*alcReopenDeviceSOFT)(ALCdevice *device, const ALCchar *name, const ALCint *attribs);
         alcReopenDeviceSOFT = reinterpret_cast<ALCboolean (ALC_APIENTRY*)(ALCdevice *device, const ALCchar *name, const ALCint *attribs)>(alcGetProcAddress(device, "alcReopenDeviceSOFT"));
 
-        if(alcReopenDeviceSOFT(device, deviceName, NULL))
+        if(alcReopenDeviceSOFT(device, deviceName, kContextAttribs))
         {
             return 0;
         }
@@ -1181,8 +1199,7 @@ void OpenALSoundPlayer::initialize(){
             alcGetIntegerv(alDevice, ALC_MINOR_VERSION, 1, &minor);            
 		}
 		// Create OpenAL context and make it current. If fails, close the OpenAL device that was just opened.
-        int attrlist[] = { ALC_MAX_AUXILIARY_SENDS, 4, ALC_MONO_SOURCES, 1024, ALC_STEREO_SOURCES, 256, 0 };
-        alContext = alcCreateContext( alDevice, attrlist );
+        alContext = alcCreateContext( alDevice, kContextAttribs );
 		if( !alContext ){
 			ALCenum err = alcGetError( alDevice ); 
 			qCritical() << "OpenALSoundPlayer" << "initialize(): couldn't not create OpenAL context : "<< getALCErrorString( err ).c_str();
@@ -2948,6 +2965,12 @@ bool OpenALSoundPlayer::isLoaded() const{
 //------------------------------------------------------------
 void OpenALSoundPlayer::threadedFunction()
 {
+#ifdef _WIN32
+    // Keep the refill ahead of the UI and file decoders.
+    if (!SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_HIGHEST)) {
+        qWarning() << "OpenALSoundPlayer" << "could not raise stream thread priority";
+    }
+#endif
     while (isThreadRunning()) {
         sleepMs(1);
         std::unique_lock<std::mutex> lock(mutex);
