@@ -3933,8 +3933,46 @@ void MainWindow::closeEvent(QCloseEvent* event)
     QMainWindow::closeEvent(event);
 }
 
+namespace {
+// The line edit that has focus, or the spin box that owns it. Spin boxes focus an inner line edit.
+QWidget* focusedTextField(QWidget* focus, QLineEdit** editOut)
+{
+    *editOut = qobject_cast<QLineEdit*>(focus);
+    if (*editOut) {
+        if (auto* spin = qobject_cast<QAbstractSpinBox*>((*editOut)->parentWidget())) {
+            return spin;
+        }
+        return *editOut;
+    }
+    if (auto* spin = qobject_cast<QAbstractSpinBox*>(focus)) {
+        *editOut = spin->findChild<QLineEdit*>(QString(), Qt::FindDirectChildrenOnly);
+        return spin;
+    }
+    return nullptr;
+}
+}
+
 bool MainWindow::eventFilter(QObject* watched, QEvent* event)
 {
+    // Most of the window does not accept focus, so a click there would leave a text field selected.
+    if (event->type() == QEvent::MouseButtonPress) {
+        auto* clicked = qobject_cast<QWidget*>(watched);
+        QWidget* focus = QApplication::focusWidget();
+        QLineEdit* edit = nullptr;
+        QWidget* field = focus && focus->window() == this ? focusedTextField(focus, &edit) : nullptr;
+        // Tested by position because a press the field ignores is delivered again to its parents.
+        const QPoint globalPos = static_cast<QMouseEvent*>(event)->globalPosition().toPoint();
+        const bool insideField = field && field->rect().contains(field->mapFromGlobal(globalPos));
+        QWidget* popup = QApplication::activePopupWidget();
+        const bool insidePopup = popup && clicked && (clicked == popup || popup->isAncestorOf(clicked));
+        if (field && !insideField && !insidePopup) {
+            if (edit) {
+                edit->deselect();
+            }
+            // clearFocus() on the inner line edit hands focus straight back to the spin box.
+            setFocus(Qt::MouseFocusReason);
+        }
+    }
     if (event->type() == QEvent::KeyPress && watched->isWidgetType()
         && static_cast<QWidget*>(watched)->window() == this) {
         auto* key = static_cast<QKeyEvent*>(event);
