@@ -11,7 +11,13 @@ public:
 
     void setup();
 
+    // Where Feedra writes: settings, backups, the waveform cache. The data folder beside the
+    // program when it can be written to (portable), otherwise the user's app data folder.
     QString dataDir() const;
+    // What ships with the program and is only read (impulse responses): the data folder beside it.
+    QString resourceDir() const;
+    // The impulse response that ships with Feedra (data/ir/impulse.wav).
+    QString defaultImpulsePath() const;
     QString defaultSettingsPath() const;
     // data/cache/waveforms: saved waveform peaks, one file per sample (see PeakStore).
     QString waveformCacheDir() const;
@@ -60,4 +66,5 @@ private:
     float m_masterVolume = 1.0f;
     float m_masterFade = 1.0f;
     QJsonObject m_json;
+    mutable QString m_dataDir; // worked out once
 };

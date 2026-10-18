@@ -2,7 +2,7 @@
 
 #include "OpenALSoundPlayer.h"
 
-#include <string>
+#include <QString>
 
 class AudioSample
 {
@@ -16,20 +16,19 @@ public:
     float getPitch() const { return pitch; }
     float getGain() const { return gain; }
     float getPan() const;
-    bool isSpatialisedStereo() const;
     // Stereo width, 0 (mono, at the pan position) to 1 (full width). Stereo files only.
     void setWidth(float width);
     float getWidth() const;
 
     // Loop region, "loop this sample" and "play from start". Kept in the sample's player,
-    // so they survive reloads (e.g. switching spatialise) and apply the moment they change.
+    // so they survive reloads and apply the moment they change.
     void setLoopRegion(const LoopRegion& region);
     LoopRegion loopRegion() const;
     bool isLoopOn() const { return loopRegion().loop; }
     void setLoopOn(bool on);
 
     OpenALSoundPlayer* audioPlayer = nullptr;
-    std::string sample_path;
+    QString path;
     int id = 0;
 
     float totalDelay = 0.0f;

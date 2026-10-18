@@ -33,11 +33,6 @@ float AudioSample::getPan() const
     return audioPlayer ? audioPlayer->getPan() : 0.0f;
 }
 
-bool AudioSample::isSpatialisedStereo() const
-{
-    return audioPlayer ? audioPlayer->isSpatialisedStereo() : false;
-}
-
 void AudioSample::setLoopRegion(const LoopRegion& region)
 {
     if (audioPlayer) {

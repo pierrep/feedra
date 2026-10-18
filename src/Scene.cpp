@@ -59,7 +59,6 @@ private:
         const int vSpace = qRound(kGridVSpace * s);
         const int margin = qRound(kGridMargin * s);
         const int gridW = 2 * margin + m_cols * padW + (m_cols - 1) * hSpace;
-        const int gridH = 2 * margin + m_rows * padH + (m_rows - 1) * vSpace;
         const int ox = (width() - gridW) / 2;
         const int oy = 0;
         for (int i = 0; i < m_pads.size(); ++i) {
@@ -93,10 +92,12 @@ Scene::Scene(AppConfig* config, int id, const QString& name, QWidget* gridParent
     const int count = config->gridWidth * config->gridHeight;
     pads.reserve(count);
     for (int i = 0; i < count; ++i) {
-        auto* pad = new SoundPadWidget(config, id, i, host);
+        auto* pad = new Pad(config, id, i, this);
+        auto* widget = new SoundPadWidget(config, pad, host);
         pads.push_back(pad);
-        host->addPad(pad);
-        connect(pad, &SoundPadWidget::padClicked, this, [this](int padId) {
+        padWidgets.push_back(widget);
+        host->addPad(widget);
+        connect(widget, &SoundPadWidget::padClicked, this, [this](int padId) {
             activeSoundIdx = padId;
             emit padSelected(this->id, padId);
         });
@@ -138,18 +139,27 @@ Scene::Scene(AppConfig* config, int id, const QString& name, QWidget* gridParent
 
 Scene::~Scene()
 {
+    // The widgets first: they refer to the pads.
     delete m_grid;
     m_grid = nullptr;
     delete m_row;
     m_row = nullptr;
 }
 
-SoundPadWidget* Scene::padAt(int idx) const
+Pad* Scene::padAt(int idx) const
 {
     if (idx < 0 || idx >= pads.size()) {
         return nullptr;
     }
     return pads[idx];
+}
+
+SoundPadWidget* Scene::padWidgetAt(int idx) const
+{
+    if (idx < 0 || idx >= padWidgets.size()) {
+        return nullptr;
+    }
+    return padWidgets[idx];
 }
 
 void Scene::play()
@@ -161,7 +171,7 @@ void Scene::play()
     m_fadeCallback = {};
     m_resuming.clear();
     bool anyScenePads = false;
-    for (SoundPadWidget* pad : pads) {
+    for (Pad* pad : pads) {
         if (pad->isLoading()) {
             continue;
         }
@@ -178,7 +188,7 @@ void Scene::play()
     m_fadeFrom = m_fading ? (wasFadingOut ? m_fadeVolume : 0.0f) : 1.0f;
     m_fadeVolume = m_fadeFrom;
     m_fadeTimer.restart();
-    for (SoundPadWidget* pad : pads) {
+    for (Pad* pad : pads) {
         if (pad->isLoading()) {
             continue;
         }
@@ -201,7 +211,7 @@ void Scene::pause()
     m_fadeDirection = 1;
     m_fadeTimer.restart();
     m_fadeCallback = [this]() {
-        for (SoundPadWidget* pad : pads) {
+        for (Pad* pad : pads) {
             pad->soundPlayer().setPaused(true);
         }
     };
@@ -215,7 +225,7 @@ void Scene::stop()
     m_fadeDirection = 1;
     m_fadeTimer.restart();
     m_fadeCallback = [this]() {
-        for (SoundPadWidget* pad : pads) {
+        for (Pad* pad : pads) {
             pad->soundPlayer().stop();
         }
     };
@@ -225,7 +235,7 @@ void Scene::stopImmediate()
 {
     endFade();
     isPlaying = false;
-    for (SoundPadWidget* pad : pads) {
+    for (Pad* pad : pads) {
         pad->soundPlayer().stop();
     }
     m_row->setPlaying(false);
@@ -246,15 +256,18 @@ void Scene::update()
     bool audible = false;
     // A fade-in applies only to the pads resuming from a pause; a fade-out applies to all.
     const bool fadingIn = m_fading && m_fadeDirection == 0;
-    for (SoundPadWidget* pad : pads) {
+    for (Pad* pad : pads) {
         pad->setFadeVolume(fadingIn && !m_resuming.contains(pad) ? 1.0f : m_fadeVolume);
         pad->updateAudio();
         audible = audible || pad->isPlaying();
     }
+    for (SoundPadWidget* widget : padWidgets) {
+        widget->updateView();
+    }
     m_row->setAudible(audible);
 
     int scenePads = 0;
-    for (SoundPadWidget* pad : pads) {
+    for (Pad* pad : pads) {
         scenePads += pad->isScenePad() ? 1 : 0;
     }
     if (scenePads != m_scenePadCount) {
@@ -282,9 +295,9 @@ void Scene::setActive(bool active)
 {
     m_row->setActive(active);
     m_row->setInteractive(true);
-    for (SoundPadWidget* pad : pads) {
-        pad->setInteractive(active);
-        pad->setSelected(active && pad->padId() == activeSoundIdx);
+    for (SoundPadWidget* widget : padWidgets) {
+        widget->setInteractive(active);
+        widget->setSelected(active && widget->padId() == activeSoundIdx);
     }
 }
 

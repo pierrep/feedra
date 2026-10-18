@@ -1,6 +1,8 @@
 #include "SampleLoadQueue.h"
+#include "FsPath.h"
 
 #include "PeakStore.h"
+#include "AudioDevice.h"
 
 #include <QElapsedTimer>
 #include <QFileInfo>
@@ -48,7 +50,7 @@ void SampleLoadQueue::enqueue(const SampleLoadJob& job)
         result.job = job;
         const bool stale = !job.generationToken || job.generationToken->load() != job.generation;
         if (!state->shuttingDown.load() && !stale) {
-            result.audio = OpenALSoundPlayer::decodeFile(std::filesystem::path(job.path.toStdString()), job.stream);
+            result.audio = AudioCodec::decodeFile(FsPath::fromQString(job.path), job.stream, AudioDevice::floatOutput());
             // Bring the saved waveform in with the sample, so the pad strip and the Waveform
             // tab show it straight away (no scan if the cache file is valid).
             peaks->preload(job.path);

@@ -50,46 +50,119 @@ void SoundPlayer::setup(AppConfig* conf, int newId)
     id = newId;
 }
 
+int SoundPlayer::randomIndex(int count) const
+{
+    return std::clamp(static_cast<int>(randomRange(0.0f, static_cast<float>(count))), 0, count - 1);
+}
+
+// Random order is a shuffle: each pass plays every sample once, in a new order, and the next
+// pass (with Repeat) never starts with the sample that ended the last one. m_bag holds the
+// samples still to come in this pass, the next one at the back. It's built when first needed
+// from whatever sample is current, so a jump (a click in the Editor) starts a pass from there.
+void SoundPlayer::ensureShuffle() const
+{
+    const int count = static_cast<int>(player.size());
+    if (m_bagValid && m_bagCount == count) {
+        return;
+    }
+    m_bag.clear();
+    for (int i = 0; i < count; ++i) {
+        if (i != curSound) {
+            m_bag.push_back(i);
+        }
+    }
+    // Fisher-Yates.
+    for (int i = static_cast<int>(m_bag.size()) - 1; i > 0; --i) {
+        std::swap(m_bag[static_cast<size_t>(i)], m_bag[static_cast<size_t>(randomIndex(i + 1))]);
+    }
+    m_bagValid = true;
+    m_bagCount = count;
+    m_nextPassFirst = -1;
+}
+
 int SoundPlayer::chooseNext() const
 {
+    // Called to look ahead (a scheduled handover) as well as to move on, so it must give the
+    // same answer until moveTo() is called.
     const int count = static_cast<int>(player.size());
     if (count == 0) {
         return -1;
     }
-    if (curSound < count - 1) {
-        if (bRandomPlayback && count > 1) {
-            int idx = curSound;
-            while (idx == curSound) {
-                idx = static_cast<int>(randomRange(0.0f, static_cast<float>(count)));
-                idx = std::clamp(idx, 0, count - 1);
-            }
-            return idx;
+    if (bRandomPlayback && count > 1) {
+        ensureShuffle();
+        if (!m_bag.empty()) {
+            return m_bag.back();
         }
+        if (!bRepeat) {
+            return -1; // every sample has played once
+        }
+        if (m_nextPassFirst < 0 || m_nextPassFirst >= count || m_nextPassFirst == curSound) {
+            do {
+                m_nextPassFirst = randomIndex(count);
+            } while (m_nextPassFirst == curSound);
+        }
+        return m_nextPassFirst;
+    }
+    if (curSound < count - 1) {
         return curSound + 1;
     }
     return bRepeat ? 0 : -1;
 }
 
+void SoundPlayer::moveTo(int next)
+{
+    const int count = static_cast<int>(player.size());
+    bool inPass = false;
+    if (bRandomPlayback && count > 1) {
+        ensureShuffle();
+        inPass = !m_bag.empty() && m_bag.back() == next;
+    }
+    curSound = next;
+    if (inPass) {
+        m_bag.pop_back();
+    } else {
+        m_bagValid = false; // a new pass, or a jump: rebuilt from here when next needed
+    }
+}
+
+void SoundPlayer::beginRunIfFresh()
+{
+    if (!m_freshRun) {
+        return;
+    }
+    m_freshRun = false;
+    m_bagValid = false;
+    const int count = static_cast<int>(player.size());
+    if (!bRandomPlayback || count <= 1 || curSound < 0 || curSound >= count) {
+        return;
+    }
+    // A random pad starts on a random sample, not always the first. It takes over the
+    // delay already set up for the first, so starting behaves as it did before.
+    const int start = randomIndex(count);
+    if (start != curSound) {
+        player[static_cast<size_t>(start)]->totalDelay = player[static_cast<size_t>(curSound)]->totalDelay;
+        player[static_cast<size_t>(start)]->curDelay = player[static_cast<size_t>(curSound)]->curDelay;
+        curSound = start;
+    }
+}
+
 void SoundPlayer::advanceAfterEnd()
 {
     bStartFromBeginning = true;
-    const int count = static_cast<int>(player.size());
-    if (curSound < count - 1) {
-        curSound = chooseNext();
-        recalculateDelay(curSound);
-        // Starts it now, or starts its delay countdown.
-        setPaused(false);
-        return;
-    }
-    curSound = 0;
-    if (bRepeat) {
-        recalculateDelay(curSound);
-        bPaused = false;
-        bPlayingDelay = true; // counts down (possibly zero), then plays
-    } else {
+    const int next = chooseNext();
+    if (next < 0) {
+        // The end of the list (or of a random pass) with Repeat off.
+        curSound = 0;
+        m_bagValid = false;
+        m_freshRun = true;
         bPaused = true;
         bPlayingDelay = false;
+        return;
     }
+    moveTo(next);
+    recalculateDelay(curSound);
+    // Starts it now, or starts its delay countdown.
+    setPaused(false);
 }
 
 void SoundPlayer::update()
@@ -134,6 +207,7 @@ void SoundPlayer::play()
     if (player.empty()) {
         return;
     }
+    beginRunIfFresh();
     applyRandomPanOnStart();
     applyVolumeToCurrent();
     player[curSound]->audioPlayer->play();
@@ -155,10 +229,14 @@ void SoundPlayer::stop()
         player[curSound]->audioPlayer->stop();
     }
     bCheckPlayBackEnded = false;
+    // Out of the delay countdown too, or a stopped pad would still show "Next in ...".
+    bPlayingDelay = false;
     curSound = 0;
     recalculateDelay(curSound);
     bPaused = true;
     bStartFromBeginning = true;
+    m_bagValid = false;
+    m_freshRun = true;
 }
 
 void SoundPlayer::playSample(int index)
@@ -175,6 +253,9 @@ void SoundPlayer::playSample(int index)
     curSound = index;
     player[curSound]->audioPlayer->stop();
     bStartFromBeginning = true;
+    // Chosen by hand: play this one, and any random pass carries on from it.
+    m_freshRun = false;
+    m_bagValid = false;
     setPaused(false);
 }
 
@@ -217,6 +298,8 @@ void SoundPlayer::setPaused(bool pause)
     }
     if (pause) {
         cancelHandover();
+    } else {
+        beginRunIfFresh();
     }
     bPaused = pause;
     if (player[curSound]->curDelay > 0) {
@@ -390,6 +473,9 @@ float SoundPlayer::getPosition() const
         return 0;
     }
     if (isPlayingDelay()) {
+        if (player[curSound]->totalDelay <= 0.0f) {
+            return 1.0f; // a zero-length delay: already at its end (and no 0/0)
+        }
         float remain = 1.0f - (player[curSound]->curDelay / player[curSound]->totalDelay);
         if (remain <= 0) {
             remain = 0.0000001f;
@@ -573,7 +659,7 @@ void SoundPlayer::tryArmHandover()
     if (handover.armed || bPaused || bPlayingDelay || player.empty() || hasDelay()) {
         return;
     }
-    if (!OpenALSoundPlayer::scheduledStartAvailable()) {
+    if (!AudioDevice::scheduledStartAvailable()) {
         return;
     }
     const int count = static_cast<int>(player.size());
@@ -588,7 +674,7 @@ void SoundPlayer::tryArmHandover()
     if (!current->audioPlayer->predictEndDeviceTime(endNs)) {
         return;
     }
-    if (endNs - OpenALSoundPlayer::deviceClockNs() > kHandoverArmNs) {
+    if (endNs - AudioDevice::clockNs() > kHandoverArmNs) {
         return;
     }
     const int next = chooseNext();
@@ -625,18 +711,14 @@ void SoundPlayer::checkHandover()
         cancelHandover();
         return;
     }
-    if (OpenALSoundPlayer::deviceClockNs() >= handover.endNs) {
+    if (AudioDevice::clockNs() >= handover.endNs) {
         return; // already started: the end notice will make it current
     }
     AudioSample* current = player[static_cast<size_t>(curSound)];
     // The pad's own rules may have changed: Repeat switched off before the last sample
-    // ends, a delay added, or the order changed.
-    int expected = handover.next;
-    if (curSound >= count - 1) {
-        expected = bRepeat ? 0 : -1;
-    } else if (!bRandomPlayback) {
-        expected = curSound + 1;
-    }
+    // ends, a delay added, or the order changed. chooseNext() gives the same answer until
+    // the pad moves on, random order included.
+    const int expected = chooseNext();
     int64_t endNs = 0;
     const bool stillValid = expected == handover.next && !hasDelay()
         && !bPaused && !current->isLoopOn()
@@ -697,7 +779,7 @@ void SoundPlayer::handleEnded(OpenALSoundPlayer* audio)
     }
     if (handover.armed && handover.from == curSound) {
         // The next sample is already scheduled on the device: just make it current.
-        curSound = handover.next;
+        moveTo(handover.next);
         handover = Handover{};
         bStartFromBeginning = false; // its random pan was applied when it was scheduled
         bPlayingDelay = false;

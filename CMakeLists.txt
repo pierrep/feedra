@@ -27,18 +27,30 @@ endif()
 
 find_package(Qt6 REQUIRED COMPONENTS Widgets)
 
-set(FEEDRA_SOURCES
-    src/main.cpp
+option(FEEDRA_BUILD_TESTS "Build the tests in tests/" ON)
+option(FEEDRA_WARNINGS_AS_ERRORS "Treat compiler warnings as errors (CI)" OFF)
+
+# The audio engine: no widgets, so the tests can link it on its own.
+set(FEEDRA_ENGINE_SOURCES
+    src/AudioCodec.cpp
+    src/AudioDevice.cpp
+    src/RegionRenderer.cpp
+    src/OpenALSoundPlayer.cpp
+)
+
+# Everything but main(): the app, and the tests that drive the whole window.
+set(FEEDRA_APP_SOURCES
     src/LogCapture.cpp
     src/AppConfig.cpp
     src/Theme.cpp
     src/AudioFormats.cpp
     src/AudioSample.cpp
-    src/OpenALSoundPlayer.cpp
     src/SoundPlayer.cpp
+    src/Pad.cpp
     src/SampleLoadQueue.cpp
     src/PeakStore.cpp
     src/ProjectBackups.cpp
+    src/ProjectFile.cpp
     src/Scene.cpp
     src/MainWindow.cpp
     src/widgets/SoundPadWidget.cpp
@@ -48,18 +60,24 @@ set(FEEDRA_SOURCES
     src/widgets/WaveformWidget.cpp
     src/widgets/FileBrowserWidget.cpp
     src/widgets/LogWindow.cpp
-    resources/resources.qrc
+    src/widgets/SettingsCards.cpp
+    src/widgets/SettingsPage.cpp
+    src/widgets/ThemePage.cpp
 )
 
-set(KISSFFT_SOURCES
-    src/kissFFT/kiss_fft.c
-    src/kissFFT/kiss_fftr.c
-    src/kissFFT/kiss_fftnd.c
-    src/kissFFT/kiss_fftndr.c
-    src/kissFFT/kfc.c
-)
+add_library(feedra_engine STATIC ${FEEDRA_ENGINE_SOURCES})
+target_include_directories(feedra_engine PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
+target_link_libraries(feedra_engine PUBLIC Qt6::Core)
 
-add_executable(feedra WIN32 ${FEEDRA_SOURCES} ${KISSFFT_SOURCES})
+add_library(feedra_app STATIC ${FEEDRA_APP_SOURCES})
+target_include_directories(feedra_app PUBLIC
+    ${CMAKE_CURRENT_SOURCE_DIR}/src
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/widgets
+)
+target_link_libraries(feedra_app PUBLIC feedra_engine Qt6::Widgets)
+
+add_executable(feedra WIN32 src/main.cpp resources/resources.qrc)
+target_link_libraries(feedra PRIVATE feedra_app)
 
 if(WIN32)
     # The .exe's own icon (Explorer, the taskbar, Alt+Tab). CMake builds .rc files with the
@@ -81,21 +99,38 @@ endif()
 target_include_directories(feedra PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/src
     ${CMAKE_CURRENT_SOURCE_DIR}/src/widgets
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/kissFFT
 )
+
+# Warnings on for Feedra's own code (not the bundled headers, which are included as system).
+function(feedra_warnings target)
+    if(MSVC)
+        target_compile_options(${target} PRIVATE /W4 /permissive-)
+        if(FEEDRA_WARNINGS_AS_ERRORS)
+            target_compile_options(${target} PRIVATE /WX)
+        endif()
+    else()
+        target_compile_options(${target} PRIVATE -Wall -Wextra -Wno-unused-parameter)
+        if(FEEDRA_WARNINGS_AS_ERRORS)
+            target_compile_options(${target} PRIVATE -Werror)
+        endif()
+    endif()
+endfunction()
+feedra_warnings(feedra)
+feedra_warnings(feedra_app)
+feedra_warnings(feedra_engine)
 
 target_link_libraries(feedra PRIVATE Qt6::Widgets)
 
 if(WIN32)
     # Bundled import libraries and headers. Linux and macOS use the system copies below.
-    target_include_directories(feedra PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
-    target_compile_definitions(feedra PRIVATE FEEDRA_USING_MPG123 NOMINMAX WIN32_LEAN_AND_MEAN)
+    target_include_directories(feedra_engine SYSTEM PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
+    target_compile_definitions(feedra_engine PUBLIC FEEDRA_USING_MPG123 NOMINMAX WIN32_LEAN_AND_MEAN)
     set(FEEDRA_LIBDIR ${CMAKE_CURRENT_SOURCE_DIR}/libs/Win64)
-    target_link_directories(feedra PRIVATE ${FEEDRA_LIBDIR})
+    target_link_directories(feedra_engine PUBLIC ${FEEDRA_LIBDIR})
     if(MINGW AND EXISTS "${FEEDRA_LIBDIR}/libOpenAL32.dll.a")
-        target_link_libraries(feedra PRIVATE "${FEEDRA_LIBDIR}/libOpenAL32.dll.a" sndfile libmpg123-0)
+        target_link_libraries(feedra_engine PUBLIC "${FEEDRA_LIBDIR}/libOpenAL32.dll.a" sndfile libmpg123-0)
     else()
-        target_link_libraries(feedra PRIVATE OpenAL32 sndfile libmpg123-0)
+        target_link_libraries(feedra_engine PUBLIC OpenAL32 sndfile libmpg123-0)
     endif()
     if(MSVC)
         target_link_options(feedra PRIVATE "/IGNORE:4099")
@@ -111,12 +146,12 @@ else()
     pkg_check_modules(SNDFILE REQUIRED IMPORTED_TARGET sndfile)
     pkg_check_modules(MPG123 REQUIRED IMPORTED_TARGET libmpg123)
 
-    target_compile_definitions(feedra PRIVATE FEEDRA_USING_MPG123)
+    target_compile_definitions(feedra_engine PUBLIC FEEDRA_USING_MPG123)
     if(APPLE)
         # <OpenAL/al.h> is Apple's deprecated framework. This build links OpenAL Soft.
-        target_compile_definitions(feedra PRIVATE FEEDRA_OPENAL_SOFT)
+        target_compile_definitions(feedra_engine PUBLIC FEEDRA_OPENAL_SOFT)
     endif()
-    target_link_libraries(feedra PRIVATE
+    target_link_libraries(feedra_engine PUBLIC
         PkgConfig::OPENAL
         PkgConfig::SNDFILE
         PkgConfig::MPG123
@@ -130,9 +165,9 @@ else()
     endforeach()
 
     if(NOT APPLE)
-        target_link_libraries(feedra PRIVATE m)
+        target_link_libraries(feedra_engine PUBLIC m)
         if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU" AND CMAKE_CXX_COMPILER_VERSION VERSION_LESS 9.0)
-            target_link_libraries(feedra PRIVATE stdc++fs)
+            target_link_libraries(feedra_engine PUBLIC stdc++fs)
         endif()
     endif()
 
@@ -143,6 +178,13 @@ endif()
 
 if(MSVC)
     target_compile_options(feedra PRIVATE /Zc:__cplusplus /wd4996)
+    target_compile_options(feedra_app PRIVATE /Zc:__cplusplus /wd4996)
+    target_compile_options(feedra_engine PRIVATE /Zc:__cplusplus /wd4996)
+endif()
+
+if(FEEDRA_BUILD_TESTS)
+    enable_testing()
+    add_subdirectory(tests)
 endif()
 
 function(feedra_copy_runtime src dest_name)

@@ -1,6 +1,7 @@
 #include "PeakStore.h"
+#include "FsPath.h"
 
-#include "OpenALSoundPlayer.h"
+#include "AudioCodec.h"
 
 #include <QCoreApplication>
 #include <QCryptographicHash>
@@ -325,9 +326,8 @@ void PeakStore::request(const QString& key, bool urgent)
         QThread::currentThread()->setPriority(QThread::LowPriority);
         // Stamp before decoding, so a file that changes mid-scan is scanned again next time.
         const SourceStamp stamp = stampOf(key);
-        qDebug() << "PeakStore: scanning" << key; // TEMP: remove once the cache is confirmed
-        const WaveformPeaks raw = OpenALSoundPlayer::computePeaks(
-            std::filesystem::path(key.toStdString()), kBins, cancel.get());
+        const WaveformPeaks raw = AudioCodec::computePeaks(
+            FsPath::fromQString(key), kBins, cancel.get());
         if (cancel->load()) {
             return;
         }

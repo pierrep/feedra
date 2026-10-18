@@ -1,6 +1,6 @@
 #include "LogCapture.h"
 #include "MainWindow.h"
-#include "OpenALSoundPlayer.h"
+#include "AudioDevice.h"
 #include "Theme.h"
 
 #include <QApplication>
@@ -41,9 +41,14 @@ int main(int argc, char* argv[])
     Theme::instance().apply();
     app.setWindowIcon(QIcon(QStringLiteral(":/images/feedra.png")));
 
-    MainWindow window;
-    window.show();
-    const int code = app.exec();
-    OpenALSoundPlayer::close();
+    int code = 0;
+    {
+        // Scoped so the window, and every pad's player with it, is gone before the device
+        // closes: players delete their sources while the context is still current.
+        MainWindow window;
+        window.show();
+        code = app.exec();
+    }
+    AudioDevice::close();
     return code;
 }

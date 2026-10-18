@@ -19,6 +19,8 @@ class SampleLoadQueue;
 class WaveformWidget;
 class LogWindow;
 class FileBrowserWidget;
+class SettingsPage;
+class ThemePage;
 class QAbstractButton;
 class QAction;
 class QFrame;
@@ -58,21 +60,15 @@ private:
 
     void buildUi();
     void buildMenus();
-    void buildSettingsPage();
-    void buildThemePage();
     void syncSettingsPage();
-    void refreshWaveformCacheInfo();
-    void applyImpulsePath(const QString& path, int which);
     // Pad tab send names follow the reverbs: "<preset> reverb send", "<impulse file> reverb send".
     void refreshSendLabels();
-    void refreshThemeSwatches();
-    QWidget* buildPageHeader(QWidget* page, const QString& title, const QString& subtitle);
     void applyAppSettings(const QJsonObject& global);
     void connectScene(Scene* scene);
     void drainLoads(int budgetMs);
     void refreshLoadUi();
     void waitForLoads();
-    SoundPadWidget* findPad(int sceneId, int padId) const;
+    Pad* findPad(int sceneId, int padId) const;
     void createDefaultScenes();
     void addNewScene();
     int nextSceneId() const;
@@ -141,12 +137,12 @@ private:
     void setBottomTab(int index);
     void setBottomCollapsed(bool collapsed, bool resizeWindow = true);
     void refreshTabButton(QPushButton* button, bool active);
-    SoundPadWidget* activePad() const;
+    Pad* activePad() const;
     Scene* activeScene() const;
 
     AppConfig m_config;
     QVector<Scene*> m_scenes;
-    SoundPadWidget::PadClip m_padClip;
+    Pad::PadClip m_padClip;
     Page m_page = Page::Main;
     SidebarView m_sidebar = SidebarView::Scenes;
     bool m_scenesFocus = false;
@@ -168,7 +164,7 @@ private:
     QPointer<QWidget> m_scrollToSceneRow; // a scene row to bring into view
     int m_scrollToSceneSerial = 0;
     QScrollArea* m_sampleScroll = nullptr;
-    SoundPadWidget* m_shownSamplePad = nullptr; // the Editor sample last scrolled into view
+    Pad* m_shownSamplePad = nullptr; // the Editor sample last scrolled into view
     int m_shownSampleIdx = -1;
     QVBoxLayout* m_sceneListLayout = nullptr;
     QPushButton* m_addScene = nullptr;
@@ -178,15 +174,15 @@ private:
     QWidget* m_scenesPage = nullptr;
     QWidget* m_editorPage = nullptr;
     QWidget* m_sampleControls = nullptr;
-    QWidget* m_settingsPage = nullptr;
-    QWidget* m_themePage = nullptr;
+    SettingsPage* m_settingsPage = nullptr;
+    ThemePage* m_themePage = nullptr;
     QPushButton* m_scenesTab = nullptr;
     QPushButton* m_editorTab = nullptr;
     QPushButton* m_filesTab = nullptr;
     FileBrowserWidget* m_fileBrowser = nullptr;
     QVBoxLayout* m_sampleListLayout = nullptr;
     QVector<SampleRowWidget*> m_sampleRows;
-    SoundPadWidget* m_followedPad = nullptr;
+    Pad* m_followedPad = nullptr;
     int m_followedSound = -1;
 
     QSlider* m_mainVolume = nullptr;
@@ -211,7 +207,7 @@ private:
     QCheckBox* m_scenePad = nullptr;
     QLabel* m_delayReadout = nullptr;
     QLabel* m_infoLabel = nullptr;
-    SoundPadWidget* m_infoPad = nullptr;
+    Pad* m_infoPad = nullptr;
     int m_infoSound = -1;
     bool m_bottomCollapsed = false;
     // Set while the panel toggles and the window resizes to match, so the pad grid
@@ -235,30 +231,10 @@ private:
     QPushButton* m_addSample = nullptr;
     QLabel* m_editTitle = nullptr;
 
-    QCheckBox* m_loadLastSettings = nullptr;
-    QCheckBox* m_autosave = nullptr;
     int m_loopDragSampleId = -1; // sample whose loop handles are being dragged on the Waveform tab
-    QSpinBox* m_sceneLimit = nullptr;
-    QSpinBox* m_gridColumns = nullptr;
-    QSpinBox* m_gridRows = nullptr;
-    QLineEdit* m_libraryPath = nullptr;
-    QComboBox* m_reverbPreset[2] = {};
-    QSlider* m_convolutionGain[2] = {};
-    QLabel* m_convolutionGainValue[2] = {};
-    QLineEdit* m_impulsePath[2] = {};
-    QPushButton* m_impulseBrowse[2] = {};
-    QVector<QAbstractButton*> m_themeTiles;
-    QVector<QAbstractButton*> m_accentSwatches;
-    QWidget* m_advancedColors = nullptr;
-    QPushButton* m_advancedToggle = nullptr;
-    QPushButton* m_resetTheme = nullptr;
-    struct ThemeSwatch {
-        QPushButton* button = nullptr;
-        QLabel* hex = nullptr;
-    };
-    QVector<ThemeSwatch> m_themeSwatches;
 
     QString m_curDevice;
+    QString m_failedDevice; // the last default device a move to failed, so it's logged once
     bool m_updatingControls = false;
     bool m_savedOnExit = false;
     bool m_reportMissingAfterLoad = false;
@@ -270,7 +246,6 @@ private:
     QProgressBar* m_loadBar = nullptr;
     QLabel* m_loadLabel = nullptr;
     QLabel* m_settingsPathLabel = nullptr;
-    QLabel* m_waveformCacheInfo = nullptr;
     QAction* m_saveAction = nullptr;
     QAction* m_exportAction = nullptr;
     std::shared_ptr<ExportState> m_export;

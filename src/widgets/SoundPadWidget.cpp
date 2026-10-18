@@ -1,4 +1,5 @@
 #include "SoundPadWidget.h"
+#include "FsPath.h"
 #include "AppConfig.h"
 #include "AudioFormats.h"
 #include "AudioSample.h"
@@ -505,12 +506,10 @@ void PadPlayhead::mouseMoveEvent(QMouseEvent* event)
     }
 }
 
-SoundPadWidget::SoundPadWidget(AppConfig* config, int sceneId, int padId, QWidget* parent)
+SoundPadWidget::SoundPadWidget(AppConfig* config, Pad* pad, QWidget* parent)
     : QWidget(parent)
     , m_config(config)
-    , m_player(this)
-    , m_sceneId(sceneId)
-    , m_padId(padId)
+    , m_pad(pad)
 {
     setObjectName("SoundPad");
     setAcceptDrops(true);
@@ -518,11 +517,10 @@ SoundPadWidget::SoundPadWidget(AppConfig* config, int sceneId, int padId, QWidge
     setAutoFillBackground(false);
     setMinimumSize(kDesignWidth, kDesignHeight);
     setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
-    m_player.setup(config, padId);
 
     m_volume = new QSlider(Qt::Horizontal, this);
     m_volume->setRange(0, VolumeDb::sliderSpan(VolumeDb::kFloorDb, VolumeDb::kUnityDb));
-    m_volume->setValue(VolumeDb::toSliderClamped(0.7f, VolumeDb::kFloorDb, VolumeDb::kUnityDb));
+    m_volume->setValue(VolumeDb::toSliderClamped(m_pad->padVolume(), VolumeDb::kFloorDb, VolumeDb::kUnityDb));
     m_volume->setObjectName("PadVolume");
 
     m_volumeValue = new QLabel(this);
@@ -548,10 +546,10 @@ SoundPadWidget::SoundPadWidget(AppConfig* config, int sceneId, int padId, QWidge
         m_peakPath.clear();
     });
     m_playhead->m_onScrub = [this](float pct) {
-        if (m_player.isLoaded()) {
+        if (m_pad->isLoaded()) {
             // seekTo, not setPosition: setPosition only moves the decoder, so streamed
             // files kept playing the queued audio and the Waveform tab never saw the jump.
-            m_player.seekTo(pct);
+            m_pad->soundPlayer().seekTo(pct);
         }
     };
 
@@ -569,6 +567,7 @@ SoundPadWidget::SoundPadWidget(AppConfig* config, int sceneId, int padId, QWidge
     endNameEdit();
     m_name->setAlignment(Qt::AlignLeft | Qt::AlignVCenter);
     m_name->setPlaceholderText(tr("Empty pad"));
+    m_name->setText(m_pad->soundName());
     m_name->setTextMargins(0, 0, 0, 0);
     // Small pads can clip a long name; the tooltip always has all of it.
     connect(m_name, &QLineEdit::textChanged, m_name, [this](const QString& text) {
@@ -585,33 +584,49 @@ SoundPadWidget::SoundPadWidget(AppConfig* config, int sceneId, int padId, QWidge
 
     connect(m_load, &QAbstractButton::clicked, this, &SoundPadWidget::chooseFiles);
     connect(m_play, &QAbstractButton::clicked, this, [this]() {
-        if (isLoading() || !m_player.isLoaded()) {
+        if (m_pad->isLoading() || !m_pad->isLoaded()) {
             return;
         }
-        if (m_player.isPlaying()) {
-            m_player.setPaused(true);
-        } else {
-            m_player.setPaused(false);
-        }
+        SoundPlayer& player = m_pad->soundPlayer();
+        player.setPaused(player.isPlaying());
     });
     connect(m_stop, &QAbstractButton::clicked, this, [this]() {
-        m_player.stop();
+        m_pad->soundPlayer().stop();
     });
     // The loop icon shows and switches the *current sample's* loop (its saved setting).
     // clicked, not toggled: the icon is also updated from the sample on every tick.
     m_loop->setToolTip(tr("Loop this sample"));
     connect(m_loop, &QAbstractButton::clicked, this, [this](bool on) {
-        if (isLoading() || !m_player.isLoaded()) {
+        if (m_pad->isLoading() || !m_pad->isLoaded()) {
             m_loop->setChecked(false);
             return;
         }
-        m_player.setCurrentSampleLooping(on);
-        emit sampleLoopChanged();
+        m_pad->setCurrentSampleLooping(on);
     });
-    connect(m_volume, &QSlider::valueChanged, this, [this]() {
-        applyVolume();
+    connect(m_volume, &QSlider::valueChanged, this, [this](int value) {
+        m_pad->setPadVolume(VolumeDb::toLinearMuted(VolumeDb::fromSlider(value, VolumeDb::kFloorDb)));
         updateVolumeLabel();
     });
+
+    // The pad's own changes, from anywhere (the window's controls, loading, a paste).
+    connect(m_pad, &Pad::volumeChanged, this, [this](float volume) {
+        const int step = VolumeDb::toSliderClamped(volume, VolumeDb::kFloorDb, VolumeDb::kUnityDb);
+        if (m_volume->value() != step) {
+            const QSignalBlocker blocker(m_volume);
+            m_volume->setValue(step);
+            updateVolumeLabel();
+        }
+    });
+    connect(m_pad, &Pad::nameChanged, this, [this](const QString& name) {
+        if (m_name->text() != name) {
+            m_name->setText(name);
+            m_name->setCursorPosition(0);
+        }
+    });
+    connect(m_name, &QLineEdit::textChanged, this, [this](const QString& text) {
+        m_pad->setSoundName(text);
+    });
+    connect(m_pad, &Pad::changed, this, &SoundPadWidget::onPadChanged);
 
     setInteractive(false);
     updateVolumeLabel();
@@ -626,72 +641,59 @@ SoundPadWidget::SoundPadWidget(AppConfig* config, int sceneId, int padId, QWidge
     });
 }
 
-SoundPadWidget::~SoundPadWidget()
+SoundPadWidget::~SoundPadWidget() = default;
+
+int SoundPadWidget::padId() const
 {
-    if (m_loadGeneration) {
-        m_loadGeneration->fetch_add(1);
+    return m_pad->padId();
+}
+
+void SoundPadWidget::updateView()
+{
+    // Pads of scenes that aren't shown keep playing, moving on and fading (the Pad's tick), but
+    // there's no point updating their controls and readouts: that happens when they're shown.
+    if (!isVisible()) {
+        return;
     }
+    refreshUiState();
 }
 
-QString SoundPadWidget::soundName() const
+void SoundPadWidget::onPadChanged()
 {
-    return m_name->text();
+    if (!m_pad->isLoaded() && !m_pad->isLoading()) {
+        m_playhead->setProgress(0.0f);
+        m_playhead->setTimeText(QString());
+        m_playhead->setVisible(false);
+    }
+    update();
 }
 
-void SoundPadWidget::setSoundName(const QString& name)
+void SoundPadWidget::setInteractive(bool enabled)
 {
-    m_name->setText(name);
-    m_name->setCursorPosition(0);
+    setEnabled(enabled);
 }
 
-float SoundPadWidget::padVolume() const
+void SoundPadWidget::showEvent(QShowEvent* event)
 {
-    return VolumeDb::toLinearMuted(VolumeDb::fromSlider(m_volume->value(), VolumeDb::kFloorDb));
+    QWidget::showEvent(event);
+    refreshUiState(); // catch up on what changed while hidden, before the first paint
 }
 
-void SoundPadWidget::setPadVolume(float value)
+void SoundPadWidget::refreshUiState()
 {
-    const float linear = std::clamp(value, 0.0f, 1.0f);
-    m_volume->setValue(VolumeDb::toSliderClamped(linear, VolumeDb::kFloorDb, VolumeDb::kUnityDb));
-}
-
-bool SoundPadWidget::isRepeating() const
-{
-    return m_player.isRepeating();
-}
-
-void SoundPadWidget::setRepeating(bool repeat)
-{
-    m_player.setRepeat(repeat);
-}
-
-bool SoundPadWidget::isLoaded() const
-{
-    return m_player.isLoaded();
-}
-
-bool SoundPadWidget::isPlaying() const
-{
-    return m_player.isPlaying();
-}
-
-void SoundPadWidget::updateAudio()
-{
-    m_player.update();
-    applyVolume();
-
-    const bool loaded = !isLoading() && m_player.isLoaded();
-    const bool playing = m_player.isPlaying();
-    const bool delay = loaded && m_player.isPlayingDelay();
+    const SoundPlayer& player = m_pad->soundPlayer();
+    const bool loaded = !m_pad->isLoading() && player.isLoaded();
+    const bool playing = player.isPlaying();
+    const bool delay = loaded && player.isPlayingDelay();
     // Play does nothing on an empty pad, so let clicks through to select the pad.
-    const bool empty = !isLoading() && !m_player.isLoaded();
+    const bool empty = !m_pad->isLoading() && !player.isLoaded();
     if (m_play->testAttribute(Qt::WA_TransparentForMouseEvents) != empty) {
         m_play->setAttribute(Qt::WA_TransparentForMouseEvents, empty);
     }
     m_play->setLoaded(loaded);
     m_play->setPlaying(playing && !delay);
-    m_load->setLoaded(loaded || isLoading());
-    m_playhead->setProgress(loaded ? m_player.getPosition() : 0.0f);
+    m_load->setLoaded(loaded || m_pad->isLoading());
+    m_playhead->setProgress(loaded ? player.getPosition() : 0.0f);
     m_playhead->setDelayMode(delay);
     m_playhead->setPlaying(playing && !delay);
     m_playhead->setVisible(loaded);
@@ -699,7 +701,7 @@ void SoundPadWidget::updateAudio()
         refreshPeaks();
     }
     // Follows the current sample, so it lights up when playback reaches a looped sample.
-    const bool sampleLoop = loaded && m_player.isCurrentSampleLooping();
+    const bool sampleLoop = loaded && player.isCurrentSampleLooping();
     if (m_loop->isChecked() != sampleLoop) {
         const QSignalBlocker blocker(m_loop);
         m_loop->setChecked(sampleLoop);
@@ -707,7 +709,7 @@ void SoundPadWidget::updateAudio()
 
     const QString nextIn = m_compactText ? tr("Next %1") : tr("Next in %1");
     const QString time = loaded ? (delay ? nextIn.arg(remainingTimeText()) : positionTimeText()) : QString();
-    const bool loading = isLoading();
+    const bool loading = m_pad->isLoading();
     const bool stateChanged = loaded != m_uiLoaded || playing != m_uiPlaying || delay != m_uiDelay
         || loading != m_uiLoading;
     m_uiLoading = loading;
@@ -734,25 +736,9 @@ void SoundPadWidget::setSelected(bool selected)
     update();
 }
 
-bool SoundPadWidget::hasDelay() const
-{
-    // The delay is picked between min and max (max wins if they're crossed), so any
-    // non-zero value means the pad can wait before playing.
-    return m_player.hasDelay();
-}
-
-QString SoundPadWidget::currentSamplePath() const
-{
-    if (m_soundPaths.empty()) {
-        return {};
-    }
-    const int cur = std::clamp(m_player.getCurSound(), 0, static_cast<int>(m_soundPaths.size()) - 1);
-    return QString::fromStdString(m_soundPaths[static_cast<size_t>(cur)]);
-}
-
 void SoundPadWidget::refreshPeaks()
 {
-    const QString path = currentSamplePath();
+    const QString path = m_pad->currentSamplePath();
     if (path == m_peakPath && m_playhead->hasPeaks()) {
         return;
     }
@@ -767,7 +753,7 @@ void SoundPadWidget::refreshPeaks()
 // on the selected pad (or, for load, on an empty one, where it becomes the drop circle).
 void SoundPadWidget::refreshChrome()
 {
-    const bool loading = isLoading();
+    const bool loading = m_pad->isLoading();
     const bool empty = !loading && !m_uiLoaded;
     const bool hasSound = m_uiLoaded;
     // One tool slot beside play: stop while the pad plays (or counts down its delay),
@@ -791,7 +777,7 @@ void SoundPadWidget::paintEvent(QPaintEvent*)
     const Theme::Palette& theme = Theme::instance().palette();
     const QRectF card = QRectF(padCardRect()).adjusted(0.5, 0.5, -0.5, -0.5);
     const qreal radius = 12.0 * s;
-    const bool loading = isLoading() && m_loadTotal > 0;
+    const bool loading = m_pad->isLoading() && m_pad->loadTotal() > 0;
     const bool empty = !loading && !m_uiLoaded;
     const bool live = m_uiPlaying && !m_uiDelay;
     const QColor accent = theme.playLoaded;
@@ -830,7 +816,7 @@ void SoundPadWidget::paintEvent(QPaintEvent*)
         p.drawRoundedRect(card, radius, radius);
         p.setBrush(tint);
         p.setPen(QPen(withAlpha(accent, 0.75), 1.0));
-    } else if (hasDelay()) {
+    } else if (m_pad->hasDelay()) {
         // A start delay is set: a violet edge marks the pad as one that waits before it
         // plays. It stays through the countdown; once the sound is audible the accent takes over.
         p.setPen(QPen(theme.padDelayBorder, 1.6));
@@ -842,7 +828,7 @@ void SoundPadWidget::paintEvent(QPaintEvent*)
     p.drawRoundedRect(card, radius, radius);
 
     // A scene pad: a plain triangle in the top-left corner, inside the card's rounded edge.
-    if (m_scene_pad && !empty) {
+    if (m_pad->isScenePad() && !empty) {
         const qreal size = 26.0 * s;
         QPainterPath cardPath;
         cardPath.addRoundedRect(card, radius, radius);
@@ -875,13 +861,13 @@ void SoundPadWidget::paintEvent(QPaintEvent*)
         p.setFont(captionFont);
         p.setPen(theme.textMuted);
         p.drawText(at(14, 64, 148, 18), Qt::AlignHCenter | Qt::AlignVCenter,
-            tr("Loading %1 of %2").arg(std::min(m_nextCommit + 1, m_loadTotal)).arg(m_loadTotal));
+            tr("Loading %1 of %2").arg(std::min(m_pad->loadDone() + 1, m_pad->loadTotal())).arg(m_pad->loadTotal()));
         const QRectF track = at(14, 90, 148, 4);
         p.setPen(Qt::NoPen);
         p.setBrush(theme.progressTrack);
         p.drawRoundedRect(track, track.height() / 2, track.height() / 2);
         QRectF chunk = track;
-        chunk.setWidth(track.width() * (static_cast<qreal>(m_nextCommit) / static_cast<qreal>(m_loadTotal)));
+        chunk.setWidth(track.width() * (static_cast<qreal>(m_pad->loadDone()) / static_cast<qreal>(m_pad->loadTotal())));
         if (chunk.width() > 0) {
             p.setBrush(theme.progressChunk);
             p.drawRoundedRect(chunk, track.height() / 2, track.height() / 2);
@@ -925,7 +911,7 @@ void SoundPadWidget::layoutContents()
 
     // Everything below is placed on the 176x204 mockup canvas; the card itself is inset
     // 4px so the selection ring and live glow have room around it.
-    const bool empty = !isLoading() && !m_uiLoaded;
+    const bool empty = !m_pad->isLoading() && !m_uiLoaded;
 
     m_card->setGeometry(scaled(4, 4, 168, 196));
     // Child geometry below is in pad coordinates; the card starts at (4,4).
@@ -1011,665 +997,6 @@ QRect SoundPadWidget::padCardRect() const
     return m_card ? m_card->geometry() : rect().adjusted(4, 4, -4, -4);
 }
 
-void SoundPadWidget::setInteractive(bool enabled)
-{
-    setEnabled(enabled);
-}
-
-void SoundPadWidget::setFadeVolume(float fade)
-{
-    m_fadeVolume = fade;
-    // At once, so a pad that is about to start doesn't start at the previous level.
-    applyVolume();
-}
-
-void SoundPadWidget::setLoadQueue(SampleLoadQueue* queue)
-{
-    m_queue = queue;
-}
-
-bool SoundPadWidget::isLoading() const
-{
-    return m_loadTotal > 0 && m_nextCommit < m_loadTotal;
-}
-
-void SoundPadWidget::cancelLoading()
-{
-    m_loadGeneration->fetch_add(1);
-    m_incoming.clear();
-    m_reloads.clear();
-    m_slots.clear();
-    m_loadTotal = 0;
-    m_nextCommit = 0;
-    m_finishSent = false;
-    m_notifyWhenDone = false;
-    update();
-}
-
-void SoundPadWidget::enqueueSample(const QString& path, float pitch, float gain, float pan, bool panRandom, bool spatialise,
-                                   const LoopRegion& loop, float width, const QJsonObject& saved)
-{
-    if (path.isEmpty()) {
-        return;
-    }
-    if (m_nextCommit >= m_loadTotal) {
-        m_finishSent = false;
-    }
-    LoadSlot slot;
-    slot.path = path;
-    slot.pitch = pitch;
-    slot.gain = gain;
-    slot.pan = pan;
-    slot.panRandom = panRandom;
-    slot.spatialise = spatialise;
-    slot.loop = loop;
-    slot.width = width;
-    slot.saved = saved;
-    m_slots.push_back(slot);
-    const int index = m_loadTotal++;
-    m_config->lastPath = QFileInfo(path).absolutePath();
-
-    if (!m_queue) {
-        DecodedAudio audio = OpenALSoundPlayer::decodeFile(std::filesystem::path(path.toStdString()), m_stream);
-        submitDecoded(index, m_loadGeneration->load(), std::move(audio));
-        return;
-    }
-
-    SampleLoadJob job;
-    job.sceneId = m_sceneId;
-    job.padId = m_padId;
-    job.sampleIndex = index;
-    job.generation = m_loadGeneration->load();
-    job.generationToken = m_loadGeneration;
-    job.path = path;
-    job.stream = m_stream;
-    m_queue->enqueue(job);
-    update();
-    emit loadStateChanged();
-}
-
-void SoundPadWidget::submitDecoded(int index, int generation, DecodedAudio audio)
-{
-    if (!m_loadGeneration || generation != m_loadGeneration->load()) {
-        return;
-    }
-    if (index < 0 || index >= static_cast<int>(m_slots.size())) {
-        return;
-    }
-    m_incoming.insert_or_assign(index, std::move(audio));
-    flushIncoming();
-}
-
-void SoundPadWidget::setSpatialisedStereo(int index, bool on)
-{
-    if (index < 0 || index >= static_cast<int>(m_player.player.size())) {
-        return;
-    }
-    AudioSample* sample = m_player.player[static_cast<size_t>(index)];
-    if (sample->audioPlayer->getNumChannels() != 2) {
-        return;
-    }
-    if (sample->isSpatialisedStereo() == on) {
-        m_reloads.erase(sample->id);
-        return;
-    }
-
-    const int serial = ++m_reloadSerial;
-    m_reloads[sample->id] = PendingReload{ serial, on };
-
-    SampleLoadJob job;
-    job.sceneId = m_sceneId;
-    job.padId = m_padId;
-    job.generation = m_loadGeneration->load();
-    job.generationToken = m_loadGeneration;
-    job.path = QString::fromStdString(sample->sample_path);
-    job.stream = m_stream;
-    job.reloadSampleId = sample->id;
-    job.reloadSerial = serial;
-
-    if (!m_queue) {
-        submitReload(job, OpenALSoundPlayer::decodeFile(std::filesystem::path(job.path.toStdString()), job.stream));
-        return;
-    }
-    m_queue->enqueue(job);
-    emit loadStateChanged();
-}
-
-bool SoundPadWidget::isSpatialisedStereo(int index) const
-{
-    if (index < 0 || index >= static_cast<int>(m_player.player.size())) {
-        return false;
-    }
-    const AudioSample* sample = m_player.player[static_cast<size_t>(index)];
-    const auto pending = m_reloads.find(sample->id);
-    return pending != m_reloads.end() ? pending->second.spatialise : sample->isSpatialisedStereo();
-}
-
-void SoundPadWidget::submitReload(const SampleLoadJob& job, DecodedAudio audio)
-{
-    if (!m_loadGeneration || job.generation != m_loadGeneration->load()) {
-        return;
-    }
-    const auto pending = m_reloads.find(job.reloadSampleId);
-    if (pending == m_reloads.end() || pending->second.serial != job.reloadSerial) {
-        return;
-    }
-    const bool spatialise = pending->second.spatialise;
-    m_reloads.erase(pending);
-
-    int index = -1;
-    for (int i = 0; i < static_cast<int>(m_player.player.size()); ++i) {
-        if (m_player.player[static_cast<size_t>(i)]->id == job.reloadSampleId) {
-            index = i;
-            break;
-        }
-    }
-    if (index < 0 || !audio.ok) {
-        emit loadStateChanged();
-        return;
-    }
-
-    AudioSample* sample = m_player.player[static_cast<size_t>(index)];
-    OpenALSoundPlayer* player = sample->audioPlayer;
-    const bool resume = index == m_player.curSound && player->isPlaying();
-    const int positionMs = player->getPositionMS();
-
-    if (!player->uploadDecoded(std::move(audio), spatialise)) {
-        qWarning() << "SoundPadWidget: couldn't reload" << job.path;
-        emit loadStateChanged();
-        return;
-    }
-    sample->setPitch(sample->getPitch());
-    for (int bus = 0; bus < OpenALSoundPlayer::kSendCount; ++bus) {
-        player->setSend(bus, m_sends[bus]);
-    }
-    if (resume) {
-        player->setPositionMS(positionMs);
-        player->setPaused(false);
-    }
-    update();
-    emit loadStateChanged();
-}
-
-bool SoundPadWidget::commitDecoded(int slotIndex, DecodedAudio audio)
-{
-    if (slotIndex < 0 || slotIndex >= static_cast<int>(m_slots.size()) || !audio.ok) {
-        return false;
-    }
-    auto* sample = new AudioSample();
-    sample->audioPlayer = new OpenALSoundPlayer();
-    int maxId = 0;
-    for (AudioSample* existing : m_player.player) {
-        maxId = std::max(maxId, existing->id);
-    }
-    sample->id = m_player.player.empty() ? 0 : maxId + 1;
-    const LoadSlot& slot = m_slots[static_cast<size_t>(slotIndex)];
-    // Before the upload, so the first queue is already filled from the right place.
-    sample->setLoopRegion(slot.loop);
-    if (!sample->audioPlayer->uploadDecoded(std::move(audio), slot.spatialise)) {
-        delete sample;
-        return false;
-    }
-    sample->sample_path = slot.path.toStdString();
-    sample->setPitch(slot.pitch);
-    sample->setGain(slot.gain);
-    sample->setPan(slot.pan);
-    sample->setWidth(slot.width);
-    if (slot.panRandom) {
-        m_player.setRandomPan(true);
-    }
-    m_player.player.push_back(sample);
-    setupLoadedSound(slot.path);
-    m_player.recalculateDelay(static_cast<int>(m_player.player.size()) - 1);
-    for (int bus = 0; bus < OpenALSoundPlayer::kSendCount; ++bus) {
-        m_player.setSend(bus, m_sends[bus]);
-    }
-    return true;
-}
-
-void SoundPadWidget::flushIncoming()
-{
-    while (m_incoming.find(m_nextCommit) != m_incoming.end()) {
-        DecodedAudio audio = std::move(m_incoming[m_nextCommit]);
-        m_incoming.erase(m_nextCommit);
-        const int slotIndex = m_nextCommit++;
-        if (!commitDecoded(slotIndex, std::move(audio))) {
-            LoadSlot& slot = m_slots[static_cast<size_t>(slotIndex)];
-            slot.failed = true;
-            if (!slot.saved.isEmpty()) {
-                // Keep it in the project so saving doesn't drop it.
-                m_missingSamples.push_back(slot.saved);
-            }
-        }
-    }
-    update();
-    emit loadStateChanged();
-    if (m_loadTotal > 0 && m_nextCommit >= m_loadTotal && !m_finishSent) {
-        m_finishSent = true;
-        emit loadingFinished();
-        if (m_notifyWhenDone) {
-            m_notifyWhenDone = false;
-            emit filesDropped();
-        }
-    }
-}
-
-std::vector<SoundPadWidget::LoadSlot> SoundPadWidget::sampleSpecs() const
-{
-    if (!isLoading()) {
-        std::vector<LoadSlot> specs;
-        const int count = std::min(static_cast<int>(m_player.player.size()), static_cast<int>(m_soundPaths.size()));
-        for (int i = 0; i < count; ++i) {
-            LoadSlot spec;
-            spec.path = QString::fromStdString(m_soundPaths[static_cast<size_t>(i)]);
-            spec.pitch = m_player.player[static_cast<size_t>(i)]->getPitch();
-            spec.gain = m_player.player[static_cast<size_t>(i)]->getGain();
-            spec.pan = m_player.player[static_cast<size_t>(i)]->getPan();
-            spec.panRandom = m_player.isRandomPan();
-            spec.spatialise = isSpatialisedStereo(i);
-            spec.width = m_player.player[static_cast<size_t>(i)]->getWidth();
-            spec.loop = m_player.player[static_cast<size_t>(i)]->loopRegion();
-            specs.push_back(spec);
-        }
-        return specs;
-    }
-
-    std::vector<LoadSlot> specs;
-    int playerIndex = 0;
-    for (int i = 0; i < static_cast<int>(m_slots.size()); ++i) {
-        if (m_slots[static_cast<size_t>(i)].failed) {
-            continue;
-        }
-        LoadSlot spec = m_slots[static_cast<size_t>(i)];
-        if (i < m_nextCommit && playerIndex < static_cast<int>(m_player.player.size())) {
-            AudioSample* sample = m_player.player[static_cast<size_t>(playerIndex)];
-            spec.pitch = sample->getPitch();
-            spec.gain = sample->getGain();
-            spec.pan = sample->getPan();
-            spec.panRandom = m_player.isRandomPan();
-            spec.spatialise = isSpatialisedStereo(playerIndex);
-            spec.width = sample->getWidth();
-            spec.loop = sample->loopRegion();
-            ++playerIndex;
-        }
-        specs.push_back(spec);
-    }
-    return specs;
-}
-
-void SoundPadWidget::loadFromJson(const QJsonObject& root, const QString& baseDir)
-{
-    // Older files store pads under "scene<id>" but scene names under "scene<position>", so search every scene.
-    const QString prefix = QString("%1-%2").arg(m_sceneId).arg(m_padId);
-    QJsonObject pad;
-    for (auto it = root.begin(); it != root.end() && pad.isEmpty(); ++it) {
-        pad = it.value().toObject().value(prefix).toObject();
-    }
-    if (pad.isEmpty()) {
-        return;
-    }
-
-    clearPad();
-    m_notifyWhenDone = false;
-    m_stream = pad.value(QStringLiteral("isstream")).toBool(true);
-    m_player.minDelay = pad.value(QStringLiteral("mindelay")).toInt();
-    m_player.maxDelay = pad.value(QStringLiteral("maxdelay")).toInt();
-    m_player.bDelayEnabled = pad.value(QStringLiteral("delayon")).toBool(true);
-    m_player.bRandomPlayback = pad.value(QStringLiteral("playrandom")).toBool();
-    // Files before sample loops stored the pad's repeat as "loop". A pad that repeated a
-    // single sample with no delay was a continuous ambience: its sample now loops seamlessly.
-    const bool newFormat = pad.contains(QStringLiteral("repeat"));
-    const bool oldLoop = pad.value(QStringLiteral("loop")).toBool(false);
-    setRepeating(newFormat ? pad.value(QStringLiteral("repeat")).toBool() : oldLoop);
-    setSoundName(pad.value(QStringLiteral("soundname")).toString());
-    setPadVolume(static_cast<float>(pad.value(QStringLiteral("volume")).toDouble(0.7)));
-    m_sampleRate = pad.value(QStringLiteral("samplerate")).toInt();
-    m_channels = pad.value(QStringLiteral("channels")).toInt();
-    // "reverbsend"/"reverbsend2" are the first EAX and first convolution sends, as before.
-    m_sends[0] = static_cast<float>(pad.value(QStringLiteral("reverbsend")).toDouble());
-    m_sends[1] = static_cast<float>(pad.value(QStringLiteral("eaxsend2")).toDouble());
-    m_sends[2] = static_cast<float>(pad.value(QStringLiteral("reverbsend2")).toDouble());
-    m_sends[3] = static_cast<float>(pad.value(QStringLiteral("convsend2")).toDouble());
-    m_player.setup(m_config, m_padId);
-    for (int bus = 0; bus < OpenALSoundPlayer::kSendCount; ++bus) {
-        m_player.setSend(bus, m_sends[bus]);
-    }
-
-    const QJsonObject samples = pad.value(QStringLiteral("samples")).toObject();
-    int sampleCount = 0;
-    while (!samples.value(QString("sample-%1").arg(sampleCount)).toObject().isEmpty()) {
-        ++sampleCount;
-    }
-    const bool migrateToLoop = !newFormat && oldLoop && sampleCount == 1 && m_player.minDelay <= 0 && m_player.maxDelay <= 0;
-    for (int i = 0;; ++i) {
-        QJsonObject sample = samples.value(QString("sample-%1").arg(i)).toObject();
-        if (sample.isEmpty()) {
-            break;
-        }
-        QString path = sample.value(QStringLiteral("path")).toString();
-        if (path.isEmpty()) {
-            continue;
-        }
-        // Files inside the project folder are stored relative to the project file.
-        if (QDir::isRelativePath(path) && !baseDir.isEmpty()) {
-            path = QDir::cleanPath(QDir(baseDir).absoluteFilePath(path));
-            sample.insert(QStringLiteral("path"), path);
-        }
-        LoopRegion loop;
-        loop.start = std::max(0.0, sample.value(QStringLiteral("loopstart")).toDouble(0.0));
-        loop.end = sample.value(QStringLiteral("loopend")).toDouble(-1.0);
-        loop.playFromStart = sample.value(QStringLiteral("playfromstart")).toBool(true);
-        loop.playToEnd = sample.value(QStringLiteral("playtoend")).toBool(true);
-        loop.loop = sample.value(QStringLiteral("loop")).toBool(migrateToLoop);
-        loop.crossfadeMs = std::clamp(sample.value(QStringLiteral("crossfade")).toDouble(10.0), 0.0, LoopRegion::kMaxCrossfadeMs);
-        enqueueSample(path,
-            static_cast<float>(sample.value(QStringLiteral("pitch")).toDouble(1.0)),
-            static_cast<float>(sample.value(QStringLiteral("gain")).toDouble(1.0)),
-            static_cast<float>(sample.value(QStringLiteral("pan")).toDouble()),
-            sample.value(QStringLiteral("panrandom")).toBool(),
-            sample.value(QStringLiteral("spatialise")).toBool(),
-            loop,
-            static_cast<float>(std::clamp(sample.value(QStringLiteral("width")).toDouble(1.0), 0.0, 1.0)),
-            sample);
-    }
-    setScenePad(pad.value(QStringLiteral("scenepad")).toBool(false));
-    update();
-}
-
-void SoundPadWidget::saveToJson(QJsonObject& sceneObj) const
-{
-    // A pad whose files are all missing is still saved, so it isn't lost from the project.
-    if (m_soundPaths.empty() && m_missingSamples.empty()) {
-        return;
-    }
-
-    const QString prefix = QString("%1-%2").arg(m_sceneId).arg(m_padId);
-    QJsonObject pad;
-    pad.insert(QStringLiteral("isstream"), m_stream);
-    pad.insert(QStringLiteral("repeat"), isRepeating());
-    // Older versions read the pad's repeat from "loop"; keeps the file usable there.
-    pad.insert(QStringLiteral("loop"), isRepeating());
-    pad.insert(QStringLiteral("soundname"), soundName());
-    pad.insert(QStringLiteral("volume"), padVolume());
-    pad.insert(QStringLiteral("samplerate"), m_sampleRate);
-    pad.insert(QStringLiteral("channels"), m_channels);
-    pad.insert(QStringLiteral("playrandom"), m_player.bRandomPlayback);
-    pad.insert(QStringLiteral("panrandom"), m_player.isRandomPan());
-    pad.insert(QStringLiteral("reverbsend"), m_sends[0]);
-    pad.insert(QStringLiteral("eaxsend2"), m_sends[1]);
-    pad.insert(QStringLiteral("reverbsend2"), m_sends[2]);
-    pad.insert(QStringLiteral("convsend2"), m_sends[3]);
-    pad.insert(QStringLiteral("mindelay"), m_player.minDelay);
-    pad.insert(QStringLiteral("maxdelay"), m_player.maxDelay);
-    pad.insert(QStringLiteral("delayon"), m_player.isDelayEnabled());
-    if (m_scene_pad) {
-        pad.insert(QStringLiteral("scenepad"), true);
-    }
-
-    QJsonObject samples;
-    const int count = std::min(static_cast<int>(m_player.player.size()), static_cast<int>(m_soundPaths.size()));
-    for (int i = 0; i < count; ++i) {
-        QJsonObject sample;
-        QString path = QString::fromStdString(m_soundPaths[i]);
-        if (path.isEmpty()) {
-            path = QString::fromStdString(m_player.player[i]->sample_path);
-        }
-        sample.insert(QStringLiteral("path"), path);
-        sample.insert(QStringLiteral("gain"), m_player.player[i]->getGain());
-        sample.insert(QStringLiteral("pitch"), m_player.player[i]->getPitch());
-        sample.insert(QStringLiteral("pan"), m_player.player[i]->getPan());
-        sample.insert(QStringLiteral("panrandom"), m_player.isRandomPan());
-        // "spatialise" is no longer written: stereo pans as one source, with a width.
-        sample.insert(QStringLiteral("width"), m_player.player[i]->getWidth());
-        sample.insert(QStringLiteral("duration"), m_player.player[i]->audioPlayer->getDuration());
-        const LoopRegion loop = m_player.player[i]->loopRegion();
-        sample.insert(QStringLiteral("loop"), loop.loop);
-        sample.insert(QStringLiteral("playfromstart"), loop.playFromStart);
-        sample.insert(QStringLiteral("playtoend"), loop.playToEnd);
-        sample.insert(QStringLiteral("loopstart"), loop.start);
-        sample.insert(QStringLiteral("loopend"), loop.end);
-        sample.insert(QStringLiteral("crossfade"), loop.crossfadeMs);
-        samples.insert(QString("sample-%1").arg(i), sample);
-    }
-    // Samples that couldn't be loaded go back as they were, after the loaded ones.
-    for (size_t j = 0; j < m_missingSamples.size(); ++j) {
-        samples.insert(QString("sample-%1").arg(count + static_cast<int>(j)), m_missingSamples[j]);
-    }
-    pad.insert(QStringLiteral("samples"), samples);
-    sceneObj.insert(prefix, pad);
-}
-
-void SoundPadWidget::loadFiles(const QStringList& paths, bool clearExisting)
-{
-    if (paths.isEmpty()) {
-        return;
-    }
-    if (clearExisting) {
-        clearPad();
-    }
-    m_notifyWhenDone = true;
-    if (soundName().isEmpty()) {
-        setSoundName(QFileInfo(paths.front()).completeBaseName());
-    }
-    for (const QString& path : paths) {
-        enqueueSample(path, 1.0f, 1.0f, 0.0f, false, false);
-    }
-}
-
-void SoundPadWidget::clearPad()
-{
-    cancelLoading();
-    m_player.stop();
-    m_player.close();
-    m_soundPaths.clear();
-    m_missingSamples.clear();
-    if (m_scene_pad) {
-        m_scene_pad = false;
-        emit scenePadChanged();
-    }
-    m_sampleRate = 0;
-    m_channels = 0;
-    m_name->clear();
-    setRepeating(false);
-    setPadVolume(0.7f);
-    m_player.minDelay = 0;
-    m_player.maxDelay = 0;
-    m_player.bDelayEnabled = true;
-    m_player.bRandomPlayback = false;
-    m_player.bRandomPan = false;
-    m_playhead->setProgress(0.0f);
-    m_playhead->setTimeText(QString());
-    m_playhead->setVisible(false);
-    for (float& send : m_sends) {
-        send = 0.0f;
-    }
-    update(); // drops the delay border
-}
-
-void SoundPadWidget::setReverbSend(float send)
-{
-    setSend(0, send);
-}
-
-void SoundPadWidget::setReverbSend2(float send)
-{
-    setSend(OpenALSoundPlayer::kEaxReverbCount, send);
-}
-
-void SoundPadWidget::setSend(int bus, float send)
-{
-    if (bus < 0 || bus >= OpenALSoundPlayer::kSendCount) {
-        return;
-    }
-    m_sends[bus] = send;
-    m_player.setSend(bus, send);
-}
-
-float SoundPadWidget::sendLevel(int bus) const
-{
-    return bus >= 0 && bus < OpenALSoundPlayer::kSendCount ? m_sends[bus] : 0.0f;
-}
-
-SoundPadWidget::PadClip SoundPadWidget::clip() const
-{
-    PadClip clip;
-    clip.stream = m_stream;
-    clip.sampleRate = m_sampleRate;
-    clip.channels = m_channels;
-    clip.repeat = isRepeating();
-    clip.minDelay = m_player.minDelay;
-    clip.maxDelay = m_player.maxDelay;
-    clip.delayOn = m_player.isDelayEnabled();
-    clip.randomPlayback = m_player.bRandomPlayback;
-    clip.randomPan = m_player.isRandomPan();
-    clip.name = soundName();
-    clip.volume = padVolume();
-    for (int bus = 0; bus < OpenALSoundPlayer::kSendCount; ++bus) {
-        clip.sends[bus] = m_sends[bus];
-    }
-    for (const LoadSlot& spec : sampleSpecs()) {
-        PadClip::Sample sample;
-        sample.path = spec.path;
-        sample.pitch = spec.pitch;
-        sample.gain = spec.gain;
-        sample.pan = spec.pan;
-        sample.panRandom = spec.panRandom || clip.randomPan;
-        sample.spatialise = spec.spatialise;
-        sample.width = spec.width;
-        sample.loop = spec.loop;
-        clip.samples.push_back(sample);
-    }
-    clip.missing = m_missingSamples;
-    clip.scenePad = m_scene_pad;
-    clip.valid = !clip.samples.empty() || !clip.missing.empty();
-    return clip;
-}
-
-void SoundPadWidget::pasteClip(const PadClip& clip)
-{
-    if (!clip.valid) {
-        return;
-    }
-    clearPad();
-    m_stream = clip.stream;
-    m_sampleRate = clip.sampleRate;
-    m_channels = clip.channels;
-    setRepeating(clip.repeat);
-    m_player.minDelay = clip.minDelay;
-    m_player.maxDelay = clip.maxDelay;
-    m_player.bDelayEnabled = clip.delayOn;
-    m_player.bRandomPlayback = clip.randomPlayback;
-    m_player.setRandomPan(clip.randomPan);
-    setSoundName(clip.name);
-    setPadVolume(clip.volume);
-    for (int bus = 0; bus < OpenALSoundPlayer::kSendCount; ++bus) {
-        m_sends[bus] = clip.sends[bus];
-    }
-    m_missingSamples = clip.missing;
-    m_notifyWhenDone = true;
-    for (const PadClip::Sample& sample : clip.samples) {
-        enqueueSample(sample.path, sample.pitch, sample.gain, sample.pan, sample.panRandom, sample.spatialise, sample.loop, sample.width);
-    }
-    setScenePad(clip.scenePad);
-    update();
-}
-
-void SoundPadWidget::appendClip(const PadClip& clip)
-{
-    if (!clip.valid) {
-        return;
-    }
-    for (const QJsonObject& missing : clip.missing) {
-        m_missingSamples.push_back(missing);
-    }
-    m_notifyWhenDone = true;
-    for (const PadClip::Sample& sample : clip.samples) {
-        // Random pan is a setting of the pad, so the incoming pad's doesn't carry over.
-        enqueueSample(sample.path, sample.pitch, sample.gain, sample.pan, false, sample.spatialise, sample.loop, sample.width);
-    }
-    update();
-}
-
-bool SoundPadWidget::hasSounds() const
-{
-    return !m_player.player.empty() || isLoading() || !m_missingSamples.empty();
-}
-
-void SoundPadWidget::setScenePad(bool on)
-{
-    on = on && hasSounds(); // only pads with sounds can be scene pads
-    if (m_scene_pad == on) {
-        return;
-    }
-    m_scene_pad = on;
-    update();
-    emit scenePadChanged();
-}
-
-void SoundPadWidget::copyFrom(SoundPadWidget& other)
-{
-    pasteClip(other.clip());
-}
-
-int SoundPadWidget::moveSample(int from, int insertIndex)
-{
-    if (isLoading()) {
-        return -1;
-    }
-    const int count = static_cast<int>(m_player.player.size());
-    if (from < 0 || from >= count || insertIndex < 0 || insertIndex > count) {
-        return -1;
-    }
-    if (insertIndex == from || insertIndex == from + 1) {
-        return -1;
-    }
-
-    AudioSample* sample = m_player.player[static_cast<size_t>(from)];
-    m_player.player.erase(m_player.player.begin() + from);
-    const int dest = insertIndex > from ? insertIndex - 1 : insertIndex;
-    m_player.player.insert(m_player.player.begin() + dest, sample);
-
-    if (from < static_cast<int>(m_soundPaths.size())) {
-        std::string path = std::move(m_soundPaths[static_cast<size_t>(from)]);
-        m_soundPaths.erase(m_soundPaths.begin() + from);
-        const int pathDest = std::min(dest, static_cast<int>(m_soundPaths.size()));
-        m_soundPaths.insert(m_soundPaths.begin() + pathDest, std::move(path));
-    }
-
-    const auto adjust = [from, dest](int idx) {
-        if (idx == from) {
-            return dest;
-        }
-        if (from < idx && dest >= idx) {
-            return idx - 1;
-        }
-        if (from > idx && dest <= idx) {
-            return idx + 1;
-        }
-        return idx;
-    };
-    m_player.curSound = adjust(m_player.curSound);
-    return dest;
-}
-
-void SoundPadWidget::removeSampleAt(int index)
-{
-    if (isLoading()) {
-        return;
-    }
-    if (index < 0 || index >= static_cast<int>(m_player.player.size())) {
-        return;
-    }
-    m_player.stop();
-    m_reloads.erase(m_player.player[index]->id);
-    delete m_player.player[index];
-    m_player.player.erase(m_player.player.begin() + index);
-    m_soundPaths.erase(m_soundPaths.begin() + index);
-    if (m_player.player.empty() && m_missingSamples.empty()) {
-        clearPad();
-    }
-}
-
 void SoundPadWidget::beginNameEdit()
 {
     if (!m_name->isReadOnly()) {
@@ -1704,7 +1031,7 @@ void SoundPadWidget::mouseDoubleClickEvent(QMouseEvent* event)
     if (event->button() == Qt::LeftButton && m_name->isReadOnly()) {
         const QRect nameRect(m_name->mapTo(this, QPoint(0, 0)), m_name->size());
         if (nameRect.contains(event->position().toPoint())) {
-            emit padClicked(m_padId);
+            emit padClicked(padId());
             beginNameEdit();
             return;
         }
@@ -1769,7 +1096,7 @@ bool SoundPadWidget::eventFilter(QObject* watched, QEvent* event)
             const QPoint pos = mouse->position().toPoint();
             m_volumeDragIgnored = !volumePressOnHandle(m_volume, pos);
             if (m_volumeDragIgnored) {
-                emit padClicked(m_padId);
+                emit padClicked(padId());
                 // Jump to the clicked level. Eating the press stops Qt from page-stepping as well.
                 m_volume->setValue(volumeFromBarPos(m_volume, pos));
                 return true;
@@ -1780,7 +1107,7 @@ bool SoundPadWidget::eventFilter(QObject* watched, QEvent* event)
         m_volumeDragIgnored = false;
     }
     if (event->type() == QEvent::MouseButtonPress && static_cast<QMouseEvent*>(event)->button() == Qt::LeftButton) {
-        emit padClicked(m_padId);
+        emit padClicked(padId());
     }
     return QWidget::eventFilter(watched, event);
 }
@@ -1790,7 +1117,7 @@ void SoundPadWidget::mousePressEvent(QMouseEvent* event)
     if (event->button() == Qt::LeftButton) {
         m_dragStart = event->pos();
         m_ctrlClickPending = event->modifiers() & Qt::ControlModifier;
-        emit padClicked(m_padId);
+        emit padClicked(padId());
     }
     QWidget::mousePressEvent(event);
 }
@@ -1803,8 +1130,8 @@ void SoundPadWidget::mouseReleaseEvent(QMouseEvent* event)
         const bool toggle = m_ctrlClickPending && (event->modifiers() & Qt::ControlModifier)
             && (event->pos() - m_dragStart).manhattanLength() < QApplication::startDragDistance();
         m_ctrlClickPending = false;
-        if (toggle && hasSounds()) {
-            setScenePad(!m_scene_pad);
+        if (toggle && m_pad->hasSounds()) {
+            m_pad->setScenePad(!m_pad->isScenePad());
         }
     }
     QWidget::mouseReleaseEvent(event);
@@ -1902,14 +1229,14 @@ void SoundPadWidget::mouseMoveEvent(QMouseEvent* event)
     if ((event->pos() - m_dragStart).manhattanLength() < QApplication::startDragDistance()) {
         return;
     }
-    if (isLoading() || !isLoaded()) {
+    if (m_pad->isLoading() || !m_pad->isLoaded()) {
         return;
     }
     m_ctrlClickPending = false; // a drag, not a click
-    emit padDragStarted(m_padId);
+    emit padDragStarted(padId());
     auto* drag = new QDrag(this);
     auto* mime = new QMimeData();
-    mime->setData(QStringLiteral("application/x-feedra-pad"), QByteArray::number(m_padId));
+    mime->setData(QStringLiteral("application/x-feedra-pad"), QByteArray::number(padId()));
     drag->setMimeData(mime);
     // A small see-through copy of the pad rides under the pointer, and the pointer carries a
     // badge saying what the drop will do: four arrows to move, a plus to copy.
@@ -1986,7 +1313,7 @@ void SoundPadWidget::dropEvent(QDropEvent* event)
     if (event->mimeData()->hasFormat(QStringLiteral("application/x-feedra-pad"))) {
         const int from = event->mimeData()->data(QStringLiteral("application/x-feedra-pad")).toInt();
         choosePadDropAction(event);
-        emit padDropped(from, m_padId, event->dropAction() == Qt::CopyAction);
+        emit padDropped(from, padId(), event->dropAction() == Qt::CopyAction);
         return;
     }
     m_fileDragOk = false;
@@ -2003,70 +1330,22 @@ void SoundPadWidget::dropEvent(QDropEvent* event)
     chooseFileDropAction(event);
     // The drag has to finish before a question box can open, so ask on the next turn.
     QTimer::singleShot(0, this, [this, paths, add]() {
-        if (!confirmFileCount(this, paths.size())) {
+        if (!Pad::confirmFileCount(this, paths.size())) {
             return;
         }
-        loadFiles(paths, !add);
-        emit padClicked(m_padId);
+        m_pad->loadFiles(paths, !add);
+        emit padClicked(padId());
     });
-}
-
-bool SoundPadWidget::confirmFileCount(QWidget* parent, int count)
-{
-    constexpr int kAskAbove = 32;
-    if (count <= kAskAbove) {
-        return true;
-    }
-    return QMessageBox::question(parent, tr("Add files"),
-               tr("This adds %1 files to one pad. Go ahead?").arg(count),
-               QMessageBox::Yes | QMessageBox::Cancel, QMessageBox::Yes)
-        == QMessageBox::Yes;
-}
-
-QStringList SoundPadWidget::missingPaths() const
-{
-    QStringList out;
-    for (const QJsonObject& sample : m_missingSamples) {
-        out << QDir::toNativeSeparators(sample.value(QStringLiteral("path")).toString());
-    }
-    return out;
-}
-
-QStringList SoundPadWidget::samplePaths() const
-{
-    QStringList out;
-    for (const std::string& path : m_soundPaths) {
-        out << QString::fromStdString(path);
-    }
-    return out;
 }
 
 void SoundPadWidget::chooseFiles()
 {
-    const QString start = m_config->loadDialogDir(currentSamplePath());
+    const QString start = m_config->loadDialogDir(m_pad->currentSamplePath());
     const QStringList paths = QFileDialog::getOpenFileNames(this, tr("Load files"), start, AudioFormats::dialogFilters().join(QStringLiteral(";;")));
     if (!paths.isEmpty()) {
-        loadFiles(paths, true);
-        emit padClicked(m_padId);
+        m_pad->loadFiles(paths, true);
+        emit padClicked(padId());
     }
-}
-
-void SoundPadWidget::setupLoadedSound(const QString& path)
-{
-    m_soundPaths.push_back(path.toStdString());
-    m_config->lastPath = QFileInfo(path).absolutePath();
-    m_sampleRate = m_player.getSampleRate();
-    m_channels = m_player.getNumChannels();
-}
-
-void SoundPadWidget::applyVolume()
-{
-    if (!m_player.isLoaded() || m_player.player.empty()) {
-        return;
-    }
-    // SoundPlayer multiplies in each sample's own gain, and also applies this to a sample
-    // right before it starts, so a newly selected sample never starts at the wrong volume.
-    m_player.setBaseVolume(padVolume() * m_config->masterVolume() * m_config->masterFade() * m_fadeVolume);
 }
 
 void SoundPadWidget::updateVolumeLabel()
@@ -2083,13 +1362,15 @@ void SoundPadWidget::updateVolumeLabel()
 
 QString SoundPadWidget::positionTimeText() const
 {
-    const float duration = m_player.getDuration();
+    const SoundPlayer& player = m_pad->soundPlayer();
+    const float duration = player.getDuration();
     return QString(m_compactText ? QStringLiteral("%1/%2") : QStringLiteral("%1 / %2"))
-        .arg(formatClock(m_player.getPosition() * duration), formatClock(duration));
+        .arg(formatClock(player.getPosition() * duration), formatClock(duration));
 }
 
 QString SoundPadWidget::remainingTimeText() const
 {
-    const float total = m_player.isPlayingDelay() ? m_player.getTotalDelay() : m_player.getDuration();
-    return formatClock((1.0f - m_player.getPosition()) * total);
+    const SoundPlayer& player = m_pad->soundPlayer();
+    const float total = player.isPlayingDelay() ? player.getTotalDelay() : player.getDuration();
+    return formatClock((1.0f - player.getPosition()) * total);
 }

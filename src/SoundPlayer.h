@@ -86,7 +86,7 @@ public:
     // Seconds left of the delay countdown now running, or 0.
     float getRemainingDelay() const;
 
-    void setRandomPlayback(bool val) { bRandomPlayback = val; }
+    void setRandomPlayback(bool val) { bRandomPlayback = val; m_bagValid = false; }
     bool isPlayingRandom() const { return bRandomPlayback; }
 
     void setRandomPan(bool val) { bRandomPan = val; }
@@ -124,6 +124,12 @@ private:
     void checkHandover();
     void cancelHandover();
     int chooseNext() const;
+    // Makes `next` current, keeping the random pass in step.
+    void moveTo(int next);
+    void ensureShuffle() const;
+    int randomIndex(int count) const;
+    // At the first start after a stop (or the end of the list): a random pad picks its first sample.
+    void beginRunIfFresh();
     void advanceAfterEnd();
     void applyRandomPan(int index);
     void applyRandomPanOnStart();
@@ -145,4 +151,10 @@ private:
     // or from the current sample while the pad is paused.
     std::vector<OpenALSoundPlayer*> heldEnded;
     float baseVolume = -1.0f; // unknown until the pad sets it
+    // Random order (see ensureShuffle): the rest of the current pass, next at the back.
+    mutable std::vector<int> m_bag;
+    mutable bool m_bagValid = false;
+    mutable int m_bagCount = 0;
+    mutable int m_nextPassFirst = -1; // first sample of the next pass, once looked ahead to
+    bool m_freshRun = true; // nothing has started since the last stop
 };

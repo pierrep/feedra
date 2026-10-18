@@ -28,9 +28,12 @@ public:
 
     QWidget* grid() const { return m_grid; }
     SceneRowWidget* row() const { return m_row; }
-    QVector<SoundPadWidget*> pads;
+    // The pads, and the grid widgets that show them (same order, same ids).
+    QVector<Pad*> pads;
+    QVector<SoundPadWidget*> padWidgets;
 
-    SoundPadWidget* padAt(int idx) const;
+    Pad* padAt(int idx) const;
+    SoundPadWidget* padWidgetAt(int idx) const;
     void play();
     void pause();
     void stop();
@@ -54,6 +57,6 @@ private:
     QElapsedTimer m_fadeTimer;
     std::function<void()> m_fadeCallback;
     // Pads that carry on from a pause when the scene plays: only these fade in.
-    QSet<SoundPadWidget*> m_resuming;
+    QSet<Pad*> m_resuming;
     int m_scenePadCount = -1; // last count shown in the play button's tooltip
 };

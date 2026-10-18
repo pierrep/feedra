@@ -1,6 +1,6 @@
 #pragma once
 
-#include "SoundPlayer.h"
+#include "Pad.h"
 
 #include <QAbstractButton>
 #include <QJsonObject>
@@ -20,8 +20,6 @@ class QLabel;
 class QLineEdit;
 class QSlider;
 class QVariantAnimation;
-class SampleLoadQueue;
-struct SampleLoadJob;
 
 // Pointer with a round accent badge, shown while dragging onto pads: four arrows to move a
 // pad, a plus to copy a pad or add files to one, two opposing arrows to replace a pad's
@@ -88,6 +86,8 @@ private:
     std::function<void(float)> m_onScrub;
 };
 
+// One pad on the grid: draws a Pad and turns clicks, drags and drops into changes to it. The
+// pad itself (samples, settings, player) lives in the Pad, owned by the scene.
 class SoundPadWidget : public QWidget
 {
     Q_OBJECT
@@ -98,122 +98,23 @@ public:
     static constexpr int kLayoutWidth = 176;
     static constexpr int kLayoutHeight = 204;
 
-    SoundPadWidget(AppConfig* config, int sceneId, int padId, QWidget* parent = nullptr);
+    SoundPadWidget(AppConfig* config, Pad* pad, QWidget* parent = nullptr);
     ~SoundPadWidget() override;
 
-    int padId() const { return m_padId; }
-    int sceneId() const { return m_sceneId; }
-    SoundPlayer& soundPlayer() { return m_player; }
-    const SoundPlayer& soundPlayer() const { return m_player; }
+    Pad* pad() const { return m_pad; }
+    int padId() const;
 
-    QString soundName() const;
-    void setSoundName(const QString& name);
-    float padVolume() const;
-    void setPadVolume(float value);
-    // Repeat (pad): start the list again after the last sample, after the random delay.
-    bool isRepeating() const;
-    void setRepeating(bool repeat);
-    bool isLoaded() const;
-    bool isPlaying() const;
-    int sampleRate() const { return m_sampleRate; }
-    int channels() const { return m_channels; }
-    const std::vector<std::string>& soundPaths() const { return m_soundPaths; }
-
-    void updateAudio();
+    // Once per UI tick, after the pad's own tick. Does nothing while hidden.
+    void updateView();
     void setSelected(bool selected);
     void setInteractive(bool enabled);
-    void setFadeVolume(float fade);
-    void setLoadQueue(SampleLoadQueue* queue);
-    bool isLoading() const;
-    void submitDecoded(int index, int generation, DecodedAudio audio);
-    void setSpatialisedStereo(int index, bool on);
-    bool isSpatialisedStereo(int index) const;
-    void submitReload(const SampleLoadJob& job, DecodedAudio audio);
-    // Relative sample paths in the file are resolved against `baseDir` (the project file's folder).
-    void loadFromJson(const QJsonObject& root, const QString& baseDir = QString());
-    void saveToJson(QJsonObject& sceneObj) const;
-    void loadFiles(const QStringList& paths, bool clearExisting);
-    void setReverbSend(float send);
-    void setReverbSend2(float send);
-    // Effect send `bus`: 0 and 1 are the EAX reverbs, 2 and 3 the convolution reverbs.
-    void setSend(int bus, float send);
-    float sendLevel(int bus) const;
-    void clearPad();
-    void copyFrom(SoundPadWidget& other);
-
-    // Settings and samples copied from a pad. Independent of the source, so a cut can clear
-    // that pad and a paste can land on a pad in another scene.
-    struct PadClip {
-        bool valid = false;
-        bool stream = true;
-        int sampleRate = 0;
-        int channels = 0;
-        bool repeat = false;
-        bool delayOn = true;
-        int minDelay = 0;
-        int maxDelay = 0;
-        bool randomPlayback = false;
-        bool randomPan = false;
-        QString name;
-        float volume = 0.7f;
-        float sends[OpenALSoundPlayer::kSendCount] = { 0.0f, 0.0f, 0.0f, 0.0f };
-        struct Sample {
-            QString path;
-            float pitch = 1.0f;
-            float gain = 1.0f;
-            float pan = 0.0f;
-            bool panRandom = false;
-            bool spatialise = false;
-            float width = 1.0f;
-            LoopRegion loop;
-        };
-        std::vector<Sample> samples;
-        // Samples whose files couldn't be loaded, as they were saved. Kept so they aren't lost.
-        std::vector<QJsonObject> missing;
-        bool scenePad = false;
-    };
-    PadClip clip() const;
-    void pasteClip(const PadClip& clip);
-    // Adds the clip's samples after this pad's own, each with its own editor settings
-    // (pitch, gain, pan, width, loop). Nothing else about this pad changes.
-    void appendClip(const PadClip& clip);
-    // True when the pad has samples: loaded, still loading, or missing from disk.
-    bool hasSounds() const;
-    // A scene pad starts when its scene is played from the scene list. If a scene has any,
-    // only they start; otherwise every pad with sounds does. Ctrl+click toggles it.
-    bool isScenePad() const { return m_scene_pad; }
-    void setScenePad(bool on);
-    void removeSampleAt(int index);
-    int moveSample(int from, int insertIndex);
-
-    QSize sizeHint() const override;
-    QSize minimumSizeHint() const override;
-
-    // Path of the sample the pad would play next, or empty if it has none.
-    QString currentSamplePath() const;
-    // True when min or max delay is above zero, so the pad waits before it plays.
-    bool hasDelay() const;
-    // Every sample path on the pad, in order.
-    QStringList samplePaths() const;
-    // Samples from the project file that couldn't be loaded (file missing or unreadable).
-    // They stay in the project when it's saved.
-    QStringList missingPaths() const;
-
-    // Asks before a drop brings in a lot of files at once (e.g. a big folder). True to go on.
-    static bool confirmFileCount(QWidget* parent, int count);
 
 signals:
     void padClicked(int padId);
     void padDragStarted(int padId);
     // `copy` is true for Ctrl+drag (copy the pad), false for a plain drag (move it).
     void padDropped(int fromPadId, int toPadId, bool copy);
-    void scenePadChanged();
-    void filesDropped();
     void requestEdit();
-    void loadStateChanged();
-    void loadingFinished();
-    // The pad's loop icon switched the current sample's loop.
-    void sampleLoopChanged();
 
 protected:
     bool eventFilter(QObject* watched, QEvent* event) override;
@@ -226,40 +127,21 @@ protected:
     void dragEnterEvent(QDragEnterEvent* event) override;
     void dragMoveEvent(QDragMoveEvent* event) override;
     void dropEvent(QDropEvent* event) override;
+    void showEvent(QShowEvent* event) override;
+
+    QSize sizeHint() const override;
+    QSize minimumSizeHint() const override;
 
 private:
-    struct LoadSlot {
-        QString path;
-        float pitch = 1.0f;
-        float gain = 1.0f;
-        float pan = 0.0f;
-        bool panRandom = false;
-        bool spatialise = false;
-        float width = 1.0f;
-        LoopRegion loop;
-        bool failed = false;
-        QJsonObject saved; // the sample as the project file had it, if it came from one
-    };
-
-    struct PendingReload {
-        int serial = 0;
-        bool spatialise = false;
-    };
-
     void chooseFiles();
-    void cancelLoading();
-    void enqueueSample(const QString& path, float pitch, float gain, float pan, bool panRandom, bool spatialise,
-                       const LoopRegion& loop = LoopRegion{}, float width = 1.0f, const QJsonObject& saved = QJsonObject());
-    bool commitDecoded(int slotIndex, DecodedAudio audio);
-    void flushIncoming();
-    std::vector<LoadSlot> sampleSpecs() const;
-    void setupLoadedSound(const QString& path);
-    void applyVolume();
     void updateVolumeLabel();
     QString remainingTimeText() const;
     QString positionTimeText() const;
     void refreshPeaks();
     void refreshChrome();
+    // Controls, playhead and readouts from the pad's state.
+    void refreshUiState();
+    void onPadChanged();
     void beginNameEdit();
     void endNameEdit();
     QRect padCardRect() const;
@@ -267,28 +149,8 @@ private:
     void layoutContents();
 
     AppConfig* m_config = nullptr;
-    SampleLoadQueue* m_queue = nullptr;
-    SoundPlayer m_player;
-    std::shared_ptr<std::atomic<int>> m_loadGeneration = std::make_shared<std::atomic<int>>(0);
-    std::vector<LoadSlot> m_slots;
-    std::vector<QJsonObject> m_missingSamples;
-    bool m_scene_pad = false;
+    Pad* m_pad = nullptr;
     bool m_ctrlClickPending = false; // Ctrl held at press: toggles the scene pad mark on release unless it becomes a drag
-    std::map<int, DecodedAudio> m_incoming;
-    std::map<int, PendingReload> m_reloads; // keyed by AudioSample::id
-    int m_reloadSerial = 0;
-    int m_loadTotal = 0;
-    int m_nextCommit = 0;
-    bool m_finishSent = false;
-    bool m_notifyWhenDone = false;
-    // Send levels, kept here too so they survive loading (bus order: EAX 1, EAX 2, conv 1, conv 2).
-    float m_sends[OpenALSoundPlayer::kSendCount] = { 0.0f, 0.0f, 0.0f, 0.0f };
-    int m_sceneId = 0;
-    int m_padId = 0;
-    bool m_stream = true;
-    int m_sampleRate = 0;
-    int m_channels = 0;
-    float m_fadeVolume = 1.0f;
     bool m_selected = false;
     bool m_uiLoaded = false;
     bool m_uiLoading = false;
@@ -299,7 +161,6 @@ private:
     QString m_volumeStyle;
     QString m_nameBeforeEdit;
     bool m_compactText = false; // shortened time and dB readouts on small pads
-    std::vector<std::string> m_soundPaths;
 
     QWidget* m_card = nullptr;
     GlyphButton* m_load = nullptr;

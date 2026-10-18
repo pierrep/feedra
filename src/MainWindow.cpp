@@ -1,7 +1,9 @@
 #include "MainWindow.h"
 #include "AudioFormats.h"
+#include "FsPath.h"
 #include "OpenALSoundPlayer.h"
 #include "PeakStore.h"
+#include "ProjectFile.h"
 #include "ProjectBackups.h"
 #include "SampleLoadQueue.h"
 #include "Scene.h"
@@ -10,6 +12,8 @@
 #include "widgets/SampleRowWidget.h"
 #include "widgets/SoundPadWidget.h"
 #include "widgets/WaveformWidget.h"
+#include "widgets/SettingsPage.h"
+#include "widgets/ThemePage.h"
 #include "widgets/FileBrowserWidget.h"
 #include "widgets/LogWindow.h"
 #include "VolumeDb.h"
@@ -80,24 +84,6 @@ namespace {
 
 constexpr float kSampleGainMinDb = -12.0f;
 constexpr float kSampleGainMaxDb = 24.0f;
-
-QString defaultImpulsePath(const AppConfig& config)
-{
-    return QDir(config.dataDir()).filePath(QStringLiteral("ir/impulse.wav"));
-}
-
-std::filesystem::path toImpulsePath(const QString& path)
-{
-    return std::filesystem::path(path.toStdWString());
-}
-
-QString fromImpulsePath(const std::filesystem::path& path)
-{
-    if (path.empty()) {
-        return {};
-    }
-    return QString::fromStdWString(path.wstring());
-}
 
 // Shows a file path in whatever width the header has left, keeping the file name visible.
 class SettingsPathLabel : public QLabel
@@ -244,14 +230,14 @@ MainWindow::MainWindow(QWidget* parent)
     m_config.setup();
     PeakStore::instance().setCacheDir(m_config.waveformCacheDir());
     m_loads = new SampleLoadQueue(this);
-    OpenALSoundPlayer::initialize();
+    AudioDevice::initialize();
     for (int which = 0; which < OpenALSoundPlayer::kConvolutionCount; ++which) {
-        OpenALSoundPlayer::setConvolutionGain(OpenALSoundPlayer::defaultConvolutionGain(), which);
-        if (!OpenALSoundPlayer::setConvolutionImpulse(toImpulsePath(defaultImpulsePath(m_config)), which)) {
-            qWarning() << "Convolution impulse not loaded" << defaultImpulsePath(m_config);
+        AudioDevice::setConvolutionGain(AudioDevice::defaultConvolutionGain(), which);
+        if (!AudioDevice::setConvolutionImpulse(FsPath::fromQString(m_config.defaultImpulsePath()), which)) {
+            qWarning() << "Convolution impulse not loaded" << m_config.defaultImpulsePath();
         }
     }
-    m_curDevice = QString::fromStdString(OpenALSoundPlayer::getDefaultDeviceString());
+    m_curDevice = QString::fromStdString(AudioDevice::defaultDeviceName());
 
     buildMenus();
     buildUi();
@@ -294,124 +280,6 @@ MainWindow::MainWindow(QWidget* parent)
     // Arrow keys are otherwise consumed by the focused scroll area, slider or button before reaching this window.
     qApp->installEventFilter(this);
 }
-
-// `path` relative to `projectDir` ("files/x.wav") when it's inside that folder; otherwise
-// unchanged. Always with forward slashes.
-static QString projectRelativePath(const QString& path, const QString& projectDir)
-{
-    if (path.isEmpty() || projectDir.isEmpty() || QDir::isRelativePath(path)) {
-        return QDir::fromNativeSeparators(path);
-    }
-    const QString rel = QDir(projectDir).relativeFilePath(QDir::cleanPath(path));
-    if (rel.isEmpty() || QDir::isAbsolutePath(rel) || rel == QLatin1String("..") || rel.startsWith(QLatin1String("../"))) {
-        return QDir::fromNativeSeparators(path);
-    }
-    return rel;
-}
-
-// One project export: the copies to make, filled in by saveConfigTo on the UI thread, then
-// worked through by the export thread. The counters are read by the UI thread for the bar.
-struct ExportState {
-    struct Copy {
-        QString src;
-        QString dest;
-        qint64 bytes = 0;
-    };
-    QString jsonPath;
-    QString filesDir;
-    QByteArray json;
-    std::vector<Copy> copies;
-    QHash<QString, QString> destBySource; // absolute source path -> destination
-    QSet<QString> usedNames;              // lower-cased names taken in the files folder
-    QStringList missing;                  // sources that weren't found when exporting
-    qint64 totalBytes = 0;
-
-    std::atomic<qint64> doneBytes { 0 };
-    std::atomic<int> doneFiles { 0 };
-    std::atomic<bool> cancel { false };
-    std::atomic<bool> finished { false };
-    std::mutex failedMutex;
-    QStringList failed;
-
-    // The file a sample is copied to. The same source always gets the same copy; a different
-    // source with a name already taken gets "name (2).ext", "name (3).ext" and so on.
-    QString destinationFor(const QFileInfo& src)
-    {
-        const QString key = src.absoluteFilePath();
-        const auto found = destBySource.constFind(key);
-        if (found != destBySource.constEnd()) {
-            return found.value();
-        }
-        const QString base = src.completeBaseName();
-        const QString suffix = src.suffix().isEmpty() ? QString() : QStringLiteral(".") + src.suffix();
-        QString name = src.fileName();
-        for (int n = 2; usedNames.contains(name.toLower()); ++n) {
-            name = QStringLiteral("%1 (%2)%3").arg(base).arg(n).arg(suffix);
-        }
-        usedNames.insert(name.toLower());
-        const QString dest = QDir(filesDir).filePath(name);
-        destBySource.insert(key, dest);
-        if (QFileInfo(dest).absoluteFilePath() != key) {
-            copies.push_back({ key, dest, src.size() });
-            totalBytes += src.size();
-        }
-        return dest;
-    }
-
-    void fail(const QString& path)
-    {
-        std::lock_guard<std::mutex> lock(failedMutex);
-        failed << QDir::toNativeSeparators(path);
-    }
-
-    // Runs on the export thread.
-    void run()
-    {
-        constexpr qint64 kBlock = 1 << 20;
-        QByteArray block;
-        for (const Copy& copy : copies) {
-            if (cancel.load()) {
-                break;
-            }
-            const QFileInfo srcInfo(copy.src);
-            const QFileInfo destInfo(copy.dest);
-            // Already there from an earlier export of the same file: leave it.
-            if (destInfo.exists() && destInfo.size() == copy.bytes && destInfo.lastModified() >= srcInfo.lastModified()) {
-                doneBytes += copy.bytes;
-                ++doneFiles;
-                continue;
-            }
-            QFile in(copy.src);
-            QSaveFile out(copy.dest); // written to a temporary file, so a stopped copy leaves nothing behind
-            qint64 copied = 0;
-            bool ok = in.open(QIODevice::ReadOnly) && out.open(QIODevice::WriteOnly);
-            while (ok && !cancel.load()) {
-                block = in.read(kBlock);
-                if (block.isEmpty()) {
-                    ok = in.atEnd();
-                    break;
-                }
-                if (out.write(block) != block.size()) {
-                    ok = false;
-                    break;
-                }
-                copied += block.size();
-                doneBytes += block.size();
-            }
-            if (cancel.load()) {
-                out.cancelWriting();
-                break;
-            }
-            if (!ok || !out.commit()) {
-                fail(copy.src);
-            }
-            // Keep the bar honest when a file turned out a different size or failed part way.
-            doneBytes += copy.bytes - copied;
-            ++doneFiles;
-        }
-        finished.store(true);
-    }
-};
 
 MainWindow::~MainWindow()
 {
@@ -690,7 +558,7 @@ void MainWindow::buildUi()
     sampleHost->setAcceptsFiles(true);
     connect(sampleHost, &ReorderListHost::filesDropped, this, [this](const QStringList& paths) {
         auto* pad = activePad();
-        if (!pad || !SoundPadWidget::confirmFileCount(this, paths.size())) {
+        if (!pad || !Pad::confirmFileCount(this, paths.size())) {
             return;
         }
         pad->loadFiles(paths, false);
@@ -786,7 +654,7 @@ void MainWindow::buildUi()
     m_fileBrowser->setProjectFoldersProvider([this]() {
         QStringList folders;
         for (Scene* scene : m_scenes) {
-            for (SoundPadWidget* pad : scene->pads) {
+            for (Pad* pad : scene->pads) {
                 for (const QString& path : pad->samplePaths()) {
                     folders << QFileInfo(path).absolutePath();
                 }
@@ -794,10 +662,8 @@ void MainWindow::buildUi()
         }
         return folders;
     });
-    connect(m_fileBrowser, &FileBrowserWidget::libraryFolderChosen, this, [this](const QString& dir) {
-        m_updatingControls = true;
-        m_libraryPath->setText(dir);
-        m_updatingControls = false;
+    connect(m_fileBrowser, &FileBrowserWidget::libraryFolderChosen, this, [this](const QString&) {
+        m_settingsPage->sync(); // the browser has set the library already
     });
 
     m_sidebarStack->addWidget(m_scenesPage);
@@ -808,8 +674,20 @@ void MainWindow::buildUi()
     body->addWidget(side);
     mainLayout->addLayout(body, 1);
 
-    buildSettingsPage();
-    buildThemePage();
+    m_settingsPage = new SettingsPage(m_config, m_pages);
+    connect(m_settingsPage, &SettingsPage::backRequested, this, [this]() {
+        setPage(Page::Main);
+        setSidebarView(SidebarView::Scenes);
+    });
+    connect(m_settingsPage, &SettingsPage::sceneLimitChanged, this, [this]() {
+        m_addScene->setEnabled(static_cast<unsigned int>(m_scenes.size()) < m_config.maxScenes);
+    });
+    connect(m_settingsPage, &SettingsPage::reverbChanged, this, &MainWindow::refreshSendLabels);
+    m_themePage = new ThemePage(m_pages);
+    connect(m_themePage, &ThemePage::backRequested, this, [this]() {
+        setPage(Page::Main);
+        setSidebarView(SidebarView::Scenes);
+    });
 
     m_pages->addWidget(m_mainPage);
     m_pages->addWidget(m_settingsPage);
@@ -1077,7 +955,7 @@ void MainWindow::buildUi()
             for (int i = 0; i < static_cast<int>(pad->soundPlayer().player.size()); ++i) {
                 pad->soundPlayer().recalculateDelay(i);
             }
-            pad->update(); // the delay border comes and goes with the delay
+            pad->notifyChanged(); // the delay border comes and goes with the delay
             updateMainControls();
         }
     });
@@ -1092,7 +970,7 @@ void MainWindow::buildUi()
             for (int i = 0; i < static_cast<int>(pad->soundPlayer().player.size()); ++i) {
                 pad->soundPlayer().recalculateDelay(i);
             }
-            pad->update(); // the delay border comes and goes with the delay
+            pad->notifyChanged(); // the delay border comes and goes with the delay
             updateMainControls();
         }
     });
@@ -1128,7 +1006,7 @@ void MainWindow::buildUi()
             pad->soundPlayer().setDelayEnabled(on);
             m_minDelay->setEnabled(on);
             m_maxDelay->setEnabled(on);
-            pad->update(); // the delay border comes and goes with the delay
+            pad->notifyChanged(); // the delay border comes and goes with the delay
             refreshDelayReadout();
         }
     });
@@ -1212,9 +1090,10 @@ void MainWindow::connectScene(Scene* scene)
 {
     connect(scene, &Scene::padSelected, this, &MainWindow::onPadClicked);
     connect(scene->row(), &SceneRowWidget::deleteRequested, this, &MainWindow::deleteScene);
-    for (SoundPadWidget* pad : scene->pads) {
+    for (int i = 0; i < scene->pads.size(); ++i) {
+        Pad* pad = scene->pads[i];
         pad->setLoadQueue(m_loads);
-        connect(pad, &SoundPadWidget::padDropped, this, [this, pad](int from, int to, bool copy) {
+        connect(scene->padWidgets[i], &SoundPadWidget::padDropped, this, [this, pad](int from, int to, bool copy) {
             if (pad->hasSounds()) {
                 // Onto a pad with sounds: add to them rather than replace them.
                 mergePad(from, to, copy);
@@ -1224,8 +1103,8 @@ void MainWindow::connectScene(Scene* scene)
                 movePad(from, to);
             }
         });
-        connect(pad, &SoundPadWidget::filesDropped, this, [this]() { updateMainControls(); });
-        connect(pad, &SoundPadWidget::scenePadChanged, this, [this, pad]() {
+        connect(pad, &Pad::filesDropped, this, [this]() { updateMainControls(); });
+        connect(pad, &Pad::scenePadChanged, this, [this, pad]() {
             if (pad == activePad() && m_scenePad) {
                 const bool was = m_updatingControls;
                 m_updatingControls = true;
@@ -1233,7 +1112,7 @@ void MainWindow::connectScene(Scene* scene)
                 m_updatingControls = was;
             }
         });
-        connect(pad, &SoundPadWidget::sampleLoopChanged, this, [this, pad]() {
+        connect(pad, &Pad::sampleLoopChanged, this, [this, pad]() {
             if (pad == activePad()) {
                 updateEditControls();
             }
@@ -1244,13 +1123,13 @@ void MainWindow::connectScene(Scene* scene)
                 updatePanControl(pad->soundPlayer().player.at(sampleIndex));
             }
         });
-        connect(pad, &SoundPadWidget::loadStateChanged, this, [this, pad]() {
+        connect(pad, &Pad::loadStateChanged, this, [this, pad]() {
             refreshLoadUi();
             if (pad == activePad() && m_sidebar == SidebarView::Editor) {
                 refreshEditorPage();
             }
         });
-        connect(pad, &SoundPadWidget::loadingFinished, this, [this, pad]() {
+        connect(pad, &Pad::loadingFinished, this, [this, pad]() {
             for (Scene* scene : m_scenes) {
                 if (scene->id == pad->sceneId() && scene->isPlaying && pad->isLoaded() && !pad->isLoading()) {
                     pad->soundPlayer().setPaused(false);
@@ -1475,7 +1354,7 @@ void MainWindow::updateMainControls()
         m_minDelay->setEnabled(delayOn);
         m_maxDelay->setEnabled(delayOn);
         for (int bus = 0; bus < OpenALSoundPlayer::kSendCount; ++bus) {
-            m_sendSliders[bus]->setEnabled(OpenALSoundPlayer::sendAvailable(bus));
+            m_sendSliders[bus]->setEnabled(AudioDevice::sendAvailable(bus));
         }
     } else {
         m_infoLabel->setText(tr("channels: —\nformat: —\nsub-format: —\nsample rate: —\npath: —\nNum sounds: —"));
@@ -1495,8 +1374,8 @@ void MainWindow::updateMainControls()
     m_updatingControls = false;
 
     for (Scene* scene : m_scenes) {
-        for (SoundPadWidget* p : scene->pads) {
-            p->setSelected(scene == activeScene() && p->padId() == m_config.activeSoundIdx);
+        for (SoundPadWidget* w : scene->padWidgets) {
+            w->setSelected(scene == activeScene() && w->padId() == m_config.activeSoundIdx);
         }
     }
 }
@@ -1516,8 +1395,8 @@ void MainWindow::refreshSampleInfo()
     m_infoSound = cur;
     auto* audio = player.player[static_cast<size_t>(cur)]->audioPlayer;
     QString path;
-    if (cur < static_cast<int>(pad->soundPaths().size())) {
-        path = QString::fromStdString(pad->soundPaths()[static_cast<size_t>(cur)]);
+    if (cur < static_cast<int>(pad->samplePaths().size())) {
+        path = pad->samplePath(cur);
     }
     m_infoLabel->setText(tr("channels: %1\nformat: %2\nsub-format: %3\nsample rate: %4\npath: %5\nNum sounds: %6")
         .arg(audio->getNumChannels())
@@ -1574,10 +1453,10 @@ void MainWindow::refreshWaveform()
         return;
     }
     QString path;
-    if (cur < static_cast<int>(pad->soundPaths().size())) {
-        path = QString::fromStdString(pad->soundPaths()[static_cast<size_t>(cur)]);
+    if (cur < static_cast<int>(pad->samplePaths().size())) {
+        path = pad->samplePath(cur);
     } else {
-        path = QString::fromStdString(audio->getFilePath().string());
+        path = FsPath::toQString(audio->getFilePath());
     }
     m_waveform->setSample(path, audio->getDuration());
     if (!m_waveform->isDraggingHandle()) {
@@ -1780,7 +1659,7 @@ void MainWindow::rebuildEditSamples()
         return;
     }
     for (AudioSample* sample : pad->soundPlayer().player) {
-        auto* row = new SampleRowWidget(sample->id, QString::fromStdString(sample->sample_path), m_sampleListLayout->parentWidget());
+        auto* row = new SampleRowWidget(sample->id, sample->path, m_sampleListLayout->parentWidget());
         m_sampleListLayout->insertWidget(m_sampleListLayout->count() - 1, row);
         m_sampleRows.push_back(row);
         const auto selectSample = [this, pad](int id, bool play) {
@@ -1803,671 +1682,6 @@ void MainWindow::rebuildEditSamples()
     updateMainControls();
 }
 
-namespace {
-// A rounded "card" grouping related settings: title, optional one-line hint, then
-// label/field rows in a two-column grid.
-struct SettingsCard {
-    QFrame* frame = nullptr;
-    QGridLayout* grid = nullptr;
-    int row = 0;
-
-    void addRow(const QString& label, QWidget* field, const QString& hint = QString())
-    {
-        auto* caption = new QLabel(label, frame);
-        grid->addWidget(caption, row, 0, Qt::AlignLeft | Qt::AlignVCenter);
-        grid->addWidget(field, row, 1);
-        ++row;
-        if (!hint.isEmpty()) {
-            auto* note = new QLabel(hint, frame);
-            note->setObjectName(QStringLiteral("FieldHint"));
-            note->setWordWrap(true);
-            grid->addWidget(note, row, 1);
-            ++row;
-        }
-    }
-
-    void addFullRow(QWidget* widget)
-    {
-        grid->addWidget(widget, row, 0, 1, 2);
-        ++row;
-    }
-};
-
-SettingsCard makeCard(QWidget* parent, const QString& title, const QString& hint = QString())
-{
-    SettingsCard card;
-    card.frame = new QFrame(parent);
-    card.frame->setObjectName(QStringLiteral("SettingsCard"));
-    card.frame->setAttribute(Qt::WA_StyledBackground, true);
-    auto* layout = new QVBoxLayout(card.frame);
-    layout->setContentsMargins(20, 18, 20, 20);
-    layout->setSpacing(4);
-    auto* heading = new QLabel(title, card.frame);
-    heading->setObjectName(QStringLiteral("CardTitle"));
-    layout->addWidget(heading);
-    if (!hint.isEmpty()) {
-        auto* note = new QLabel(hint, card.frame);
-        note->setObjectName(QStringLiteral("CardHint"));
-        note->setWordWrap(true);
-        layout->addWidget(note);
-    }
-    layout->addSpacing(12);
-    card.grid = new QGridLayout();
-    card.grid->setContentsMargins(0, 0, 0, 0);
-    card.grid->setHorizontalSpacing(16);
-    card.grid->setVerticalSpacing(12);
-    card.grid->setColumnMinimumWidth(0, 150);
-    card.grid->setColumnStretch(1, 1);
-    layout->addLayout(card.grid);
-    return card;
-}
-
-// A scrolling column of cards, kept to a readable width and left-aligned.
-QVBoxLayout* makeCardColumn(QWidget* page, QVBoxLayout* pageLayout)
-{
-    auto* scroll = new QScrollArea(page);
-    scroll->setWidgetResizable(true);
-    scroll->setFrameShape(QFrame::NoFrame);
-    auto* wrapper = new QWidget(scroll);
-    wrapper->setObjectName(QStringLiteral("SettingsPage"));
-    wrapper->setAttribute(Qt::WA_StyledBackground, true);
-    auto* row = new QHBoxLayout(wrapper);
-    row->setContentsMargins(0, 0, 12, 0);
-    auto* column = new QWidget(wrapper);
-    column->setObjectName(QStringLiteral("SettingsPage"));
-    column->setMaximumWidth(760);
-    auto* cards = new QVBoxLayout(column);
-    cards->setContentsMargins(0, 4, 0, 16);
-    cards->setSpacing(16);
-    row->addWidget(column, 1);
-    row->addStretch(0);
-    scroll->setWidget(wrapper);
-    pageLayout->addWidget(scroll, 1);
-    return cards;
-}
-
-// Preview of a theme preset: a tiny window with pads and a scene list in that preset's
-// colours, named underneath. Checked when it is the current preset.
-class ThemeTile : public QAbstractButton
-{
-public:
-    ThemeTile(Theme::Id id, QWidget* parent)
-        : QAbstractButton(parent)
-        , m_id(id)
-    {
-        setCheckable(true);
-        setFixedSize(132, 120);
-        setCursor(Qt::PointingHandCursor);
-        setAttribute(Qt::WA_Hover);
-        setText(Theme::idLabel(id));
-        setToolTip(tr("Use the %1 theme").arg(Theme::idLabel(id)));
-    }
-
-    Theme::Id themeId() const { return m_id; }
-
-protected:
-    void paintEvent(QPaintEvent*) override
-    {
-        QPainter p(this);
-        p.setRenderHint(QPainter::Antialiasing, true);
-        const Theme::Palette& ui = Theme::instance().palette();
-        const Theme::Palette t = Theme::instance().themePalette(m_id); // with your changes
-        const QRectF tile = QRectF(rect()).adjusted(2, 2, -2, -2);
-
-        p.setPen(QPen(isChecked() ? ui.focusBorder : (underMouse() ? ui.textMuted : ui.panelBorder),
-            isChecked() ? 2.0 : 1.0));
-        p.setBrush(ui.fieldBackground);
-        p.drawRoundedRect(tile, 12, 12);
-
-        // Mini window in the preset's own colours.
-        const QRectF win(tile.left() + 8, tile.top() + 8, tile.width() - 16, 76);
-        p.setPen(QPen(t.panelBorder, 1.0));
-        p.setBrush(t.background);
-        p.drawRoundedRect(win, 7, 7);
-
-        const QRectF side(win.right() - 35, win.top() + 1, 34, win.height() - 2);
-        p.setPen(Qt::NoPen);
-        p.setBrush(t.panelBackground);
-        p.drawRoundedRect(side, 6, 6);
-        for (int i = 0; i < 3; ++i) {
-            const QRectF sceneRow(side.left() + 4, side.top() + 7 + i * 14, side.width() - 8, 9);
-            p.setBrush(i == 0 ? t.sceneActiveFill : t.sceneFill);
-            p.setPen(QPen(i == 0 ? t.sceneActiveBorder : t.sceneBorder, 1.0));
-            p.drawRoundedRect(sceneRow, 3, 3);
-        }
-
-        const qreal padW = 24;
-        const qreal padH = 28;
-        for (int i = 0; i < 4; ++i) {
-            const int col = i % 2;
-            const int r = i / 2;
-            const QRectF pad(win.left() + 7 + col * (padW + 6), win.top() + 7 + r * (padH + 6), padW, padH);
-            const bool live = i == 0;
-            p.setBrush(t.padFill);
-            p.setPen(QPen(live ? t.playLoaded : t.padBorder, live ? 1.4 : 1.0));
-            p.drawRoundedRect(pad, 4, 4);
-            p.setPen(Qt::NoPen);
-            p.setBrush(live ? t.playLoaded : t.playEmpty);
-            p.drawEllipse(QPointF(pad.center().x(), pad.top() + 11), 5.0, 5.0);
-            p.setBrush(live ? t.playhead : t.playheadBorder);
-            p.drawRoundedRect(QRectF(pad.left() + 4, pad.bottom() - 7, live ? padW * 0.55 : padW - 8, 2.5), 1, 1);
-        }
-        // Accent chip, so presets with similar grounds are easy to tell apart.
-        p.setBrush(t.playLoaded);
-        p.drawEllipse(QPointF(win.left() + 68, win.top() + 13), 3.5, 3.5);
-
-        QFont f = font();
-        f.setWeight(isChecked() ? QFont::DemiBold : QFont::Medium);
-        p.setFont(f);
-        p.setPen(ui.text);
-        const QRectF label(tile.left() + 12, win.bottom() + 6, tile.width() - 24, tile.bottom() - win.bottom() - 10);
-        p.drawText(label, Qt::AlignLeft | Qt::AlignVCenter, text());
-        if (isChecked()) {
-            p.setBrush(ui.focusBorder);
-            p.setPen(Qt::NoPen);
-            const QPointF c(label.right() - 6, label.center().y());
-            p.drawEllipse(c, 7, 7);
-            p.setPen(QPen(Theme::contrastOn(ui.focusBorder), 1.6, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
-            QPolygonF tick;
-            tick << QPointF(c.x() - 3, c.y()) << QPointF(c.x() - 0.8, c.y() + 2.3) << QPointF(c.x() + 3.2, c.y() - 2.2);
-            p.drawPolyline(tick);
-        }
-    }
-
-private:
-    Theme::Id m_id;
-};
-
-// Round colour swatch for the accent picker. With no colour it draws a dashed "custom" circle.
-class AccentSwatch : public QAbstractButton
-{
-public:
-    AccentSwatch(const QColor& color, const QString& name, QWidget* parent)
-        : QAbstractButton(parent)
-        , m_color(color)
-    {
-        setCheckable(true);
-        setFixedSize(34, 34);
-        setCursor(Qt::PointingHandCursor);
-        setAttribute(Qt::WA_Hover);
-        setToolTip(name);
-        setAccessibleName(name);
-    }
-
-    QColor color() const { return m_color; }
-    void setColor(const QColor& color)
-    {
-        m_color = color;
-        update();
-    }
-
-protected:
-    void paintEvent(QPaintEvent*) override
-    {
-        QPainter p(this);
-        p.setRenderHint(QPainter::Antialiasing, true);
-        const Theme::Palette& ui = Theme::instance().palette();
-        const QRectF outer = QRectF(rect()).adjusted(1, 1, -1, -1);
-        const QRectF inner = outer.adjusted(4, 4, -4, -4);
-        if (isChecked()) {
-            p.setPen(QPen(ui.focusBorder, 2.0));
-            p.setBrush(Qt::NoBrush);
-            p.drawEllipse(outer);
-        }
-        if (!m_color.isValid() && isChecked()) {
-            // Custom accent in use: show it, with a small plus to say "pick another".
-            p.setPen(Qt::NoPen);
-            p.setBrush(Theme::instance().accent());
-            p.drawEllipse(inner);
-            p.setPen(QPen(Theme::contrastOn(Theme::instance().accent()), 1.6, Qt::SolidLine, Qt::RoundCap));
-            const QPointF c = inner.center();
-            p.drawLine(QPointF(c.x() - 4, c.y()), QPointF(c.x() + 4, c.y()));
-            p.drawLine(QPointF(c.x(), c.y() - 4), QPointF(c.x(), c.y() + 4));
-            return;
-        }
-        if (!m_color.isValid()) {
-            QPen dashed(underMouse() ? ui.text : ui.textMuted, 1.2);
-            dashed.setDashPattern({2.5, 2.0});
-            p.setPen(dashed);
-            p.setBrush(Qt::NoBrush);
-            p.drawEllipse(inner);
-            p.setPen(QPen(underMouse() ? ui.text : ui.textMuted, 1.6, Qt::SolidLine, Qt::RoundCap));
-            const QPointF c = inner.center();
-            p.drawLine(QPointF(c.x() - 4, c.y()), QPointF(c.x() + 4, c.y()));
-            p.drawLine(QPointF(c.x(), c.y() - 4), QPointF(c.x(), c.y() + 4));
-            return;
-        }
-        p.setPen(underMouse() ? QPen(ui.text, 1.0) : Qt::NoPen);
-        p.setBrush(m_color);
-        p.drawEllipse(inner);
-    }
-
-private:
-    QColor m_color;
-};
-
-struct AccentChoice {
-    const char* name;
-    const char* hex;
-};
-
-constexpr AccentChoice kAccents[] = {
-    {"Ember", "#ff7a3d"},
-    {"Amber", "#f2c14e"},
-    {"Teal", "#4fb6a8"},
-    {"Sky", "#5aa9f0"},
-    {"Violet", "#a78bfa"},
-    {"Rose", "#ec6a8f"},
-};
-}
-
-QWidget* MainWindow::buildPageHeader(QWidget* page, const QString& title, const QString& subtitle)
-{
-    auto* header = new QWidget(page);
-    auto* row = new QHBoxLayout(header);
-    row->setContentsMargins(0, 0, 0, 0);
-    row->setSpacing(16);
-    auto* text = new QVBoxLayout();
-    text->setSpacing(2);
-    auto* heading = new QLabel(title, header);
-    heading->setObjectName(QStringLiteral("SettingsTitle"));
-    text->addWidget(heading);
-    auto* sub = new QLabel(subtitle, header);
-    sub->setObjectName(QStringLiteral("PageSubtitle"));
-    text->addWidget(sub);
-    row->addLayout(text, 1);
-    auto* back = new QPushButton(tr("Back to scenes"), header);
-    back->setCursor(Qt::PointingHandCursor);
-    back->setToolTip(tr("Return to the pad grid (Ctrl+1)"));
-    connect(back, &QPushButton::clicked, this, [this]() {
-        setPage(Page::Main);
-        setSidebarView(SidebarView::Scenes);
-    });
-    row->addWidget(back, 0, Qt::AlignTop);
-    return header;
-}
-
-void MainWindow::buildSettingsPage()
-{
-    m_settingsPage = new QWidget(m_pages);
-    m_settingsPage->setObjectName(QStringLiteral("SettingsPage"));
-    m_settingsPage->setAttribute(Qt::WA_StyledBackground, true);
-    auto* outer = new QVBoxLayout(m_settingsPage);
-    outer->setContentsMargins(32, 24, 20, 0);
-    outer->setSpacing(20);
-    outer->addWidget(buildPageHeader(m_settingsPage, tr("Settings"),
-        tr("How new scenes and pads start out, where samples live, and the reverb.")));
-    QVBoxLayout* cards = makeCardColumn(m_settingsPage, outer);
-    QWidget* host = cards->parentWidget();
-
-    SettingsCard startup = makeCard(host, tr("Settings file"),
-        tr("The file open when Feedra quits is remembered for the next launch."));
-    m_loadLastSettings = new QCheckBox(tr("Load the last settings file on startup"), startup.frame);
-    startup.addRow(tr("On startup"), m_loadLastSettings);
-    m_autosave = new QCheckBox(tr("Save scenes and pads on quit"), startup.frame);
-    startup.addRow(tr("Autosave"), m_autosave,
-        tr("Off: changes made while playing, such as switching a sample's loop from its pad, are "
-           "kept only when you save. App settings are still saved on quit."));
-    cards->addWidget(startup.frame);
-
-    // Scenes and pads
-    SettingsCard scenes = makeCard(host, tr("Scenes and pads"),
-        tr("Defaults for new scenes and pads. Existing scenes keep their grid."));
-
-    m_sceneLimit = new QSpinBox(scenes.frame);
-    m_sceneLimit->setRange(1, 64);
-    m_sceneLimit->setMaximumWidth(120);
-    scenes.addRow(tr("Scene limit"), m_sceneLimit);
-
-    m_gridColumns = new QSpinBox(scenes.frame);
-    m_gridColumns->setRange(1, 12);
-    m_gridColumns->setMaximumWidth(120);
-    m_gridColumns->setSuffix(tr(" columns"));
-    m_gridRows = new QSpinBox(scenes.frame);
-    m_gridRows->setRange(1, 8);
-    m_gridRows->setMaximumWidth(120);
-    m_gridRows->setSuffix(tr(" rows"));
-    auto* gridSize = new QWidget(scenes.frame);
-    auto* gridSizeRow = new QHBoxLayout(gridSize);
-    gridSizeRow->setContentsMargins(0, 0, 0, 0);
-    gridSizeRow->setSpacing(8);
-    gridSizeRow->addWidget(m_gridColumns);
-    auto* times = new QLabel(QStringLiteral("×"), gridSize);
-    times->setObjectName(QStringLiteral("FieldHint"));
-    gridSizeRow->addWidget(times);
-    gridSizeRow->addWidget(m_gridRows);
-    gridSizeRow->addStretch();
-    scenes.addRow(tr("Pad grid"), gridSize, tr("Applies to scenes added after the change."));
-    cards->addWidget(scenes.frame);
-
-    // Library
-    SettingsCard library = makeCard(host, tr("Sample library"),
-        tr("Where the Load button starts looking for audio files."));
-    m_libraryPath = new QLineEdit(library.frame);
-    m_libraryPath->setPlaceholderText(tr("Choose a folder"));
-    auto* browse = new QPushButton(tr("Browse..."), library.frame);
-    auto* libraryRow = new QWidget(library.frame);
-    auto* libraryLayout = new QHBoxLayout(libraryRow);
-    libraryLayout->setContentsMargins(0, 0, 0, 0);
-    libraryLayout->setSpacing(8);
-    libraryLayout->addWidget(m_libraryPath, 1);
-    libraryLayout->addWidget(browse);
-    library.addRow(tr("Folder"), libraryRow);
-
-    auto* cacheRow = new QWidget(library.frame);
-    auto* cacheLayout = new QHBoxLayout(cacheRow);
-    cacheLayout->setContentsMargins(0, 0, 0, 0);
-    cacheLayout->setSpacing(8);
-    m_waveformCacheInfo = new QLabel(cacheRow);
-    auto* clearCache = new QPushButton(tr("Clear"), cacheRow);
-    clearCache->setToolTip(tr("Delete the saved waveforms"));
-    cacheLayout->addWidget(m_waveformCacheInfo, 1);
-    cacheLayout->addWidget(clearCache);
-    library.addRow(tr("Waveform cache"), cacheRow,
-        tr("Saved waveforms, so they show as soon as a sample loads. Clearing is safe: "
-           "each is worked out and saved again the next time its sample is shown."));
-    connect(clearCache, &QPushButton::clicked, this, [this]() {
-        const PeakStore::CacheStats removed = PeakStore::instance().clearCache();
-        const QString size = QLocale().formattedDataSize(removed.bytes);
-        m_waveformCacheInfo->setText(removed.files == 0 ? tr("Nothing to clear")
-            : removed.files == 1                        ? tr("Cleared 1 waveform, %1").arg(size)
-                                                        : tr("Cleared %1 waveforms, %2").arg(removed.files).arg(size));
-    });
-    cards->addWidget(library.frame);
-
-    // Reverb
-    SettingsCard reverb = makeCard(host, tr("Reverb"),
-        tr("Each pad has a send into each of these four reverbs, on its Pad tab."));
-    for (int which = 0; which < OpenALSoundPlayer::kEaxReverbCount; ++which) {
-        m_reverbPreset[which] = new QComboBox(reverb.frame);
-        m_reverbPreset[which]->setMaxVisibleItems(24);
-        m_reverbPreset[which]->setMaximumWidth(320);
-        for (int i = 0; i < OpenALSoundPlayer::reverbPresetCount(); ++i) {
-            m_reverbPreset[which]->addItem(
-                QString::fromStdString(OpenALSoundPlayer::reverbPresetLabel(i)),
-                QString::fromStdString(OpenALSoundPlayer::reverbPresetId(i)));
-        }
-        reverb.addRow(tr("EAX reverb %1 preset").arg(which + 1), m_reverbPreset[which],
-            tr("Used by each pad's EAX reverb %1 send, which is named after the preset.").arg(which + 1));
-    }
-
-    const bool convolution = OpenALSoundPlayer::convolutionAvailable();
-    for (int which = 0; which < OpenALSoundPlayer::kConvolutionCount; ++which) {
-        m_convolutionGain[which] = new QSlider(Qt::Horizontal, reverb.frame);
-        m_convolutionGain[which]->setRange(0, VolumeDb::sliderSpan(VolumeDb::kFloorDb, VolumeDb::kUnityDb));
-        m_convolutionGain[which]->setToolTip(tr("Output level of this convolution reverb. The bundled impulse is loud, so the default is low."));
-        m_convolutionGainValue[which] = new QLabel(reverb.frame);
-        m_convolutionGainValue[which]->setObjectName(QStringLiteral("MainVolumeValue"));
-        m_convolutionGainValue[which]->setMinimumWidth(72);
-        m_convolutionGainValue[which]->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
-        m_convolutionGain[which]->setValue(VolumeDb::toSliderClamped(
-            OpenALSoundPlayer::convolutionGain(which), VolumeDb::kFloorDb, VolumeDb::kUnityDb));
-        m_convolutionGainValue[which]->setText(VolumeDb::format(
-            VolumeDb::fromSlider(m_convolutionGain[which]->value(), VolumeDb::kFloorDb)));
-        auto* convolutionRow = new QWidget(reverb.frame);
-        auto* convolutionLayout = new QHBoxLayout(convolutionRow);
-        convolutionLayout->setContentsMargins(0, 0, 0, 0);
-        convolutionLayout->addWidget(m_convolutionGain[which], 1);
-        convolutionLayout->addWidget(m_convolutionGainValue[which]);
-        reverb.addRow(tr("Convolution %1 level").arg(which + 1), convolutionRow);
-
-        m_impulsePath[which] = new QLineEdit(reverb.frame);
-        m_impulseBrowse[which] = new QPushButton(tr("Browse..."), reverb.frame);
-        auto* impulseRow = new QWidget(reverb.frame);
-        auto* impulseLayout = new QHBoxLayout(impulseRow);
-        impulseLayout->setContentsMargins(0, 0, 0, 0);
-        impulseLayout->setSpacing(8);
-        impulseLayout->addWidget(m_impulsePath[which], 1);
-        impulseLayout->addWidget(m_impulseBrowse[which]);
-        reverb.addRow(tr("Convolution %1 impulse").arg(which + 1), impulseRow,
-            convolution ? tr("A recording of a space. Used by each pad's convolution %1 send, which is named after the file.").arg(which + 1)
-                        : tr("Convolution reverb isn't available with the current audio device."));
-        m_convolutionGain[which]->setEnabled(convolution);
-        m_impulsePath[which]->setEnabled(convolution);
-        m_impulseBrowse[which]->setEnabled(convolution);
-    }
-    cards->addWidget(reverb.frame);
-    cards->addStretch(1);
-
-    connect(m_loadLastSettings, &QCheckBox::toggled, this, [this](bool on) {
-        if (m_updatingControls) {
-            return;
-        }
-        m_config.loadLastSettings = on;
-    });
-    connect(m_autosave, &QCheckBox::toggled, this, [this](bool on) {
-        if (m_updatingControls) {
-            return;
-        }
-        m_config.autosave = on;
-    });
-    connect(m_sceneLimit, qOverload<int>(&QSpinBox::valueChanged), this, [this](int value) {
-        if (m_updatingControls) {
-            return;
-        }
-        m_config.maxScenes = static_cast<unsigned int>(value);
-        m_addScene->setEnabled(static_cast<unsigned int>(m_scenes.size()) < m_config.maxScenes);
-    });
-    connect(m_gridColumns, qOverload<int>(&QSpinBox::valueChanged), this, [this](int value) {
-        if (!m_updatingControls) {
-            m_config.gridWidth = value;
-        }
-    });
-    connect(m_gridRows, qOverload<int>(&QSpinBox::valueChanged), this, [this](int value) {
-        if (!m_updatingControls) {
-            m_config.gridHeight = value;
-        }
-    });
-    connect(m_libraryPath, &QLineEdit::editingFinished, this, [this]() {
-        if (m_updatingControls) {
-            return;
-        }
-        // Clearing the field is allowed: the load dialogs then fall back to the settings folder.
-        m_config.defaultLibraryLocation = m_libraryPath->text().trimmed();
-    });
-    connect(browse, &QPushButton::clicked, this, [this]() {
-        const QString path = QFileDialog::getExistingDirectory(this, tr("Sample library"),
-            m_config.loadDialogDir());
-        if (path.isEmpty()) {
-            return;
-        }
-        m_libraryPath->setText(path);
-        m_config.defaultLibraryLocation = path;
-    });
-    for (int which = 0; which < OpenALSoundPlayer::kEaxReverbCount; ++which) {
-        connect(m_reverbPreset[which], qOverload<int>(&QComboBox::currentIndexChanged), this, [this, which](int index) {
-            if (!m_updatingControls) {
-                OpenALSoundPlayer::setReverbPreset(index, which);
-                refreshSendLabels();
-            }
-        });
-    }
-    for (int which = 0; which < OpenALSoundPlayer::kConvolutionCount; ++which) {
-        connect(m_convolutionGain[which], &QSlider::valueChanged, this, [this, which](int value) {
-            const float db = VolumeDb::fromSlider(value, VolumeDb::kFloorDb);
-            m_convolutionGainValue[which]->setText(VolumeDb::format(db));
-            if (!m_updatingControls) {
-                OpenALSoundPlayer::setConvolutionGain(VolumeDb::toLinearMuted(db), which);
-            }
-        });
-        connect(m_impulsePath[which], &QLineEdit::editingFinished, this, [this, which]() {
-            if (m_updatingControls) {
-                return;
-            }
-            applyImpulsePath(m_impulsePath[which]->text().trimmed(), which);
-        });
-        connect(m_impulseBrowse[which], &QPushButton::clicked, this, [this, which]() {
-            const QString start = m_impulsePath[which]->text().isEmpty()
-                ? defaultImpulsePath(m_config)
-                : m_impulsePath[which]->text();
-            const QString path = QFileDialog::getOpenFileName(this, tr("Impulse response"), start,
-                tr("Audio (*.wav *.aif *.aiff *.flac *.ogg);;All files (*.*)"));
-            if (path.isEmpty()) {
-                return;
-            }
-            m_impulsePath[which]->setText(path);
-            applyImpulsePath(path, which);
-        });
-    }
-}
-
-void MainWindow::buildThemePage()
-{
-    m_themePage = new QWidget(m_pages);
-    m_themePage->setObjectName(QStringLiteral("ThemePage"));
-    m_themePage->setAttribute(Qt::WA_StyledBackground, true);
-    auto* outer = new QVBoxLayout(m_themePage);
-    outer->setContentsMargins(32, 24, 20, 0);
-    outer->setSpacing(20);
-    outer->addWidget(buildPageHeader(m_themePage, tr("Theme"),
-        tr("Pick a look, then an accent colour for everything that is playing.")));
-    QVBoxLayout* cards = makeCardColumn(m_themePage, outer);
-    QWidget* host = cards->parentWidget();
-
-    // Presets
-    SettingsCard presets = makeCard(host, tr("Presets"));
-    auto* tiles = new QWidget(presets.frame);
-    auto* tileGrid = new QGridLayout(tiles);
-    tileGrid->setContentsMargins(0, 0, 0, 0);
-    tileGrid->setHorizontalSpacing(12);
-    tileGrid->setVerticalSpacing(12);
-    for (int i = 0; i < Theme::kPresetCount; ++i) {
-        auto* tile = new ThemeTile(static_cast<Theme::Id>(i), tiles);
-        tileGrid->addWidget(tile, 0, i);
-        m_themeTiles.append(tile);
-        connect(tile, &QAbstractButton::clicked, this, [this, i]() {
-            Theme::instance().setTheme(static_cast<Theme::Id>(i));
-        });
-    }
-    tileGrid->setColumnStretch(Theme::kPresetCount, 1);
-    presets.addFullRow(tiles);
-    cards->addWidget(presets.frame);
-
-    // Accent
-    SettingsCard accent = makeCard(host, tr("Accent colour"),
-        tr("Play buttons, loops, the played part of waveforms and progress bars."));
-    auto* swatches = new QWidget(accent.frame);
-    auto* swatchRow = new QHBoxLayout(swatches);
-    swatchRow->setContentsMargins(0, 0, 0, 0);
-    swatchRow->setSpacing(6);
-    for (const AccentChoice& choice : kAccents) {
-        auto* swatch = new AccentSwatch(QColor(QString::fromLatin1(choice.hex)), tr(choice.name), swatches);
-        swatchRow->addWidget(swatch);
-        m_accentSwatches.append(swatch);
-        connect(swatch, &QAbstractButton::clicked, this, [swatch]() {
-            Theme::instance().setAccent(swatch->color());
-        });
-    }
-    auto* custom = new AccentSwatch(QColor(), tr("Custom colour..."), swatches);
-    swatchRow->addWidget(custom);
-    m_accentSwatches.append(custom);
-    connect(custom, &QAbstractButton::clicked, this, [this]() {
-        const QColor picked = QColorDialog::getColor(Theme::instance().accent(), this, tr("Accent colour"));
-        if (picked.isValid()) {
-            Theme::instance().setAccent(picked);
-        } else {
-            refreshThemeSwatches(); // restore the checked state the click toggled
-        }
-    });
-    swatchRow->addStretch();
-    accent.addFullRow(swatches);
-    cards->addWidget(accent.frame);
-
-    // Advanced: every colour role, folded away by default.
-    SettingsCard advanced = makeCard(host, tr("All colours"),
-        tr("Fine-tune any single colour. Changes are saved with your settings."));
-    m_advancedToggle = new QPushButton(advanced.frame);
-    m_advancedToggle->setObjectName(QStringLiteral("DisclosureButton"));
-    m_advancedToggle->setCursor(Qt::PointingHandCursor);
-    m_advancedToggle->setCheckable(true);
-    m_resetTheme = new QPushButton(tr("Reset to preset"), advanced.frame);
-    m_resetTheme->setToolTip(tr("Undo accent and colour changes to this theme. Other themes keep theirs."));
-    auto* advancedBar = new QWidget(advanced.frame);
-    auto* advancedBarRow = new QHBoxLayout(advancedBar);
-    advancedBarRow->setContentsMargins(0, 0, 0, 0);
-    advancedBarRow->addWidget(m_advancedToggle);
-    advancedBarRow->addStretch();
-    advancedBarRow->addWidget(m_resetTheme);
-    advanced.addFullRow(advancedBar);
-
-    m_advancedColors = new QWidget(advanced.frame);
-    auto* grid = new QGridLayout(m_advancedColors);
-    grid->setContentsMargins(0, 4, 0, 0);
-    grid->setHorizontalSpacing(16);
-    grid->setVerticalSpacing(8);
-    QString lastGroup;
-    int row = 0;
-    m_themeSwatches.resize(Theme::roleCount());
-    for (int i = 0; i < Theme::roleCount(); ++i) {
-        const QString group = Theme::roleGroup(i);
-        if (group != lastGroup) {
-            auto* section = new QLabel(group, m_advancedColors);
-            section->setObjectName(QStringLiteral("ThemeSection"));
-            grid->addWidget(section, row, 0, 1, 2, Qt::AlignLeft);
-            ++row;
-            lastGroup = group;
-        }
-        auto* caption = new QLabel(Theme::roleLabel(i), m_advancedColors);
-        auto* swatch = new QPushButton(m_advancedColors);
-        swatch->setFixedSize(44, 22);
-        swatch->setCursor(Qt::PointingHandCursor);
-        swatch->setFocusPolicy(Qt::NoFocus);
-        swatch->setToolTip(tr("Change %1").arg(Theme::roleLabel(i)));
-        auto* hex = new QLabel(m_advancedColors);
-        hex->setObjectName(QStringLiteral("SwatchHex"));
-        hex->setMinimumWidth(72);
-        auto* field = new QWidget(m_advancedColors);
-        auto* fieldLayout = new QHBoxLayout(field);
-        fieldLayout->setContentsMargins(0, 0, 0, 0);
-        fieldLayout->setSpacing(10);
-        fieldLayout->addWidget(swatch);
-        fieldLayout->addWidget(hex);
-        fieldLayout->addStretch();
-        grid->addWidget(caption, row, 0, Qt::AlignLeft | Qt::AlignVCenter);
-        grid->addWidget(field, row, 1);
-        m_themeSwatches[i] = {swatch, hex};
-        connect(swatch, &QPushButton::clicked, this, [this, i]() {
-            const QColor picked = QColorDialog::getColor(Theme::instance().colorAt(i), this, Theme::roleLabel(i));
-            if (picked.isValid()) {
-                Theme::instance().setColorAt(i, picked);
-            }
-        });
-        ++row;
-    }
-    grid->setColumnMinimumWidth(0, 150);
-    grid->setColumnStretch(1, 1);
-    m_advancedColors->setVisible(false);
-    advanced.addFullRow(m_advancedColors);
-    cards->addWidget(advanced.frame);
-    cards->addStretch(1);
-
-    auto updateToggle = [this](bool open) {
-        m_advancedToggle->setText(open ? tr("▾  Hide all colours") : tr("▸  Show all colours"));
-        m_advancedColors->setVisible(open);
-    };
-    updateToggle(false);
-    connect(m_advancedToggle, &QPushButton::toggled, this, updateToggle);
-    connect(m_resetTheme, &QPushButton::clicked, this, []() {
-        Theme::instance().resetToPreset();
-    });
-    connect(&Theme::instance(), &Theme::changed, this, &MainWindow::refreshThemeSwatches);
-}
-
-void MainWindow::applyImpulsePath(const QString& path, int which)
-{
-    const QString chosen = path.isEmpty() ? defaultImpulsePath(m_config) : path;
-    if (toImpulsePath(chosen) == OpenALSoundPlayer::convolutionImpulsePath(which)) {
-        m_impulsePath[which]->setText(chosen);
-        return;
-    }
-    if (!OpenALSoundPlayer::setConvolutionImpulse(toImpulsePath(chosen), which)) {
-        QMessageBox::warning(this, tr("Feedra"),
-            tr("Could not load the impulse response:\n%1").arg(chosen));
-    }
-    m_impulsePath[which]->setText(fromImpulsePath(OpenALSoundPlayer::convolutionImpulsePath(which)));
-    refreshSendLabels();
-}
-
 void MainWindow::refreshSendLabels()
 {
     for (int which = 0; which < OpenALSoundPlayer::kEaxReverbCount; ++which) {
@@ -2475,7 +1689,7 @@ void MainWindow::refreshSendLabels()
             continue;
         }
         const QString preset = QString::fromStdString(
-            OpenALSoundPlayer::reverbPresetLabel(OpenALSoundPlayer::reverbPresetIndex(which)));
+            AudioDevice::reverbPresetLabel(AudioDevice::reverbPresetIndex(which)));
         m_sendLabels[which]->setText(tr("%1 reverb send").arg(preset));
         m_sendLabels[which]->setToolTip(tr("Send into EAX reverb %1 (%2). Choose the preset in Settings.").arg(which + 1).arg(preset));
     }
@@ -2484,79 +1698,20 @@ void MainWindow::refreshSendLabels()
         if (!label) {
             continue;
         }
-        const QString file = fromImpulsePath(OpenALSoundPlayer::convolutionImpulsePath(which));
+        const QString file = FsPath::toQString(AudioDevice::convolutionImpulsePath(which));
         const QString name = file.isEmpty() ? tr("Convolution %1").arg(which + 1) : QFileInfo(file).completeBaseName();
         label->setText(tr("%1 reverb send").arg(name));
         label->setToolTip(tr("Send into convolution reverb %1 (%2). Choose the impulse in Settings.").arg(which + 1).arg(file));
     }
 }
 
-void MainWindow::refreshWaveformCacheInfo()
-{
-    if (!m_waveformCacheInfo) {
-        return;
-    }
-    const PeakStore::CacheStats stats = PeakStore::instance().cacheStats();
-    const QString size = QLocale().formattedDataSize(stats.bytes);
-    m_waveformCacheInfo->setText(stats.files == 0 ? tr("Empty")
-        : stats.files == 1                        ? tr("1 waveform, %1").arg(size)
-                                                  : tr("%1 waveforms, %2").arg(stats.files).arg(size));
-}
-
 void MainWindow::syncSettingsPage()
 {
-    m_updatingControls = true;
-    m_loadLastSettings->setChecked(m_config.loadLastSettings);
-    m_autosave->setChecked(m_config.autosave);
-    m_sceneLimit->setValue(static_cast<int>(m_config.maxScenes));
-    m_gridColumns->setValue(m_config.gridWidth);
-    m_gridRows->setValue(m_config.gridHeight);
-    m_libraryPath->setText(m_config.defaultLibraryLocation);
-    for (int which = 0; which < OpenALSoundPlayer::kEaxReverbCount; ++which) {
-        m_reverbPreset[which]->setCurrentIndex(OpenALSoundPlayer::reverbPresetIndex(which));
-    }
-    for (int which = 0; which < OpenALSoundPlayer::kConvolutionCount; ++which) {
-        m_convolutionGain[which]->setValue(VolumeDb::toSliderClamped(
-            OpenALSoundPlayer::convolutionGain(which), VolumeDb::kFloorDb, VolumeDb::kUnityDb));
-        m_convolutionGainValue[which]->setText(VolumeDb::format(
-            VolumeDb::fromSlider(m_convolutionGain[which]->value(), VolumeDb::kFloorDb)));
-        m_impulsePath[which]->setText(fromImpulsePath(OpenALSoundPlayer::convolutionImpulsePath(which)));
-    }
+    m_settingsPage->sync();
     refreshSendLabels();
-    m_updatingControls = false;
-    refreshThemeSwatches();
+    m_themePage->refresh();
     if (m_addScene) {
         m_addScene->setEnabled(static_cast<unsigned int>(m_scenes.size()) < m_config.maxScenes);
-    }
-}
-
-void MainWindow::refreshThemeSwatches()
-{
-    const Theme& theme = Theme::instance();
-    for (QAbstractButton* tile : m_themeTiles) {
-        tile->setChecked(static_cast<ThemeTile*>(tile)->themeId() == theme.id());
-        tile->update();
-    }
-    // A preset accent is checked when it matches; anything else lights the custom swatch.
-    bool matched = false;
-    for (int i = 0; i < m_accentSwatches.size(); ++i) {
-        auto* swatch = static_cast<AccentSwatch*>(m_accentSwatches[i]);
-        const bool isCustom = !swatch->color().isValid();
-        const bool on = isCustom ? !matched : swatch->color() == theme.accent();
-        matched = matched || on;
-        swatch->setChecked(on);
-        swatch->update();
-    }
-    if (m_resetTheme) {
-        m_resetTheme->setEnabled(theme.isModified());
-    }
-    const QString border = theme.palette().fieldBorder.name(QColor::HexRgb);
-    for (int i = 0; i < m_themeSwatches.size(); ++i) {
-        const QString color = theme.colorAt(i).name(QColor::HexRgb);
-        m_themeSwatches[i].button->setStyleSheet(
-            QStringLiteral("QPushButton { background: %1; border: 1px solid %2; border-radius: 6px; padding: 0; }")
-                .arg(color, border));
-        m_themeSwatches[i].hex->setText(color);
     }
 }
 
@@ -2583,21 +1738,21 @@ void MainWindow::applyAppSettings(const QJsonObject& global)
         const QString suffix = which == 0 ? QString() : QString::number(which + 1);
         const QString reverb = global.value(QStringLiteral("reverb") + suffix).toString();
         if (!reverb.isEmpty()) {
-            OpenALSoundPlayer::setReverbPresetById(reverb.toStdString(), which);
+            AudioDevice::setReverbPresetById(reverb.toStdString(), which);
         }
     }
     for (int which = 0; which < OpenALSoundPlayer::kConvolutionCount; ++which) {
         const QString suffix = which == 0 ? QString() : QString::number(which + 1);
         if (global.contains(QStringLiteral("convolutiongain") + suffix)) {
-            OpenALSoundPlayer::setConvolutionGain(static_cast<float>(global.value(QStringLiteral("convolutiongain") + suffix).toDouble(
-                OpenALSoundPlayer::defaultConvolutionGain())), which);
+            AudioDevice::setConvolutionGain(static_cast<float>(global.value(QStringLiteral("convolutiongain") + suffix).toDouble(
+                AudioDevice::defaultConvolutionGain())), which);
         }
         QString impulse = global.value(QStringLiteral("convolutionir") + suffix).toString();
         if (impulse.isEmpty() || !QFile::exists(impulse)) {
-            impulse = defaultImpulsePath(m_config);
+            impulse = m_config.defaultImpulsePath();
         }
-        if (toImpulsePath(impulse) != OpenALSoundPlayer::convolutionImpulsePath(which)) {
-            if (!OpenALSoundPlayer::setConvolutionImpulse(toImpulsePath(impulse), which)) {
+        if (FsPath::fromQString(impulse) != AudioDevice::convolutionImpulsePath(which)) {
+            if (!AudioDevice::setConvolutionImpulse(FsPath::fromQString(impulse), which)) {
                 qWarning() << "Convolution impulse not loaded" << impulse;
             }
         }
@@ -2624,7 +1779,7 @@ void MainWindow::setPage(Page page)
         m_bottomPanel->setVisible(page == Page::Main && !m_scenesFocus);
     }
     if (page == Page::Settings) {
-        refreshWaveformCacheInfo();
+        m_settingsPage->refreshWaveformCacheInfo();
         m_pages->setCurrentWidget(m_settingsPage);
     } else if (page == Page::Theme) {
         m_pages->setCurrentWidget(m_themePage);
@@ -2883,7 +2038,7 @@ void MainWindow::reportMissingSamples()
     m_reportMissingAfterLoad = false;
     QStringList missing;
     for (Scene* scene : m_scenes) {
-        for (SoundPadWidget* pad : scene->pads) {
+        for (Pad* pad : scene->pads) {
             for (const QString& path : pad->missingPaths()) {
                 if (!missing.contains(path)) {
                     missing << path;
@@ -3103,7 +2258,7 @@ bool MainWindow::saveConfigTo(const QString& path, bool copyFiles, bool settings
         // are, and keep their names from being given to other files.
         const QString filesAbs = QFileInfo(exportTo->filesDir).absoluteFilePath();
         for (Scene* scene : m_scenes) {
-            for (SoundPadWidget* pad : scene->pads) {
+            for (Pad* pad : scene->pads) {
                 for (const QString& samplePath : pad->samplePaths()) {
                     const QFileInfo sample(samplePath);
                     if (sample.isFile() && sample.absolutePath() == filesAbs) {
@@ -3117,6 +2272,7 @@ bool MainWindow::saveConfigTo(const QString& path, bool copyFiles, bool settings
 
     QJsonObject root;
     QJsonObject global;
+    global.insert(QStringLiteral("version"), ProjectFile::kVersion);
     global.insert(QStringLiteral("mainvolume"), m_config.masterVolume());
     global.insert(QStringLiteral("maxscenes"), m_scenes.size());
     global.insert(QStringLiteral("activesceneid"), m_config.activeSceneIdx);
@@ -3132,12 +2288,12 @@ bool MainWindow::saveConfigTo(const QString& path, bool copyFiles, bool settings
     for (int which = 0; which < OpenALSoundPlayer::kEaxReverbCount; ++which) {
         const QString suffix = which == 0 ? QString() : QString::number(which + 1);
         global.insert(QStringLiteral("reverb") + suffix,
-            QString::fromStdString(OpenALSoundPlayer::reverbPresetId(OpenALSoundPlayer::reverbPresetIndex(which))));
+            QString::fromStdString(AudioDevice::reverbPresetId(AudioDevice::reverbPresetIndex(which))));
     }
     for (int which = 0; which < OpenALSoundPlayer::kConvolutionCount; ++which) {
         const QString suffix = which == 0 ? QString() : QString::number(which + 1);
-        global.insert(QStringLiteral("convolutiongain") + suffix, static_cast<double>(OpenALSoundPlayer::convolutionGain(which)));
-        global.insert(QStringLiteral("convolutionir") + suffix, fromImpulsePath(OpenALSoundPlayer::convolutionImpulsePath(which)));
+        global.insert(QStringLiteral("convolutiongain") + suffix, static_cast<double>(AudioDevice::convolutionGain(which)));
+        global.insert(QStringLiteral("convolutionir") + suffix, FsPath::toQString(AudioDevice::convolutionImpulsePath(which)));
     }
     global.insert(QStringLiteral("theme"), Theme::instance().idName());
     global.insert(QStringLiteral("themecolors"), Theme::instance().colorsJson());
@@ -3186,7 +2342,7 @@ bool MainWindow::saveConfigTo(const QString& path, bool copyFiles, bool settings
         scene->name = sceneName;
         sceneObj.insert(QStringLiteral("name"), sceneName);
         sceneObj.insert(QStringLiteral("activesound"), scene->activeSoundIdx);
-        for (SoundPadWidget* pad : scene->pads) {
+        for (Pad* pad : scene->pads) {
             pad->saveToJson(sceneObj);
             const QString padKey = QString("%1-%2").arg(scene->id).arg(pad->padId());
             QJsonObject padObj = sceneObj.value(padKey).toObject();
@@ -3205,7 +2361,7 @@ bool MainWindow::saveConfigTo(const QString& path, bool copyFiles, bool settings
                         exportTo->missing << QDir::toNativeSeparators(path);
                     }
                 }
-                sample.insert(QStringLiteral("path"), projectRelativePath(path, projectDir));
+                sample.insert(QStringLiteral("path"), ProjectFile::relativePath(path, projectDir));
                 it.value() = sample;
             }
             padObj.insert(QStringLiteral("samples"), samples);
@@ -3362,7 +2518,7 @@ void MainWindow::importScenesFrom(const QString& path)
             m_padStack, m_sceneListHost, this);
         scene->activeSoundIdx = std::max(0, mapPad(sceneObj.value(QStringLiteral("activesound")).toInt(0)));
         connectScene(scene);
-        for (SoundPadWidget* pad : scene->pads) {
+        for (Pad* pad : scene->pads) {
             pad->loadFromJson(padRoot, QFileInfo(path).absolutePath());
             m_reportMissingAfterLoad = true;
         }
@@ -3420,6 +2576,11 @@ void MainWindow::loadConfigFrom(const QString& path)
     const QString projectDir = QFileInfo(path).absolutePath();
     m_reportMissingAfterLoad = true;
     const QJsonObject global = root.value(QStringLiteral("global")).toObject();
+    const int version = global.value(QStringLiteral("version")).toInt(1);
+    if (version > ProjectFile::kVersion) {
+        qWarning() << path << "was saved by a newer Feedra (format" << version << "), this one reads"
+                   << ProjectFile::kVersion << "- some settings may be lost if it's saved here";
+    }
     applyAppSettings(global);
     m_mainVolume->setValue(VolumeDb::toSliderClamped(
         static_cast<float>(global.value(QStringLiteral("mainvolume")).toDouble(1.0)),
@@ -3449,7 +2610,7 @@ void MainWindow::loadConfigFrom(const QString& path)
         auto* scene = new Scene(&m_config, id, name, m_padStack, m_sceneListHost, this);
         scene->activeSoundIdx = sceneObj.value(QStringLiteral("activesound")).toInt(0);
         connectScene(scene);
-        for (SoundPadWidget* pad : scene->pads) {
+        for (Pad* pad : scene->pads) {
             pad->loadFromJson(root, projectDir);
         }
         m_scenes.push_back(scene);
@@ -3524,11 +2685,11 @@ void MainWindow::clearActivePad()
 
 void MainWindow::copyActivePad()
 {
-    SoundPadWidget* pad = activePad();
+    Pad* pad = activePad();
     if (!pad || pad->isLoading() || !pad->isLoaded()) {
         return;
     }
-    const SoundPadWidget::PadClip clip = pad->clip();
+    const Pad::PadClip clip = pad->clip();
     if (clip.valid) {
         m_padClip = clip;
     }
@@ -3536,11 +2697,11 @@ void MainWindow::copyActivePad()
 
 void MainWindow::cutActivePad()
 {
-    SoundPadWidget* pad = activePad();
+    Pad* pad = activePad();
     if (!pad || pad->isLoading() || !pad->isLoaded()) {
         return;
     }
-    const SoundPadWidget::PadClip clip = pad->clip();
+    const Pad::PadClip clip = pad->clip();
     if (!clip.valid) {
         return;
     }
@@ -3554,7 +2715,7 @@ void MainWindow::cutActivePad()
 
 void MainWindow::pasteActivePad()
 {
-    SoundPadWidget* pad = activePad();
+    Pad* pad = activePad();
     if (!pad || !m_padClip.valid) {
         return;
     }
@@ -3601,8 +2762,8 @@ void MainWindow::copyPad(int fromIdx, int toIdx)
     if (!scene) {
         return;
     }
-    SoundPadWidget* from = scene->padAt(fromIdx);
-    SoundPadWidget* to = scene->padAt(toIdx);
+    Pad* from = scene->padAt(fromIdx);
+    Pad* to = scene->padAt(toIdx);
     if (!from || !to || from == to) {
         return;
     }
@@ -3621,8 +2782,8 @@ void MainWindow::movePad(int fromIdx, int toIdx)
     if (!scene) {
         return;
     }
-    SoundPadWidget* from = scene->padAt(fromIdx);
-    SoundPadWidget* to = scene->padAt(toIdx);
+    Pad* from = scene->padAt(fromIdx);
+    Pad* to = scene->padAt(toIdx);
     if (!from || !to || from == to) {
         return;
     }
@@ -3642,12 +2803,12 @@ void MainWindow::mergePad(int fromIdx, int toIdx, bool keepSource)
     if (!scene) {
         return;
     }
-    SoundPadWidget* from = scene->padAt(fromIdx);
-    SoundPadWidget* to = scene->padAt(toIdx);
+    Pad* from = scene->padAt(fromIdx);
+    Pad* to = scene->padAt(toIdx);
     if (!from || !to || from == to) {
         return;
     }
-    const SoundPadWidget::PadClip clip = from->clip();
+    const Pad::PadClip clip = from->clip();
     if (!clip.valid) {
         return; // an empty pad adds nothing, and the target is left alone
     }
@@ -3680,12 +2841,8 @@ void MainWindow::drainLoads(int budgetMs)
         return;
     }
     m_loads->drain(budgetMs, [this](SampleLoadResult result) {
-        if (SoundPadWidget* pad = findPad(result.job.sceneId, result.job.padId)) {
-            if (result.job.reloadSampleId >= 0) {
-                pad->submitReload(result.job, std::move(result.audio));
-            } else {
-                pad->submitDecoded(result.job.sampleIndex, result.job.generation, std::move(result.audio));
-            }
+        if (Pad* pad = findPad(result.job.sceneId, result.job.padId)) {
+            pad->submitDecoded(result.job.sampleIndex, result.job.generation, std::move(result.audio));
         }
     });
 }
@@ -3765,7 +2922,7 @@ void MainWindow::waitForLoads()
     refreshLoadUi();
 }
 
-SoundPadWidget* MainWindow::findPad(int sceneId, int padId) const
+Pad* MainWindow::findPad(int sceneId, int padId) const
 {
     for (Scene* scene : m_scenes) {
         if (scene->id == sceneId) {
@@ -3846,11 +3003,23 @@ void MainWindow::tick()
 
 void MainWindow::checkAudioDevice()
 {
-    OpenALSoundPlayer::listDevices(false);
-    const QString next = QString::fromStdString(OpenALSoundPlayer::getDefaultDeviceString());
-    if (next != m_curDevice) {
-        OpenALSoundPlayer::reopenDevice(next.toUtf8().constData());
+    // Follows the system's default output. No device enumeration here: this runs every
+    // second on the UI thread, and listing devices can take a while on PipeWire/Pulse.
+    const QString next = QString::fromStdString(AudioDevice::defaultDeviceName());
+    if (next.isEmpty() || next == m_curDevice) {
+        return;
+    }
+    const int result = AudioDevice::reopen(next.toUtf8().constData());
+    if (result == 0) {
+        qInfo() << "Audio output moved to" << next;
         m_curDevice = next;
+        m_failedDevice.clear();
+        return;
+    }
+    // Not taken as current, so it's tried again next second; logged once per device.
+    if (next != m_failedDevice) {
+        qWarning() << "Couldn't move audio output to" << next << "(code" << result << ")";
+        m_failedDevice = next;
     }
 }
 
@@ -3868,7 +3037,7 @@ void MainWindow::onPadClicked(int sceneId, int padId)
     }
 }
 
-SoundPadWidget* MainWindow::activePad() const
+Pad* MainWindow::activePad() const
 {
     Scene* scene = activeScene();
     return scene ? scene->padAt(m_config.activeSoundIdx) : nullptr;

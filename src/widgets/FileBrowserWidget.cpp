@@ -1,4 +1,5 @@
 #include "FileBrowserWidget.h"
+#include "FsPath.h"
 
 #include "AppConfig.h"
 #include "AudioFormats.h"
@@ -1294,7 +1295,7 @@ void FileBrowserWidget::previewFile(const QString& path)
     QPointer<FileBrowserWidget> self(this);
     QThreadPool::globalInstance()->start([self, generation, path]() {
         auto decoded = std::make_shared<DecodedAudio>(
-            OpenALSoundPlayer::decodeFile(std::filesystem::path(path.toStdString()), true));
+            AudioCodec::decodeFile(FsPath::fromQString(path), true, AudioDevice::floatOutput()));
         QMetaObject::invokeMethod(QCoreApplication::instance(), [self, generation, decoded]() {
             if (self && self->m_previewGeneration == generation) {
                 self->startDecoded(decoded);
