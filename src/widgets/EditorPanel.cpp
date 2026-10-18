@@ -163,38 +163,36 @@ EditorPanel::EditorPanel(AppConfig* config, QWidget* parent)
         if (AudioSample* sample = selectedSample()) {
             LoopRegion region = sample->loopRegion();
             region.loop = on;
-            sample->setLoopRegion(region);
+            edit(tr("Loop"), [&](Pad*) { sample->setLoopRegion(region); });
             emit loopRegionChanged(sample);
         }
     });
     connect(m_pan, &QSlider::valueChanged, this, [this](int v) {
         if (m_updating) return;
         if (AudioSample* sample = selectedSample(); sample && sample->audioPlayer->canPan()) {
-            sample->setPan((v / 1000.0f) * 2.0f - 1.0f);
+            edit(tr("Pan"), [&](Pad*) { sample->setPan((v / 1000.0f) * 2.0f - 1.0f); });
         }
     });
     connect(m_pitch, &QSlider::valueChanged, this, [this](int v) {
         if (m_updating) return;
         if (AudioSample* sample = selectedSample()) {
-            sample->setPitch(v / 1000.0f);
+            edit(tr("Pitch"), [&](Pad*) { sample->setPitch(v / 1000.0f); });
         }
     });
     connect(m_gain, &QSlider::valueChanged, this, [this](int v) {
         if (m_updating) return;
         if (AudioSample* sample = selectedSample()) {
-            sample->setGain(VolumeDb::toLinear(VolumeDb::fromSlider(v, kSampleGainMinDb)));
+            edit(tr("Gain"), [&](Pad*) { sample->setGain(VolumeDb::toLinear(VolumeDb::fromSlider(v, kSampleGainMinDb))); });
         }
     });
     connect(m_randomPan, &QCheckBox::toggled, this, [this](bool on) {
         if (m_updating) return;
-        if (m_pad) {
-            m_pad->soundPlayer().setRandomPan(on);
-        }
+        edit(tr("Random pan"), [&](Pad* pad) { pad->soundPlayer().setRandomPan(on); });
     });
     connect(m_width, &QSlider::valueChanged, this, [this](int v) {
         if (m_updating) return;
         if (AudioSample* sample = selectedSample()) {
-            sample->setWidth(v / 100.0f);
+            edit(tr("Width"), [&](Pad*) { sample->setWidth(v / 100.0f); });
         }
     });
     connect(m_add, &QPushButton::clicked, this, [this]() {
@@ -360,7 +358,8 @@ void EditorPanel::moveSample(int fromIndex, int insertIndex)
     if (!m_pad) {
         return;
     }
-    const int dest = m_pad->moveSample(fromIndex, insertIndex);
+    int dest = -1;
+    edit(tr("Move sample"), [&](Pad* pad) { dest = pad->moveSample(fromIndex, insertIndex); });
     if (dest < 0) {
         return;
     }
@@ -373,7 +372,7 @@ void EditorPanel::moveSample(int fromIndex, int insertIndex)
 
 void EditorPanel::addFiles(const QStringList& paths)
 {
-    m_pad->loadFiles(paths, false);
+    edit(tr("Add samples"), [&](Pad* pad) { pad->loadFiles(paths, false); });
     rebuildRows();
 }
 

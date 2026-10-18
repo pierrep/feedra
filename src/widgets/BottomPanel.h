@@ -8,6 +8,8 @@
 
 #include "RegionRenderer.h"
 
+#include "Pad.h"
+
 #include <QPointer>
 #include <QWidget>
 
@@ -16,6 +18,7 @@ class AudioSample;
 class Pad;
 class WaveformWidget;
 class QCheckBox;
+class QDoubleSpinBox;
 class QLabel;
 class QPushButton;
 class QSlider;
@@ -53,10 +56,27 @@ public:
 
 signals:
     void collapseRequested(bool collapsed);
+    void editStarting(Pad* pad);
+    void edited(Pad* pad, const QString& what);
+
     // A sample's loop region changed on the Waveform tab.
     void loopRegionChanged(AudioSample* sample);
 
 private:
+    // For undo: the window snapshots the pad on editStarting and records the change on edited.
+    // Edits with the same name in quick succession (a slider being dragged) become one step.
+    template <typename Change>
+    void edit(const QString& what, Change change)
+    {
+        Pad* pad = m_pad;
+        if (!pad) {
+            return;
+        }
+        emit editStarting(pad);
+        change(pad);
+        emit edited(pad, what);
+    }
+
     // The sample the Waveform tab shows: the one selected in the Editor (which follows the
     // playing sample while the pad plays), or the pad's current one.
     int waveformSampleIndex() const;
@@ -92,6 +112,8 @@ private:
     QPushButton* m_resetDelay = nullptr;
     QCheckBox* m_scenePad = nullptr;
     QLabel* m_delayReadout = nullptr;
+    QDoubleSpinBox* m_fadeIn = nullptr;
+    QDoubleSpinBox* m_fadeOut = nullptr;
 
     WaveformWidget* m_waveform = nullptr;
     int m_loopDragSampleId = -1; // the sample whose loop handles are being dragged

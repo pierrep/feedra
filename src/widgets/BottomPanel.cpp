@@ -10,6 +10,7 @@
 #include "widgets/WaveformWidget.h"
 
 #include <QCheckBox>
+#include <QDoubleSpinBox>
 #include <QFileInfo>
 #include <QGridLayout>
 #include <QHBoxLayout>
@@ -97,7 +98,7 @@ BottomPanel::BottomPanel(AppConfig* config, QWidget* parent)
     for (int bus = 0; bus < OpenALSoundPlayer::kSendCount; ++bus) {
         m_sendSliders[bus] = new QSlider(Qt::Horizontal, padPage);
         m_sendSliders[bus]->setRange(0, 1000);
-        m_sendSliders[bus]->setMinimumWidth(240);
+        m_sendSliders[bus]->setMinimumWidth(160);
         m_sendSliders[bus]->setEnabled(false);
         m_sendLabels[bus] = new QLabel(padPage);
     }
@@ -134,6 +135,34 @@ BottomPanel::BottomPanel(AppConfig* config, QWidget* parent)
     padGrid->setRowStretch(4, 1);
     padGrid->setColumnMinimumWidth(0, 130);
 
+    // The pad's own fade in and out.
+    auto* playGrid = new QGridLayout();
+    playGrid->setContentsMargins(0, 0, 0, 0);
+    playGrid->setHorizontalSpacing(10);
+    playGrid->setVerticalSpacing(10);
+    const auto makeAmount = [padPage](double max, double step, const QString& suffix, int decimals) {
+        auto* box = new QDoubleSpinBox(padPage);
+        box->setRange(0.0, max);
+        box->setSingleStep(step);
+        box->setDecimals(decimals);
+        box->setSuffix(suffix);
+        box->setAlignment(Qt::AlignRight);
+        box->setKeyboardTracking(false);
+        box->setMinimumWidth(90);
+        box->setMaximumWidth(120);
+        box->setEnabled(false);
+        return box;
+    };
+    m_fadeIn = makeAmount(10.0, 0.1, tr(" s"), 1);
+    m_fadeIn->setToolTip(tr("Playing the pad (its button, key or MIDI, or its scene) fades it in over this time"));
+    m_fadeOut = makeAmount(10.0, 0.1, tr(" s"), 1);
+    m_fadeOut->setToolTip(tr("Pausing or stopping the pad from its button, key or MIDI fades it out over this time"));
+    playGrid->addWidget(new QLabel(tr("Fade in"), padPage), 0, 0);
+    playGrid->addWidget(m_fadeIn, 0, 1);
+    playGrid->addWidget(new QLabel(tr("Fade out"), padPage), 1, 0);
+    playGrid->addWidget(m_fadeOut, 1, 1);
+    playGrid->setRowStretch(2, 1);
+
     // EAX reverbs on top, convolution reverbs below.
     auto* sendGrid = new QGridLayout();
     sendGrid->setContentsMargins(0, 0, 0, 0);
@@ -146,6 +175,7 @@ BottomPanel::BottomPanel(AppConfig* config, QWidget* parent)
     sendGrid->setColumnStretch(1, 1);
     sendGrid->setRowStretch(OpenALSoundPlayer::kSendCount, 1);
     padRow->addLayout(padGrid, 0);
+    padRow->addLayout(playGrid, 0);
     padRow->addLayout(sendGrid, 1);
     refreshSendLabels();
 
@@ -233,6 +263,7 @@ BottomPanel::BottomPanel(AppConfig* config, QWidget* parent)
     // Min and max push each other, and every sample's delay is picked again.
     const auto delayChanged = [this](int v, bool isMin) {
         if (m_updating || !m_pad) return;
+        emit editStarting(m_pad);
         SoundPlayer& player = m_pad->soundPlayer();
         if (isMin) {
             player.setMinDelay(v);
@@ -249,6 +280,7 @@ BottomPanel::BottomPanel(AppConfig* config, QWidget* parent)
             player.recalculateDelay(i);
         }
         m_pad->notifyChanged(); // the delay border comes and goes with the delay
+        emit edited(m_pad, tr("Delay"));
         refreshPadControls();
     };
     connect(m_minDelay, qOverload<int>(&QSpinBox::valueChanged), this, [delayChanged](int v) { delayChanged(v, true); });
@@ -256,22 +288,16 @@ BottomPanel::BottomPanel(AppConfig* config, QWidget* parent)
     for (int bus = 0; bus < OpenALSoundPlayer::kSendCount; ++bus) {
         connect(m_sendSliders[bus], &QSlider::valueChanged, this, [this, bus](int v) {
             if (m_updating) return;
-            if (m_pad) {
-                m_pad->setSend(bus, v / 1000.0f);
-            }
+            edit(tr("Effect send"), [&](Pad* pad) { pad->setSend(bus, v / 1000.0f); });
         });
     }
     connect(m_randomPlayback, &QCheckBox::toggled, this, [this](bool on) {
         if (m_updating) return;
-        if (m_pad) {
-            m_pad->soundPlayer().setRandomPlayback(on);
-        }
+        edit(tr("Random playback"), [&](Pad* pad) { pad->soundPlayer().setRandomPlayback(on); });
     });
     connect(m_scenePad, &QCheckBox::toggled, this, [this](bool on) {
         if (m_updating) return;
-        if (m_pad) {
-            m_pad->setScenePad(on);
-        }
+        edit(tr("Plays with scene"), [&](Pad* pad) { pad->setScenePad(on); });
     });
     connect(m_resetDelay, &QPushButton::clicked, this, [this]() {
         // Through the spin boxes, so the pad, its samples' delays and the border all follow.
@@ -281,19 +307,25 @@ BottomPanel::BottomPanel(AppConfig* config, QWidget* parent)
     });
     connect(m_delayOn, &QCheckBox::toggled, this, [this](bool on) {
         if (m_updating) return;
-        if (m_pad) {
-            m_pad->soundPlayer().setDelayEnabled(on);
-            m_minDelay->setEnabled(on);
-            m_maxDelay->setEnabled(on);
-            m_pad->notifyChanged(); // the delay border comes and goes with the delay
-            refreshDelayReadout();
-        }
+        edit(tr("Delay"), [&](Pad* pad) {
+            pad->soundPlayer().setDelayEnabled(on);
+            pad->notifyChanged(); // the delay border comes and goes with the delay
+        });
+        m_minDelay->setEnabled(on);
+        m_maxDelay->setEnabled(on);
+        refreshDelayReadout();
     });
     connect(m_repeat, &QCheckBox::toggled, this, [this](bool on) {
         if (m_updating) return;
-        if (m_pad) {
-            m_pad->setRepeating(on);
-        }
+        edit(tr("Repeat"), [&](Pad* pad) { pad->setRepeating(on); });
+    });
+    connect(m_fadeIn, qOverload<double>(&QDoubleSpinBox::valueChanged), this, [this](double v) {
+        if (m_updating || !m_pad) return;
+        edit(tr("Fade time"), [&](Pad* pad) { pad->setFadeInTime(static_cast<float>(v)); });
+    });
+    connect(m_fadeOut, qOverload<double>(&QDoubleSpinBox::valueChanged), this, [this](double v) {
+        if (m_updating || !m_pad) return;
+        edit(tr("Fade time"), [&](Pad* pad) { pad->setFadeOutTime(static_cast<float>(v)); });
     });
 
     setCurrentTab(WaveformTab);
@@ -332,6 +364,10 @@ void BottomPanel::refreshPadControls()
         for (int bus = 0; bus < OpenALSoundPlayer::kSendCount; ++bus) {
             m_sendSliders[bus]->setEnabled(AudioDevice::sendAvailable(bus));
         }
+        m_fadeIn->setValue(pad->fadeInTime());
+        m_fadeOut->setValue(pad->fadeOutTime());
+        m_fadeIn->setEnabled(true);
+        m_fadeOut->setEnabled(true);
     } else {
         m_info->setText(tr("channels: —\nformat: —\nsub-format: —\nsample rate: —\npath: —\nNum sounds: —"));
         m_randomPlayback->hide();
@@ -346,6 +382,8 @@ void BottomPanel::refreshPadControls()
         for (QSlider* slider : m_sendSliders) {
             slider->setEnabled(false);
         }
+        m_fadeIn->setEnabled(false);
+        m_fadeOut->setEnabled(false);
     }
     m_updating = false;
 }
@@ -508,7 +546,7 @@ AudioSample* BottomPanel::waveformSample() const
 
 void BottomPanel::applyLoopRegion(AudioSample* sample, const LoopRegion& region)
 {
-    sample->setLoopRegion(region);
+    edit(tr("Loop points"), [&](Pad*) { sample->setLoopRegion(region); });
     emit loopRegionChanged(sample);
     refreshWaveform();
 }

@@ -1,5 +1,6 @@
 #include "Scene.h"
 #include "AppConfig.h"
+#include "Fade.h"
 
 #include <algorithm>
 #include <QScrollArea>
@@ -169,7 +170,7 @@ SoundPadWidget* Scene::padWidgetAt(int idx) const
 
 float Scene::fadeGain(float phase)
 {
-    return std::sin(std::clamp(phase, 0.0f, 1.0f) * 1.57079632679f);
+    return Fade::equalPower(phase);
 }
 
 void Scene::play(int fadeMs, bool fadeInStarts)
@@ -214,7 +215,7 @@ void Scene::play(int fadeMs, bool fadeInStarts)
     m_fadeTimer.restart();
     for (Pad* pad : starting) {
         pad->setFadeVolume(m_resuming.contains(pad) ? m_fadeVolume : 1.0f);
-        pad->soundPlayer().setPaused(false);
+        pad->play();
     }
     if (!m_fading) {
         m_resuming.clear();
@@ -233,7 +234,7 @@ void Scene::pause(int fadeMs)
     m_fadeTimer.restart();
     m_fadeCallback = [this]() {
         for (Pad* pad : pads) {
-            pad->soundPlayer().setPaused(true);
+            pad->pauseNow();
         }
     };
 }
@@ -250,7 +251,7 @@ void Scene::stop(int fadeMs, bool crossfade)
     m_fadeTimer.restart();
     m_fadeCallback = [this]() {
         for (Pad* pad : pads) {
-            pad->soundPlayer().stop();
+            pad->stopNow();
         }
     };
 }
@@ -260,7 +261,7 @@ void Scene::stopImmediate()
     endFade();
     isPlaying = false;
     for (Pad* pad : pads) {
-        pad->soundPlayer().stop();
+        pad->stopNow();
     }
     m_row->setPlaying(false);
 }

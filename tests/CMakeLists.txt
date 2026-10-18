@@ -88,3 +88,22 @@ add_test(NAME live_window COMMAND test_live_window)
 set_tests_properties(live_window PROPERTIES
     ENVIRONMENT "ALSOFT_DRIVERS=null;QT_QPA_PLATFORM=offscreen"
     TIMEOUT 120)
+
+# Per-pad fades, with real pads.
+add_executable(test_pad_play test_pad_play.cpp)
+target_link_libraries(test_pad_play PRIVATE feedra_app)
+feedra_warnings(test_pad_play)
+add_test(NAME pad_play COMMAND test_pad_play)
+set_tests_properties(pad_play PROPERTIES
+    ENVIRONMENT "ALSOFT_DRIVERS=null;QT_QPA_PLATFORM=offscreen"
+    SKIP_RETURN_CODE 77
+    TIMEOUT 120)
+
+# Undo and redo in the window.
+add_executable(test_undo test_undo.cpp)
+target_link_libraries(test_undo PRIVATE feedra_app)
+feedra_warnings(test_undo)
+add_test(NAME undo COMMAND test_undo)
+set_tests_properties(undo PROPERTIES
+    ENVIRONMENT "ALSOFT_DRIVERS=null;QT_QPA_PLATFORM=offscreen"
+    TIMEOUT 120)

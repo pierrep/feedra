@@ -1,6 +1,7 @@
 #pragma once
 
 #include "AppConfig.h"
+#include "Pad.h"
 #include "ControlMap.h"
 #include "Duck.h"
 #include "widgets/SoundPadWidget.h"
@@ -13,6 +14,7 @@
 #include <QPointer>
 #include <QVector>
 
+#include <map>
 #include <memory>
 #include <thread>
 
@@ -20,6 +22,9 @@ class AudioSample;
 class Scene;
 class SampleLoadQueue;
 class LogWindow;
+class QUndoStack;
+class PadEditCommand;
+class SceneDeleteCommand;
 class MidiInput;
 class FileBrowserWidget;
 class SettingsPage;
@@ -77,7 +82,31 @@ private:
     int nextSceneId() const;
     void importScenes();
     void importScenesFrom(const QString& path);
+    // Asks, then removes the scene (an undoable step).
     void deleteScene(int sceneId);
+    // Without asking, and without undo: what deleting does, and what undo puts back.
+    void removeSceneAt(int index);
+    void insertSceneFromJson(int index, const QJsonObject& scene);
+    QJsonObject sceneToJson(const Scene* scene) const;
+
+    // Undo. Before a change, snapshot the pads it touches; after it, record the step. Nothing
+    // is recorded if nothing changed. `merge`: joins the step before it if that's the same edit
+    // to the same pad a moment ago (a slider being dragged).
+    struct PadSnapshot {
+        struct Entry {
+            int sceneId = 0;
+            int padId = 0;
+            Pad::PadClip before;
+        };
+        std::vector<Entry> entries;
+    };
+    PadSnapshot snapshotPads(std::initializer_list<Pad*> pads) const;
+    void recordPadEdit(const PadSnapshot& snapshot, const QString& text, bool merge = false);
+    // After undo or redo changed a pad: the controls show it.
+    void afterUndoChange(Pad* pad);
+    // The panels and pad widgets report their edits through these.
+    void padEditStarting(Pad* pad);
+    void padEdited(Pad* pad, const QString& what);
     void enableScene(int idx);
     // Selects the scene and crossfades into it: every other scene that's playing (or has pads
     // playing) fades out and stops while this one fades in, over AppConfig::crossfadeSeconds.
@@ -159,7 +188,12 @@ private:
     Pad* syncPanelPad();
     Scene* activeScene() const;
 
+    friend class PadEditCommand;
+    friend class SceneDeleteCommand;
     AppConfig m_config;
+    QUndoStack* m_undo = nullptr;
+    std::map<Pad*, PadSnapshot> m_pendingEdits; // started by padEditStarting, not yet recorded
+    bool m_recordSteps = true; // off while one action runs another that would record
     QJsonObject m_local; // local.json as last read or written
     QVector<Scene*> m_scenes;
     Pad::PadClip m_padClip;

@@ -122,6 +122,9 @@ signals:
     // `volume`: learn a fader for the pad's volume; otherwise a pad or key to play it.
     void midiLearnRequested(int padId, bool volume);
     void midiForgetRequested(int padId);
+    void editStarting(Pad* pad);
+    void edited(Pad* pad, const QString& what);
+
 
 protected:
     bool eventFilter(QObject* watched, QEvent* event) override;

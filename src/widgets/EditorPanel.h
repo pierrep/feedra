@@ -6,6 +6,8 @@
 // The selected sample is AppConfig::activeSampleIdx / activeSampleId, which the Waveform tab
 // and the window's arrow keys share.
 
+#include "Pad.h"
+
 #include <QPointer>
 #include <QVector>
 #include <QWidget>
@@ -52,8 +54,25 @@ signals:
     void samplesChanged();
     // A sample's loop region changed from here.
     void loopRegionChanged(AudioSample* sample);
+    void editStarting(Pad* pad);
+    void edited(Pad* pad, const QString& what);
+
 
 private:
+    // For undo: the window snapshots the pad on editStarting and records the change on edited.
+    // Edits with the same name in quick succession (a slider being dragged) become one step.
+    template <typename Change>
+    void edit(const QString& what, Change change)
+    {
+        Pad* pad = m_pad;
+        if (!pad) {
+            return;
+        }
+        emit editStarting(pad);
+        change(pad);
+        emit edited(pad, what);
+    }
+
     AudioSample* selectedSample() const;
     void updatePanControl(AudioSample* sample);
     void moveSample(int fromIndex, int insertIndex);

@@ -10,6 +10,7 @@
 #include "OpenALSoundPlayer.h"
 #include "SoundPlayer.h"
 
+#include <QElapsedTimer>
 #include <QJsonObject>
 #include <QObject>
 #include <QString>
@@ -67,6 +68,23 @@ public:
     // The pad's play button: play, or pause if it's playing. Nothing while it loads or is
     // empty. The keyboard and MIDI use this too.
     void togglePlay();
+    // Play, pause and stop with the pad's own fade in and fade out times (instant at 0).
+    // Pressing play during a fade-out fades back in from where it was.
+    void play();
+    void pause();
+    void stop();
+    // Straight away, whatever the fade times: the scene has already faded the pad out.
+    void pauseNow();
+    void stopNow();
+
+    // Seconds (0 = none, up to 10).
+    float fadeInTime() const { return m_fadeIn; }
+    void setFadeInTime(float seconds);
+    float fadeOutTime() const { return m_fadeOut; }
+    void setFadeOutTime(float seconds);
+    // The pad's own fade level, 0..1 (1 when not fading).
+    float padFadeGain() const;
+    bool isPadFading() const { return m_padFadeDirection != 0; }
 
     // Once per UI tick: the player's tick and the pad's volume.
     void updateAudio();
@@ -112,11 +130,22 @@ public:
             bool panRandom = false;
             float width = 1.0f;
             LoopRegion loop;
+            bool operator==(const Sample& o) const
+            {
+                return path == o.path && pitch == o.pitch && gain == o.gain && pan == o.pan
+                    && panRandom == o.panRandom && width == o.width && loop == o.loop;
+            }
         };
         std::vector<Sample> samples;
         // Samples whose files couldn't be loaded, as they were saved. Kept so they aren't lost.
         std::vector<QJsonObject> missing;
         bool scenePad = false;
+        float fadeIn = 0.0f;
+        float fadeOut = 0.0f;
+        bool operator==(const PadClip& o) const;
+        bool operator!=(const PadClip& o) const { return !(*this == o); }
+        // The same files in the same order (settings aside).
+        bool sameSamples(const PadClip& o) const;
     };
     PadClip clip() const;
     void pasteClip(const PadClip& clip);
@@ -124,6 +153,9 @@ public:
     // (pitch, gain, pan, width, loop). Nothing else about this pad changes.
     void appendClip(const PadClip& clip);
     void copyFrom(const Pad& other) { pasteClip(other.clip()); }
+    // Makes the pad what `clip` describes (undo and redo). With the same files, only the
+    // settings change and nothing reloads; otherwise it's a paste (an invalid clip empties it).
+    void restoreClip(const PadClip& clip);
 
     // A scene pad starts when its scene is played from the scene list. If a scene has any,
     // only they start; otherwise every pad with sounds does.
@@ -188,6 +220,19 @@ private:
     int m_sampleRate = 0;
     int m_channels = 0;
     bool m_scenePad = false;
+
+    // The pad's own fade (play, pause and stop from the pad, keys and MIDI).
+    enum class AfterFade { None, Pause, Stop };
+    float m_fadeIn = 0.0f;
+    float m_fadeOut = 0.0f;
+    int m_padFadeDirection = 0; // 1 in, -1 out, 0 not fading
+    float m_padPhase = 1.0f;
+    float m_padPhaseFrom = 1.0f;
+    int m_padFadeMs = 0;
+    AfterFade m_afterFade = AfterFade::None;
+    QElapsedTimer m_padFadeClock;
+    void startPadFade(int direction, float seconds, AfterFade after);
+    void updatePadFade();
     // Send levels, kept here too so they survive loading (bus order: EAX 1, EAX 2, conv 1, conv 2).
     float m_sends[OpenALSoundPlayer::kSendCount] = { 0.0f, 0.0f, 0.0f, 0.0f };
 

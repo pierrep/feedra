@@ -23,6 +23,8 @@
 #include "VolumeDb.h"
 
 #include <QAction>
+#include <QUndoCommand>
+#include <QUndoStack>
 #include <QApplication>
 #include <QCheckBox>
 #include <QCloseEvent>
@@ -224,9 +226,111 @@ private:
 
 }
 
+// One undo step: the pads it changed, as they were before and after. Pads are found by scene
+// and pad id, so a step still applies after its pad's scene was deleted and put back.
+class PadEditCommand : public QUndoCommand
+{
+public:
+    struct Entry {
+        int sceneId = 0;
+        int padId = 0;
+        Pad::PadClip before;
+        Pad::PadClip after;
+    };
+
+    PadEditCommand(MainWindow* window, std::vector<Entry> entries, const QString& text, bool merge)
+        : QUndoCommand(text)
+        , m_window(window)
+        , m_entries(std::move(entries))
+        , m_merge(merge)
+    {
+        m_time.start();
+    }
+
+    void undo() override { apply(false); }
+    void redo() override
+    {
+        if (m_first) {
+            m_first = false; // it has just happened
+            return;
+        }
+        apply(true);
+    }
+    int id() const override { return m_merge ? 1 : -1; }
+    bool mergeWith(const QUndoCommand* other) override
+    {
+        const auto* next = static_cast<const PadEditCommand*>(other);
+        if (!next->m_merge || next->text() != text() || m_entries.size() != 1 || next->m_entries.size() != 1
+            || next->m_entries[0].sceneId != m_entries[0].sceneId || next->m_entries[0].padId != m_entries[0].padId
+            || m_time.elapsed() > 2000) {
+            return false;
+        }
+        m_entries[0].after = next->m_entries[0].after;
+        m_time.restart();
+        // Dragged back to where it started: nothing to undo.
+        setObsolete(m_entries[0].after == m_entries[0].before);
+        return true;
+    }
+
+private:
+    void apply(bool forward)
+    {
+        for (const Entry& entry : m_entries) {
+            if (Pad* pad = m_window->findPad(entry.sceneId, entry.padId)) {
+                pad->restoreClip(forward ? entry.after : entry.before);
+                m_window->afterUndoChange(pad);
+            }
+        }
+    }
+
+    MainWindow* m_window;
+    std::vector<Entry> m_entries;
+    bool m_merge = false;
+    bool m_first = true;
+    QElapsedTimer m_time;
+};
+
+// Deleting a scene: undo puts it back where it was, with its pads.
+class SceneDeleteCommand : public QUndoCommand
+{
+public:
+    SceneDeleteCommand(MainWindow* window, int index, int sceneId, QJsonObject scene, const QString& text)
+        : QUndoCommand(text)
+        , m_window(window)
+        , m_index(index)
+        , m_sceneId(sceneId)
+        , m_scene(std::move(scene))
+    {
+    }
+
+    void undo() override { m_window->insertSceneFromJson(m_index, m_scene); }
+    void redo() override
+    {
+        if (m_first) {
+            m_first = false;
+            return;
+        }
+        for (int i = 0; i < m_window->m_scenes.size(); ++i) {
+            if (m_window->m_scenes[i]->id == m_sceneId) {
+                m_window->removeSceneAt(i);
+                return;
+            }
+        }
+    }
+
+private:
+    MainWindow* m_window;
+    int m_index;
+    int m_sceneId;
+    QJsonObject m_scene;
+    bool m_first = true;
+};
+
 MainWindow::MainWindow(QWidget* parent)
     : QMainWindow(parent)
 {
+    m_undo = new QUndoStack(this);
+    m_undo->setUndoLimit(200);
     setWindowTitle(QStringLiteral("Feedra"));
     resize(1150, 800);
     m_config.setup();
@@ -341,6 +445,14 @@ void MainWindow::buildMenus()
     auto* quitAct = fileMenu->addAction(tr("E&xit"));
     quitAct->setShortcut(QKeySequence::Quit);
     connect(quitAct, &QAction::triggered, this, &QWidget::close);
+
+    auto* editMenu = menuBar()->addMenu(tr("&Edit"));
+    QAction* undoAct = m_undo->createUndoAction(this, tr("&Undo"));
+    undoAct->setShortcut(QKeySequence::Undo);
+    QAction* redoAct = m_undo->createRedoAction(this, tr("&Redo"));
+    redoAct->setShortcuts({ QKeySequence::Redo, QKeySequence(QStringLiteral("Ctrl+Y")) });
+    editMenu->addAction(undoAct);
+    editMenu->addAction(redoAct);
 
     auto* viewMenu = menuBar()->addMenu(tr("&View"));
     auto* scenesAct = viewMenu->addAction(tr("Scenes"));
@@ -564,6 +676,8 @@ void MainWindow::buildUi()
 
     m_editor = new EditorPanel(&m_config, m_sidebarStack);
     connect(m_editor, &EditorPanel::samplesChanged, this, &MainWindow::updateMainControls);
+    connect(m_editor, &EditorPanel::editStarting, this, &MainWindow::padEditStarting);
+    connect(m_editor, &EditorPanel::edited, this, &MainWindow::padEdited);
     connect(m_editor, &EditorPanel::loopRegionChanged, this, [this](AudioSample*) { m_bottom->refreshWaveform(); });
 
     m_fileBrowser = new FileBrowserWidget(&m_config, m_sidebarStack);
@@ -633,6 +747,8 @@ void MainWindow::buildUi()
     m_bottom = new BottomPanel(&m_config, central);
     outer->addWidget(m_bottom, 0);
     connect(m_bottom, &BottomPanel::collapseRequested, this, [this](bool collapsed) { setBottomCollapsed(collapsed); });
+    connect(m_bottom, &BottomPanel::editStarting, this, &MainWindow::padEditStarting);
+    connect(m_bottom, &BottomPanel::edited, this, &MainWindow::padEdited);
     connect(m_bottom, &BottomPanel::loopRegionChanged, this, [this](AudioSample* sample) { m_editor->syncLoop(sample); });
 
     connect(m_addScene, &QPushButton::clicked, this, &MainWindow::addNewScene);
@@ -711,6 +827,8 @@ void MainWindow::connectScene(Scene* scene)
         });
         connect(pad, &Pad::filesDropped, this, [this]() { updateMainControls(); });
         scene->padWidgets[i]->setMidiMenu(MidiInput::available());
+        connect(scene->padWidgets[i], &SoundPadWidget::editStarting, this, &MainWindow::padEditStarting);
+        connect(scene->padWidgets[i], &SoundPadWidget::edited, this, &MainWindow::padEdited);
         connect(scene->padWidgets[i], &SoundPadWidget::midiLearnRequested, this, [this](int padId, bool volume) {
             startMidiLearn(volume ? ControlAction::PadVolume : ControlAction::PadPlay, padId);
         });
@@ -747,7 +865,7 @@ void MainWindow::connectScene(Scene* scene)
         connect(pad, &Pad::loadingFinished, this, [this, pad]() {
             for (Scene* scene : m_scenes) {
                 if (scene->id == pad->sceneId() && scene->isPlaying && pad->isLoaded() && !pad->isLoading()) {
-                    pad->soundPlayer().setPaused(false);
+                    pad->play();
                 }
             }
             updateMainControls();
@@ -868,11 +986,25 @@ void MainWindow::deleteScene(int sceneId)
     if (confirm.exec() != QMessageBox::Yes) {
         return;
     }
+    const QJsonObject saved = sceneToJson(scene);
+    removeSceneAt(idx);
+    m_undo->push(new SceneDeleteCommand(this, idx, sceneId, saved, tr("Delete scene \"%1\"").arg(sceneName)));
+}
+
+void MainWindow::removeSceneAt(int idx)
+{
+    if (idx < 0 || idx >= m_scenes.size() || m_scenes.size() == 1) {
+        return;
+    }
+    Scene* scene = m_scenes[idx];
     const bool deletingActive = (idx == m_config.activeSceneIdx);
+    for (Pad* pad : scene->pads) {
+        m_pendingEdits.erase(pad);
+    }
     m_padStack->removeWidget(scene->grid());
     m_scenes.removeAt(idx);
     delete scene;
-    m_addScene->setEnabled(true);
+    m_addScene->setEnabled(static_cast<unsigned int>(m_scenes.size()) < m_config.maxScenes);
     int nextIdx = m_config.activeSceneIdx;
     if (deletingActive) {
         nextIdx = qMin(idx, m_scenes.size() - 1);
@@ -882,6 +1014,102 @@ void MainWindow::deleteScene(int sceneId)
     enableScene(nextIdx);
     updateSceneListLayout();
 }
+
+QJsonObject MainWindow::sceneToJson(const Scene* scene) const
+{
+    QJsonObject obj;
+    obj.insert(QStringLiteral("id"), scene->id);
+    obj.insert(QStringLiteral("name"), scene->row() ? scene->row()->sceneName() : scene->name);
+    obj.insert(QStringLiteral("activesound"), scene->activeSoundIdx);
+    for (const Pad* pad : scene->pads) {
+        pad->saveToJson(obj);
+    }
+    return obj;
+}
+
+void MainWindow::insertSceneFromJson(int index, const QJsonObject& obj)
+{
+    const int id = obj.value(QStringLiteral("id")).toInt();
+    for (Scene* existing : m_scenes) {
+        if (existing->id == id) {
+            return; // already there
+        }
+    }
+    auto* scene = new Scene(&m_config, id, obj.value(QStringLiteral("name")).toString(), m_padStack, m_sceneListHost, this);
+    scene->activeSoundIdx = obj.value(QStringLiteral("activesound")).toInt(0);
+    connectScene(scene);
+    // Saved with absolute paths, so no folder to resolve against.
+    const QJsonObject root{ { QStringLiteral("scene"), obj } };
+    for (Pad* pad : scene->pads) {
+        pad->loadFromJson(root);
+    }
+    index = std::clamp(index, 0, static_cast<int>(m_scenes.size()));
+    m_scenes.insert(index, scene);
+    m_padStack->addWidget(scene->grid());
+    updateSceneListLayout();
+    m_addScene->setEnabled(static_cast<unsigned int>(m_scenes.size()) < m_config.maxScenes);
+    enableScene(index);
+}
+
+MainWindow::PadSnapshot MainWindow::snapshotPads(std::initializer_list<Pad*> pads) const
+{
+    PadSnapshot snapshot;
+    for (Pad* pad : pads) {
+        if (pad) {
+            snapshot.entries.push_back({ pad->sceneId(), pad->padId(), pad->clip() });
+        }
+    }
+    return snapshot;
+}
+
+void MainWindow::recordPadEdit(const PadSnapshot& snapshot, const QString& text, bool merge)
+{
+    std::vector<PadEditCommand::Entry> entries;
+    for (const PadSnapshot::Entry& e : snapshot.entries) {
+        Pad* pad = findPad(e.sceneId, e.padId);
+        if (!pad) {
+            continue;
+        }
+        Pad::PadClip after = pad->clip();
+        if (after != e.before) {
+            entries.push_back({ e.sceneId, e.padId, e.before, std::move(after) });
+        }
+    }
+    if (!entries.empty()) {
+        m_undo->push(new PadEditCommand(this, std::move(entries), text, merge));
+    }
+}
+
+void MainWindow::padEditStarting(Pad* pad)
+{
+    // A drag sends many in a row: the first one holds the "before".
+    if (pad && m_pendingEdits.find(pad) == m_pendingEdits.end()) {
+        m_pendingEdits.emplace(pad, snapshotPads({ pad }));
+    }
+}
+
+void MainWindow::padEdited(Pad* pad, const QString& what)
+{
+    const auto it = m_pendingEdits.find(pad);
+    if (it == m_pendingEdits.end()) {
+        return;
+    }
+    const PadSnapshot snapshot = it->second;
+    m_pendingEdits.erase(it);
+    recordPadEdit(snapshot, what, true);
+}
+
+void MainWindow::afterUndoChange(Pad* pad)
+{
+    if (pad == activePad()) {
+        updateMainControls();
+        if (m_sidebar == SidebarView::Editor) {
+            refreshEditorPage();
+        }
+        m_bottom->refreshWaveform();
+    }
+}
+
 
 void MainWindow::enableScene(int idx)
 {
@@ -1771,6 +1999,8 @@ void MainWindow::importScenes()
 // column; if the file's grid is larger than this one, its extra rows and columns are dropped.
 void MainWindow::importScenesFrom(const QString& path)
 {
+    m_undo->clear(); // new scene ids could meet old steps
+
     QFile file(path);
     if (!file.open(QIODevice::ReadOnly)) {
         QMessageBox::warning(this, tr("Import scenes"), tr("Could not open %1.").arg(QDir::toNativeSeparators(path)));
@@ -1907,6 +2137,9 @@ void MainWindow::loadConfigFrom(const QString& path)
     if (!m_config.loadJson(path)) {
         return;
     }
+    // The steps were about the scenes that are going.
+    m_undo->clear();
+    m_pendingEdits.clear();
     // A copy as it was when opened, whatever happens to it later.
     ProjectBackups::backup(path, true);
     m_config.settingsPath = QFileInfo(path).absoluteFilePath();
@@ -2024,7 +2257,9 @@ void MainWindow::restoreWindowLayout(const QJsonObject& global)
 void MainWindow::clearActivePad()
 {
     if (auto* pad = activePad()) {
+        const PadSnapshot before = snapshotPads({ pad });
         pad->clearPad();
+        recordPadEdit(before, tr("Clear pad"));
         updateMainControls();
         if (m_sidebar == SidebarView::Editor) {
             refreshEditorPage();
@@ -2055,7 +2290,9 @@ void MainWindow::cutActivePad()
         return;
     }
     m_padClip = clip;
+    const PadSnapshot before = snapshotPads({ pad });
     pad->clearPad();
+    recordPadEdit(before, tr("Cut pad"));
     updateMainControls();
     if (m_sidebar == SidebarView::Editor) {
         refreshEditorPage();
@@ -2068,7 +2305,9 @@ void MainWindow::pasteActivePad()
     if (!pad || !m_padClip.valid) {
         return;
     }
+    const PadSnapshot before = snapshotPads({ pad });
     pad->pasteClip(m_padClip);
+    recordPadEdit(before, tr("Paste pad"));
     updateMainControls();
     if (m_sidebar == SidebarView::Editor) {
         refreshEditorPage();
@@ -2116,8 +2355,12 @@ void MainWindow::copyPad(int fromIdx, int toIdx)
     if (!from || !to || from == to) {
         return;
     }
+    const PadSnapshot before = snapshotPads({ to });
     to->clearPad();
     to->copyFrom(*from);
+    if (m_recordSteps) {
+        recordPadEdit(before, tr("Copy pad"));
+    }
     m_config.activeSoundIdx = toIdx;
     scene->activeSoundIdx = toIdx;
     updateMainControls();
@@ -2136,8 +2379,13 @@ void MainWindow::movePad(int fromIdx, int toIdx)
     if (!from || !to || from == to) {
         return;
     }
+    // One step for both pads (the copy inside doesn't record its own).
+    const PadSnapshot before = snapshotPads({ from, to });
+    m_recordSteps = false;
     copyPad(fromIdx, toIdx); // reads the source's samples before it is cleared
+    m_recordSteps = true;
     from->clearPad();
+    recordPadEdit(before, tr("Move pad"));
     if (m_sidebar == SidebarView::Editor) {
         refreshEditorPage();
     }
@@ -2161,10 +2409,12 @@ void MainWindow::mergePad(int fromIdx, int toIdx, bool keepSource)
     if (!clip.valid) {
         return; // an empty pad adds nothing, and the target is left alone
     }
+    const PadSnapshot before = snapshotPads({ from, to });
     to->appendClip(clip);
     if (!keepSource) {
         from->clearPad();
     }
+    recordPadEdit(before, tr("Merge pads"));
     m_config.activeSoundIdx = toIdx;
     scene->activeSoundIdx = toIdx;
     updateMainControls();
@@ -2179,7 +2429,9 @@ void MainWindow::clearActiveSample()
     if (!pad || pad->soundPlayer().player.empty()) {
         return;
     }
+    const PadSnapshot before = snapshotPads({ pad });
     pad->removeSampleAt(m_config.activeSampleIdx);
+    recordPadEdit(before, tr("Remove sample"));
     m_config.activeSampleIdx = std::max(0, m_config.activeSampleIdx - 1);
     refreshEditorPage();
 }

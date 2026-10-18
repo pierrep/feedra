@@ -587,7 +587,7 @@ SoundPadWidget::SoundPadWidget(AppConfig* config, Pad* pad, QWidget* parent)
     connect(m_load, &QAbstractButton::clicked, this, &SoundPadWidget::chooseFiles);
     connect(m_play, &QAbstractButton::clicked, m_pad, &Pad::togglePlay);
     connect(m_stop, &QAbstractButton::clicked, this, [this]() {
-        m_pad->soundPlayer().stop();
+        m_pad->stop();
     });
     // The loop icon shows and switches the *current sample's* loop (its saved setting).
     // clicked, not toggled: the icon is also updated from the sample on every tick.
@@ -597,7 +597,9 @@ SoundPadWidget::SoundPadWidget(AppConfig* config, Pad* pad, QWidget* parent)
             m_loop->setChecked(false);
             return;
         }
+        emit editStarting(m_pad);
         m_pad->setCurrentSampleLooping(on);
+        emit edited(m_pad, tr("Loop"));
     });
     connect(m_volume, &QSlider::valueChanged, this, [this](int value) {
         m_pad->setPadVolume(VolumeDb::toLinearMuted(VolumeDb::fromSlider(value, VolumeDb::kFloorDb)));
@@ -708,7 +710,7 @@ void SoundPadWidget::refreshUiState()
 {
     const SoundPlayer& player = m_pad->soundPlayer();
     const bool loaded = !m_pad->isLoading() && player.isLoaded();
-    const bool playing = player.isPlaying();
+    const bool playing = m_pad->isPlaying();
     const bool delay = loaded && player.isPlayingDelay();
     // Play does nothing on an empty pad, so let clicks through to select the pad.
     const bool empty = !m_pad->isLoading() && !player.isLoaded();
@@ -1042,6 +1044,7 @@ void SoundPadWidget::beginNameEdit()
         return;
     }
     m_nameBeforeEdit = m_name->text();
+    emit editStarting(m_pad); // the whole rename is one step
     m_name->setAttribute(Qt::WA_TransparentForMouseEvents, false);
     m_name->setReadOnly(false);
     m_name->setFocusPolicy(Qt::StrongFocus);
@@ -1052,6 +1055,9 @@ void SoundPadWidget::beginNameEdit()
 
 void SoundPadWidget::endNameEdit()
 {
+    if (!m_name->isReadOnly()) {
+        emit edited(m_pad, tr("Rename pad"));
+    }
     // Read-only and see-through to the mouse, so a single click selects the pad and a drag
     // that starts on the title picks up the pad like anywhere else on it.
     m_name->setReadOnly(true);
@@ -1170,7 +1176,9 @@ void SoundPadWidget::mouseReleaseEvent(QMouseEvent* event)
             && (event->pos() - m_dragStart).manhattanLength() < QApplication::startDragDistance();
         m_ctrlClickPending = false;
         if (toggle && m_pad->hasSounds()) {
+            emit editStarting(m_pad);
             m_pad->setScenePad(!m_pad->isScenePad());
+            emit edited(m_pad, tr("Plays with scene"));
         }
     }
     QWidget::mouseReleaseEvent(event);
@@ -1372,7 +1380,9 @@ void SoundPadWidget::dropEvent(QDropEvent* event)
         if (!Pad::confirmFileCount(this, paths.size())) {
             return;
         }
+        emit editStarting(m_pad);
         m_pad->loadFiles(paths, !add);
+        emit edited(m_pad, add ? tr("Add samples") : tr("Drop files"));
         emit padClicked(padId());
     });
 }
@@ -1382,7 +1392,9 @@ void SoundPadWidget::chooseFiles()
     const QString start = m_config->loadDialogDir(m_pad->currentSamplePath());
     const QStringList paths = QFileDialog::getOpenFileNames(this, tr("Load files"), start, AudioFormats::dialogFilters().join(QStringLiteral(";;")));
     if (!paths.isEmpty()) {
+        emit editStarting(m_pad);
         m_pad->loadFiles(paths, true);
+        emit edited(m_pad, tr("Load files"));
         emit padClicked(padId());
     }
 }
