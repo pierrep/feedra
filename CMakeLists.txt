@@ -29,11 +29,13 @@ find_package(Qt6 REQUIRED COMPONENTS Widgets)
 
 option(FEEDRA_BUILD_TESTS "Build the tests in tests/" ON)
 option(FEEDRA_WARNINGS_AS_ERRORS "Treat compiler warnings as errors (CI)" OFF)
+option(FEEDRA_WITH_MIDI "MIDI input through the bundled RtMidi (needs ALSA on Linux)" ON)
 
 # The audio engine: no widgets, so the tests can link it on its own.
 set(FEEDRA_ENGINE_SOURCES
     src/AudioCodec.cpp
     src/AudioDevice.cpp
+    src/CueOutput.cpp
     src/RegionRenderer.cpp
     src/OpenALSoundPlayer.cpp
 )
@@ -42,6 +44,10 @@ set(FEEDRA_ENGINE_SOURCES
 set(FEEDRA_APP_SOURCES
     src/LogCapture.cpp
     src/AppConfig.cpp
+    src/Duck.cpp
+    src/KeyLayout.cpp
+    src/ControlMap.cpp
+    src/MidiInput.cpp
     src/Theme.cpp
     src/AudioFormats.cpp
     src/AudioSample.cpp
@@ -60,6 +66,8 @@ set(FEEDRA_APP_SOURCES
     src/widgets/WaveformWidget.cpp
     src/widgets/FileBrowserWidget.cpp
     src/widgets/LogWindow.cpp
+    src/widgets/BottomPanel.cpp
+    src/widgets/EditorPanel.cpp
     src/widgets/SettingsCards.cpp
     src/widgets/SettingsPage.cpp
     src/widgets/ThemePage.cpp
@@ -174,6 +182,44 @@ else()
     message(STATUS "Feedra OpenAL: ${OPENAL_LIBRARIES} (${OPENAL_LIBRARY_DIRS})")
     message(STATUS "Feedra sndfile: ${SNDFILE_LIBRARIES} (${SNDFILE_LIBRARY_DIRS})")
     message(STATUS "Feedra mpg123: ${MPG123_LIBRARIES} (${MPG123_LIBRARY_DIRS})")
+endif()
+
+# MIDI input: the bundled RtMidi (third_party/rtmidi), on each system's own MIDI API. Without a
+# backend (no ALSA headers on Linux), Feedra builds without MIDI and says so in Settings.
+set(FEEDRA_MIDI_BACKEND "")
+if(FEEDRA_WITH_MIDI)
+    if(WIN32)
+        set(FEEDRA_MIDI_BACKEND "__WINDOWS_MM__")
+    elseif(APPLE)
+        set(FEEDRA_MIDI_BACKEND "__MACOSX_CORE__")
+    else()
+        find_package(ALSA)
+        if(ALSA_FOUND)
+            set(FEEDRA_MIDI_BACKEND "__LINUX_ALSA__")
+        else()
+            message(WARNING "ALSA development files not found (libasound2-dev / alsa-lib-devel): building without MIDI")
+        endif()
+    endif()
+endif()
+if(FEEDRA_MIDI_BACKEND)
+    find_package(Threads REQUIRED)
+    add_library(rtmidi STATIC third_party/rtmidi/RtMidi.cpp)
+    target_include_directories(rtmidi SYSTEM PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/third_party/rtmidi)
+    target_compile_definitions(rtmidi PUBLIC ${FEEDRA_MIDI_BACKEND})
+    target_link_libraries(rtmidi PUBLIC Threads::Threads)
+    if(WIN32)
+        target_link_libraries(rtmidi PUBLIC winmm)
+    elseif(APPLE)
+        target_link_libraries(rtmidi PUBLIC "-framework CoreMIDI" "-framework CoreAudio" "-framework CoreFoundation")
+    else()
+        target_link_libraries(rtmidi PUBLIC ALSA::ALSA)
+    endif()
+    set_target_properties(rtmidi PROPERTIES POSITION_INDEPENDENT_CODE ON)
+    target_link_libraries(feedra_app PUBLIC rtmidi)
+    target_compile_definitions(feedra_app PUBLIC FEEDRA_WITH_MIDI)
+    message(STATUS "Feedra MIDI: RtMidi with ${FEEDRA_MIDI_BACKEND}")
+else()
+    message(STATUS "Feedra MIDI: off")
 endif()
 
 if(MSVC)

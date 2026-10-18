@@ -7,6 +7,7 @@
 #include <QFileInfo>
 #include <QIODevice>
 #include <QJsonDocument>
+#include <QSaveFile>
 #include <QStandardPaths>
 
 AppConfig::AppConfig() = default;
@@ -122,6 +123,33 @@ QString AppConfig::waveformCacheDir() const
 QString AppConfig::defaultSettingsPath() const
 {
     return QDir(dataDir()).filePath("settings/settings.json");
+}
+
+QString AppConfig::localSettingsPath() const
+{
+    return QDir(dataDir()).filePath("settings/local.json");
+}
+
+QJsonObject AppConfig::loadLocalSettings() const
+{
+    QFile file(localSettingsPath());
+    if (!file.open(QIODevice::ReadOnly)) {
+        return {};
+    }
+    return QJsonDocument::fromJson(file.readAll()).object();
+}
+
+bool AppConfig::saveLocalSettings(const QJsonObject& settings) const
+{
+    const QString path = localSettingsPath();
+    QDir().mkpath(QFileInfo(path).absolutePath());
+    QSaveFile file(path);
+    if (!file.open(QIODevice::WriteOnly)) {
+        qWarning() << "Couldn't write" << path;
+        return false;
+    }
+    file.write(QJsonDocument(settings).toJson(QJsonDocument::Indented));
+    return file.commit();
 }
 
 bool AppConfig::loadJson(const QString& path)

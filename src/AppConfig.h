@@ -19,6 +19,12 @@ public:
     // The impulse response that ships with Feedra (data/ir/impulse.wav).
     QString defaultImpulsePath() const;
     QString defaultSettingsPath() const;
+    // Settings that belong to this computer rather than to a project: the audio devices, the
+    // window's size and place, MIDI. settings/local.json in the data folder, beside the
+    // default project, so a project opened on another computer doesn't bring them along.
+    QString localSettingsPath() const;
+    QJsonObject loadLocalSettings() const;
+    bool saveLocalSettings(const QJsonObject& settings) const;
     // data/cache/waveforms: saved waveform peaks, one file per sample (see PeakStore).
     QString waveformCacheDir() const;
     QString libraryLocation() const { return defaultLibraryLocation; }
@@ -51,6 +57,20 @@ public:
     // Save scenes and pads to the open settings file on quit. When off, only app settings
     // are written on quit, and scene changes are kept only by saving.
     bool autosave = true;
+    // Go to scene (the scene row's Go button, Enter): how long the playing scenes take to fade
+    // out while the new one fades in.
+    double crossfadeSeconds = 3.0;
+    // Talk-over (hold Space): how far every scene dips, in dB.
+    double talkOverDepthDb = -12.0;
+    // Panic (Esc): how long everything takes to fade out. A second press stops at once.
+    double panicSeconds = 1.0;
+    // The keyboard plays the pads (see KeyLayout).
+    bool keyboardPads = true;
+    // The output device by name, or empty to follow the system's default output.
+    QString outputDevice;
+    // A second device for the Files tab's previews (headphones), or empty to preview on the
+    // main output. See CueOutput.
+    QString previewDevice;
 
     int activeSceneId = 0;
     int activeSceneIdx = 0;

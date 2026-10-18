@@ -32,6 +32,8 @@
 #include <QMessageBox>
 #include <QMouseEvent>
 #include <QAbstractButton>
+#include <QMenu>
+#include <QContextMenuEvent>
 #include <QPainter>
 #include <QPainterPath>
 #include <QPaintEvent>
@@ -583,13 +585,7 @@ SoundPadWidget::SoundPadWidget(AppConfig* config, Pad* pad, QWidget* parent)
     }
 
     connect(m_load, &QAbstractButton::clicked, this, &SoundPadWidget::chooseFiles);
-    connect(m_play, &QAbstractButton::clicked, this, [this]() {
-        if (m_pad->isLoading() || !m_pad->isLoaded()) {
-            return;
-        }
-        SoundPlayer& player = m_pad->soundPlayer();
-        player.setPaused(player.isPlaying());
-    });
+    connect(m_play, &QAbstractButton::clicked, m_pad, &Pad::togglePlay);
     connect(m_stop, &QAbstractButton::clicked, this, [this]() {
         m_pad->soundPlayer().stop();
     });
@@ -666,6 +662,35 @@ void SoundPadWidget::onPadChanged()
         m_playhead->setVisible(false);
     }
     update();
+}
+
+void SoundPadWidget::contextMenuEvent(QContextMenuEvent* event)
+{
+    if (!m_midiMenu) {
+        QWidget::contextMenuEvent(event);
+        return;
+    }
+    QMenu menu(this);
+    QAction* learnPlay = menu.addAction(tr("MIDI learn: play"));
+    QAction* learnVolume = menu.addAction(tr("MIDI learn: volume"));
+    menu.addSeparator();
+    QAction* forget = menu.addAction(tr("Forget MIDI"));
+    QAction* chosen = menu.exec(event->globalPos());
+    if (chosen == learnPlay) {
+        emit midiLearnRequested(padId(), false);
+    } else if (chosen == learnVolume) {
+        emit midiLearnRequested(padId(), true);
+    } else if (chosen == forget) {
+        emit midiForgetRequested(padId());
+    }
+}
+
+void SoundPadWidget::setKeyHint(const QString& key)
+{
+    if (key != m_keyHint) {
+        m_keyHint = key;
+        update();
+    }
 }
 
 void SoundPadWidget::setInteractive(bool enabled)
@@ -842,6 +867,20 @@ void SoundPadWidget::paintEvent(QPaintEvent*)
         p.setBrush(theme.padScene);
         p.drawPath(cardPath.intersected(corner));
         p.restore();
+    }
+
+    // The key that plays it: a small key cap right of the play button, under the name.
+    if (!m_keyHint.isEmpty()) {
+        QFont keyFont(QStringLiteral("Geist Mono"));
+        keyFont.setStyleHint(QFont::Monospace);
+        keyFont.setPixelSize(std::max(8, qRound(10 * s)));
+        const QRectF cap = at(144, 44, 18, 16);
+        p.setPen(QPen(theme.padBorder, 1.0));
+        p.setBrush(Qt::NoBrush);
+        p.drawRoundedRect(cap, 3.0 * s, 3.0 * s);
+        p.setFont(keyFont);
+        p.setPen(theme.textMuted);
+        p.drawText(cap, Qt::AlignCenter, m_keyHint);
     }
 
     QFont captionFont = font();

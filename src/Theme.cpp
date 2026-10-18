@@ -720,6 +720,10 @@ QPushButton#AddScene:hover, QPushButton#AddSample:hover {
 QWidget#Header { background: {{background}}; }
 QLabel#HeaderLabel { color: {{textMuted}}; font-weight: 500; }
 QLabel#MainVolumeValue { color: {{text}}; font-family: "Geist Mono"; }
+QPushButton#TalkOver, QPushButton#Panic { padding: 0 14px; min-height: 24px; font-weight: 500; }
+QPushButton#TalkOver[live="true"] { color: {{playLoaded}}; border: 1px solid {{playLoaded}}; }
+QPushButton#Panic:hover { border-color: {{dropIndicator}}; color: {{dropIndicator}}; }
+QLabel#MidiStatus { color: {{textMuted}}; }
 QLabel#LoadProgressLabel { color: {{textMuted}}; }
 QLabel#SettingsPath { color: {{textMuted}}; }
 QProgressBar#LoadProgress { background: {{progressTrack}}; border: none; border-radius: 2px; }

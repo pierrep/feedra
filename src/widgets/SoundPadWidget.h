@@ -108,6 +108,10 @@ public:
     void updateView();
     void setSelected(bool selected);
     void setInteractive(bool enabled);
+    // The key that plays this pad, drawn as a small key cap (empty: none).
+    void setKeyHint(const QString& key);
+    // Right-click offers MIDI learn and forget (when Feedra has MIDI).
+    void setMidiMenu(bool on) { m_midiMenu = on; }
 
 signals:
     void padClicked(int padId);
@@ -115,6 +119,9 @@ signals:
     // `copy` is true for Ctrl+drag (copy the pad), false for a plain drag (move it).
     void padDropped(int fromPadId, int toPadId, bool copy);
     void requestEdit();
+    // `volume`: learn a fader for the pad's volume; otherwise a pad or key to play it.
+    void midiLearnRequested(int padId, bool volume);
+    void midiForgetRequested(int padId);
 
 protected:
     bool eventFilter(QObject* watched, QEvent* event) override;
@@ -122,6 +129,7 @@ protected:
     void resizeEvent(QResizeEvent* event) override;
     void mousePressEvent(QMouseEvent* event) override;
     void mouseReleaseEvent(QMouseEvent* event) override;
+    void contextMenuEvent(QContextMenuEvent* event) override;
     void mouseDoubleClickEvent(QMouseEvent* event) override;
     void mouseMoveEvent(QMouseEvent* event) override;
     void dragEnterEvent(QDragEnterEvent* event) override;
@@ -152,6 +160,8 @@ private:
     Pad* m_pad = nullptr;
     bool m_ctrlClickPending = false; // Ctrl held at press: toggles the scene pad mark on release unless it becomes a drag
     bool m_selected = false;
+    QString m_keyHint;
+    bool m_midiMenu = false;
     bool m_uiLoaded = false;
     bool m_uiLoading = false;
     bool m_uiPlaying = false;

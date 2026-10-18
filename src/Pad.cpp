@@ -141,6 +141,14 @@ QStringList Pad::missingPaths() const
     return out;
 }
 
+void Pad::togglePlay()
+{
+    if (isLoading() || !isLoaded()) {
+        return;
+    }
+    m_player.setPaused(m_player.isPlaying());
+}
+
 void Pad::updateAudio()
 {
     m_player.update();

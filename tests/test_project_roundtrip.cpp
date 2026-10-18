@@ -83,7 +83,11 @@ QJsonObject makeProject(const QString& media)
     };
     return QJsonObject{
         {"global", QJsonObject{{"mainvolume", 0.8}, {"maxscenes", 2}, {"activesceneid", 0}, {"autosave", true},
-                       {"scenelimit", 14}, {"gridwidth", 6}, {"gridheight", 4}}},
+                       {"scenelimit", 14}, {"gridwidth", 6}, {"gridheight", 4},
+                       // Not plugged in: stays chosen, and the sound plays on the default meanwhile.
+                       {"outputdevice", "Gone device"},
+                       // OpenAL's null device, which always opens.
+                       {"previewdevice", "No Output"}, {"crossfadetime", 4.5}}},
         {"scene0", tavern},
         {"scene1", forest},
     };
@@ -129,18 +133,6 @@ bool near(double a, double b, double tol = 1e-4)
     return std::fabs(a - b) <= tol;
 }
 
-QJsonObject withoutWindow(QJsonObject root)
-{
-    QJsonObject g = root.value("global").toObject();
-    for (const QString& key : g.keys()) {
-        if (key.startsWith("window")) {
-            g.remove(key);
-        }
-    }
-    root.insert("global", g);
-    return root;
-}
-
 } // namespace
 
 int main(int argc, char** argv)
@@ -167,6 +159,15 @@ int main(int argc, char** argv)
     const QJsonObject saved = readJson(settings);
     CHECK(!saved.isEmpty(), "nothing saved");
     CHECK(saved.value("global").toObject().value("version").toInt() == 2, "no format version");
+    // The devices and the window belong to this computer: moved out of the project into local.json.
+    const QJsonObject local = readJson(QDir(data).filePath("settings/local.json"));
+    CHECK(local.value("outputdevice").toString() == "Gone device",
+          "output device choice lost: %s", qPrintable(local.value("outputdevice").toString()));
+    CHECK(local.value("previewdevice").toString() == "No Output", "preview device lost");
+    CHECK(local.contains("windowgeometry") && local.contains("bottomtab"), "window layout not in local.json");
+    CHECK(!saved.value("global").toObject().contains("outputdevice") && !saved.value("global").toObject().contains("windowgeometry"),
+          "the project still carries this computer's settings");
+    CHECK(near(saved.value("global").toObject().value("crossfadetime").toDouble(), 4.5), "crossfade time lost");
 
     const QJsonObject rain = padOf(saved, "scene0", "0-0");
     CHECK(rain.value("soundname").toString() == "Rain", "name: %s", qPrintable(rain.value("soundname").toString()));
@@ -202,7 +203,9 @@ int main(int argc, char** argv)
     std::printf("open the saved file and quit again: nothing may change\n");
     runWindow(app);
     const QJsonObject again = readJson(settings);
-    CHECK(withoutWindow(again) == withoutWindow(saved), "a second round trip changed the project");
+    CHECK(again == saved, "a second round trip changed the project");
+    const QJsonObject localAgain = readJson(QDir(data).filePath("settings/local.json"));
+    CHECK(localAgain.value("outputdevice").toString() == "Gone device", "the device choice didn't survive a second run");
 
     std::printf("%s: %d failure(s)\n", g_failures ? "FAILED" : "OK", g_failures);
     return g_failures ? 1 : 0;

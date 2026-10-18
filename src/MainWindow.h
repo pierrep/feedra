@@ -1,9 +1,13 @@
 #pragma once
 
 #include "AppConfig.h"
+#include "ControlMap.h"
+#include "Duck.h"
 #include "widgets/SoundPadWidget.h"
 
 #include <QByteArray>
+#include <QElapsedTimer>
+#include <QJsonObject>
 #include <QRect>
 #include <QMainWindow>
 #include <QPointer>
@@ -14,12 +18,13 @@
 
 class AudioSample;
 class Scene;
-class SampleRowWidget;
 class SampleLoadQueue;
-class WaveformWidget;
 class LogWindow;
+class MidiInput;
 class FileBrowserWidget;
 class SettingsPage;
+class EditorPanel;
+class BottomPanel;
 class ThemePage;
 class QAbstractButton;
 class QAction;
@@ -61,8 +66,6 @@ private:
     void buildUi();
     void buildMenus();
     void syncSettingsPage();
-    // Pad tab send names follow the reverbs: "<preset> reverb send", "<impulse file> reverb send".
-    void refreshSendLabels();
     void applyAppSettings(const QJsonObject& global);
     void connectScene(Scene* scene);
     void drainLoads(int budgetMs);
@@ -76,6 +79,9 @@ private:
     void importScenesFrom(const QString& path);
     void deleteScene(int sceneId);
     void enableScene(int idx);
+    // Selects the scene and crossfades into it: every other scene that's playing (or has pads
+    // playing) fades out and stops while this one fades in, over AppConfig::crossfadeSeconds.
+    void goToScene(int idx);
     void moveScene(int fromIndex, int insertIndex);
     void updateSceneListLayout();
     bool handleReorderKey(QKeyEvent* event);
@@ -84,14 +90,7 @@ private:
     void cutActivePad();
     void pasteActivePad();
     void updateMainControls();
-    void refreshSampleInfo();
-    void refreshDelayReadout();
-    void refreshWaveform();
-    void updateEditControls();
-    void updatePanControl(AudioSample* sample);
-    void rebuildEditSamples();
     void refreshEditorPage();
-    void moveEditorSample(int fromIndex, int insertIndex);
     void setPage(Page page);
     void setSidebarView(SidebarView view);
     // Scenes focus: hides the pad grid, the bottom panel and the Editor tab so only the
@@ -115,12 +114,10 @@ private:
     // With `exportTo`, samples are pointed at a "files" folder beside `path`, the copies they
     // need are added to it, and the file itself is not written (it's left in `exportTo->json`).
     bool saveConfigTo(const QString& path, bool copyFiles, bool settingsOnly = false, ExportState* exportTo = nullptr);
-    // The sample the Waveform tab shows: the selected pad's current sample.
-    AudioSample* waveformSample() const;
-    int waveformSampleIndex() const;
-    void applyLoopRegion(AudioSample* sample, const LoopRegion& region);
     void loadConfig();
     void loadConfigFrom(const QString& path);
+    // This computer's settings (AppConfig::localSettingsPath): devices, window, MIDI.
+    void saveLocalSettings();
     void saveWindowLayout(QJsonObject& global) const;
     void restoreWindowLayout(const QJsonObject& global);
     void clearActivePad();
@@ -133,14 +130,37 @@ private:
     void clearActiveSample();
     void tick();
     void checkAudioDevice();
+    // Fades every scene out over AppConfig::panicSeconds and stops the preview. Pressed again
+    // while that fade runs, stops everything at once.
+    void panic();
+    // Space (talk-over, held), Esc (panic). True if the key was taken.
+    bool handleLiveKey(QKeyEvent* event);
+    // A text field, spin box, list or menu has the keyboard, so live keys leave it alone.
+    bool keyboardIsBusy() const;
+    void refreshTalkButton();
+    // The key caps on the pads, for the keyboard setting.
+    void refreshKeyHints();
+    // MIDI: carries out what a message asks for (ControlMap), or finishes learning.
+    void handleMidi(const MidiMessage& message);
+    void startMidiLearn(ControlAction action, int pad = -1);
+    void cancelMidiLearn();
+    // A line in the header: what MIDI learn is waiting for, or what it learned.
+    void showMidiStatus(const QString& text, int hideAfterMs = 0);
+    // Opens the chosen MIDI input if it isn't open (it may have been plugged in since).
+    void openMidiInput();
+    // The output device and the preview (cue) device, from AppConfig.
+    void applyOutputDevice();
+    void applyPreviewDevice();
+    bool moveOutputTo(const QString& device);
     void onPadClicked(int sceneId, int padId);
     void setBottomTab(int index);
     void setBottomCollapsed(bool collapsed, bool resizeWindow = true);
-    void refreshTabButton(QPushButton* button, bool active);
     Pad* activePad() const;
+    Pad* syncPanelPad();
     Scene* activeScene() const;
 
     AppConfig m_config;
+    QJsonObject m_local; // local.json as last read or written
     QVector<Scene*> m_scenes;
     Pad::PadClip m_padClip;
     Page m_page = Page::Main;
@@ -163,79 +183,45 @@ private:
     QScrollArea* m_sceneScroll = nullptr;
     QPointer<QWidget> m_scrollToSceneRow; // a scene row to bring into view
     int m_scrollToSceneSerial = 0;
-    QScrollArea* m_sampleScroll = nullptr;
-    Pad* m_shownSamplePad = nullptr; // the Editor sample last scrolled into view
-    int m_shownSampleIdx = -1;
     QVBoxLayout* m_sceneListLayout = nullptr;
     QPushButton* m_addScene = nullptr;
     QStackedWidget* m_pages = nullptr;
     QStackedWidget* m_sidebarStack = nullptr;
     QWidget* m_mainPage = nullptr;
     QWidget* m_scenesPage = nullptr;
-    QWidget* m_editorPage = nullptr;
-    QWidget* m_sampleControls = nullptr;
     SettingsPage* m_settingsPage = nullptr;
     ThemePage* m_themePage = nullptr;
     QPushButton* m_scenesTab = nullptr;
     QPushButton* m_editorTab = nullptr;
     QPushButton* m_filesTab = nullptr;
     FileBrowserWidget* m_fileBrowser = nullptr;
-    QVBoxLayout* m_sampleListLayout = nullptr;
-    QVector<SampleRowWidget*> m_sampleRows;
     Pad* m_followedPad = nullptr;
     int m_followedSound = -1;
 
+    EditorPanel* m_editor = nullptr;
+    BottomPanel* m_bottom = nullptr;
+    Duck m_duck;
+    MidiInput* m_midi = nullptr;
+    ControlMap m_controls;
+    QString m_midiPort; // the chosen input, open or not
+    int m_midiRetry = 0;
+    QLabel* m_midiStatus = nullptr;
+    int m_midiStatusSerial = 0;
+    QElapsedTimer m_clock;
+    qint64 m_panicUntilMs = 0; // a second Panic before this stops everything at once
+    QPushButton* m_talkButton = nullptr;
+    QPushButton* m_panicButton = nullptr;
     QSlider* m_mainVolume = nullptr;
     QLabel* m_mainVolumeValue = nullptr;
-    QWidget* m_bottomPanel = nullptr;
-    QStackedWidget* m_bottomStack = nullptr;
-    QPushButton* m_sampleTab = nullptr;
-    QPushButton* m_padTab = nullptr;
-    QPushButton* m_waveTab = nullptr;
-    WaveformWidget* m_waveform = nullptr;
-    QPushButton* m_collapseBottom = nullptr;
-    int m_bottomPageHeight = 0;
-    QSpinBox* m_minDelay = nullptr;
-    QSpinBox* m_maxDelay = nullptr;
-    // Pad effect sends: EAX reverb 1 and 2, then convolution reverb 1 and 2.
-    QSlider* m_sendSliders[4] = {};
-    QLabel* m_sendLabels[4] = {};
-    QCheckBox* m_randomPlayback = nullptr;
-    QCheckBox* m_repeat = nullptr;
-    QCheckBox* m_delayOn = nullptr;
-    QPushButton* m_resetDelay = nullptr;
-    QCheckBox* m_scenePad = nullptr;
-    QLabel* m_delayReadout = nullptr;
-    QLabel* m_infoLabel = nullptr;
-    Pad* m_infoPad = nullptr;
-    int m_infoSound = -1;
-    bool m_bottomCollapsed = false;
     // Set while the panel toggles and the window resizes to match, so the pad grid
     // isn't painted at the in-between size.
     bool m_holdGridPaint = false;
     void releaseGridPaint();
     void settleLayouts();
 
-    QSlider* m_pan = nullptr;
-    QDoubleSpinBox* m_panValue = nullptr;
-    QLabel* m_panLabel = nullptr;
-    QSlider* m_pitch = nullptr;
-    QDoubleSpinBox* m_pitchValue = nullptr;
-    QSlider* m_gain = nullptr;
-    QDoubleSpinBox* m_gainValue = nullptr;
-    QCheckBox* m_randomPan = nullptr;
-    QSlider* m_width = nullptr;
-    QDoubleSpinBox* m_widthValue = nullptr;
-    QLabel* m_widthLabel = nullptr;
-    QCheckBox* m_sampleLoop = nullptr;
-    QPushButton* m_addSample = nullptr;
-    QLabel* m_editTitle = nullptr;
-
-    int m_loopDragSampleId = -1; // sample whose loop handles are being dragged on the Waveform tab
-
     QString m_curDevice;
-    QString m_failedDevice; // the last default device a move to failed, so it's logged once
-    bool m_updatingControls = false;
+    QString m_failedDevice; // the last device a move to failed, so it's logged once
+    QString m_lastDefaultDevice; // the system default when a chosen device was last tried
     bool m_savedOnExit = false;
     bool m_reportMissingAfterLoad = false;
     LogWindow* m_logWindow = nullptr;

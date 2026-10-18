@@ -144,6 +144,7 @@ private:
     void refreshPreviewUi();
     void startDecoded(std::shared_ptr<DecodedAudio> decoded);
     void applyPreviewVolume();
+    void tickCue();
     void onCurrentChanged(const QModelIndex& current);
     void openIndex(const QModelIndex& index);
 
@@ -189,6 +190,8 @@ private:
     QSlider* m_previewVolume = nullptr;
 
     std::unique_ptr<OpenALSoundPlayer> m_player;
+    // The preview playing on the cue output (CueOutput), when one is open: its request number.
+    uint64_t m_cueRequest = 0;
     QString m_previewPath;
     bool m_previewFailed = false;
     bool m_sawPlaying = false;

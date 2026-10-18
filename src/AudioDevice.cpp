@@ -711,6 +711,40 @@ std::string AudioDevice::defaultDeviceName()
     return name ? name : std::string();
 }
 
+std::vector<std::string> AudioDevice::outputDevices()
+{
+    const bool all = alcIsExtensionPresent(nullptr, "ALC_ENUMERATE_ALL_EXT") == ALC_TRUE;
+    const char* list = alcGetString(nullptr, all ? ALC_ALL_DEVICES_SPECIFIER : ALC_DEVICE_SPECIFIER);
+    std::vector<std::string> names;
+    for (const char* p = list; p && *p; p += std::strlen(p) + 1) {
+        names.emplace_back(p);
+    }
+    return names;
+}
+
+std::string AudioDevice::currentDeviceName()
+{
+    if (!alDevice) {
+        return std::string();
+    }
+    const bool all = alcIsExtensionPresent(alDevice, "ALC_ENUMERATE_ALL_EXT") == ALC_TRUE;
+    const char* name = alcGetString(alDevice, all ? ALC_ALL_DEVICES_SPECIFIER : ALC_DEVICE_SPECIFIER);
+    return name ? name : std::string();
+}
+
+bool AudioDevice::isConnected()
+{
+    if (!alDevice) {
+        return false;
+    }
+    if (alcIsExtensionPresent(alDevice, "ALC_EXT_disconnect") != ALC_TRUE) {
+        return true;
+    }
+    ALCint connected = 1;
+    alcGetIntegerv(alDevice, ALC_CONNECTED, 1, &connected);
+    return connected != 0;
+}
+
 int AudioDevice::reopen(const char* deviceName)
 {
     auto ctx = alcGetCurrentContext();

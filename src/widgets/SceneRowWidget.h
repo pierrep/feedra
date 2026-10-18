@@ -27,6 +27,8 @@ public:
 signals:
     void selected(int sceneId);
     void playPauseRequested(int sceneId);
+    // Crossfade into this scene (the row's Go button).
+    void goRequested(int sceneId);
     void stopRequested(int sceneId);
     void deleteRequested(int sceneId);
     void nameChanged(int sceneId, const QString& name);
@@ -50,6 +52,7 @@ private:
     bool m_audible = false;
     QLineEdit* m_name = nullptr;
     QAbstractButton* m_play = nullptr;
+    QAbstractButton* m_go = nullptr;
     QAbstractButton* m_stop = nullptr;
     QAbstractButton* m_remove = nullptr;
     QTimer* m_meterTimer = nullptr;

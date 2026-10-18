@@ -1,6 +1,9 @@
 #include "MainWindow.h"
 #include "AudioFormats.h"
+#include "CueOutput.h"
 #include "FsPath.h"
+#include "KeyLayout.h"
+#include "MidiInput.h"
 #include "OpenALSoundPlayer.h"
 #include "PeakStore.h"
 #include "ProjectFile.h"
@@ -9,9 +12,10 @@
 #include "Scene.h"
 #include "Theme.h"
 #include "widgets/ReorderListHost.h"
-#include "widgets/SampleRowWidget.h"
 #include "widgets/SoundPadWidget.h"
-#include "widgets/WaveformWidget.h"
+#include "widgets/BottomPanel.h"
+#include "widgets/EditorPanel.h"
+#include "widgets/TabButton.h"
 #include "widgets/SettingsPage.h"
 #include "widgets/ThemePage.h"
 #include "widgets/FileBrowserWidget.h"
@@ -34,6 +38,7 @@
 #include <QHash>
 #include <QRegularExpression>
 #include <QAbstractButton>
+#include <QAbstractItemView>
 #include <QPolygonF>
 #include <QPainter>
 #include <QFrame>
@@ -81,9 +86,6 @@
 #include <filesystem>
 
 namespace {
-
-constexpr float kSampleGainMinDb = -12.0f;
-constexpr float kSampleGainMaxDb = 24.0f;
 
 // Shows a file path in whatever width the header has left, keeping the file name visible.
 class SettingsPathLabel : public QLabel
@@ -228,6 +230,7 @@ MainWindow::MainWindow(QWidget* parent)
     setWindowTitle(QStringLiteral("Feedra"));
     resize(1150, 800);
     m_config.setup();
+    m_local = m_config.loadLocalSettings();
     PeakStore::instance().setCacheDir(m_config.waveformCacheDir());
     m_loads = new SampleLoadQueue(this);
     AudioDevice::initialize();
@@ -239,8 +242,15 @@ MainWindow::MainWindow(QWidget* parent)
     }
     m_curDevice = QString::fromStdString(AudioDevice::defaultDeviceName());
 
+    m_midi = new MidiInput(this);
+    connect(m_midi, &MidiInput::received, this, &MainWindow::handleMidi);
+    const QJsonObject midi = m_local.value(QStringLiteral("midi")).toObject();
+    m_controls.fromJson(midi);
+    m_midiPort = midi.value(QStringLiteral("input")).toString();
+
     buildMenus();
     buildUi();
+    openMidiInput();
 
     const QString settings = m_config.defaultSettingsPath();
     bool loadLast = false;
@@ -264,11 +274,17 @@ MainWindow::MainWindow(QWidget* parent)
     if (m_scenes.isEmpty()) {
         createDefaultScenes();
     }
+    // The window is this computer's: from local.json, or the project file it used to be
+    // saved in, the first time.
+    restoreWindowLayout(m_local.contains(QStringLiteral("windowwidth"))
+            ? m_local
+            : m_config.json().value(QStringLiteral("global")).toObject());
     enableScene(std::clamp(m_config.activeSceneIdx, 0, std::max(0, static_cast<int>(m_scenes.size()) - 1)));
     updateMainControls();
     refreshSettingsPathLabel();
     refreshLoadUi();
 
+    m_clock.start();
     auto* tickTimer = new QTimer(this);
     connect(tickTimer, &QTimer::timeout, this, &MainWindow::tick);
     tickTimer->start(33);
@@ -289,6 +305,7 @@ MainWindow::~MainWindow()
     if (m_fileBrowser) {
         m_fileBrowser->stopPreview();
     }
+    CueOutput::close();
     if (m_loads) {
         m_loads->shutdown();
     }
@@ -401,6 +418,26 @@ void MainWindow::buildUi()
     volumeRow->addWidget(volumeCaption);
     volumeRow->addWidget(m_mainVolume);
     volumeRow->addWidget(m_mainVolumeValue);
+    // Live: talk-over (latches here; Space holds it) and Panic.
+    m_talkButton = new QPushButton(tr("Talk"), header);
+    m_talkButton->setObjectName(QStringLiteral("TalkOver"));
+    m_talkButton->setCheckable(true);
+    m_talkButton->setFocusPolicy(Qt::NoFocus);
+    m_talkButton->setCursor(Qt::PointingHandCursor);
+    m_talkButton->setToolTip(tr("Talk-over: dips every scene so you can be heard. Click to keep it down, "
+                                "or hold Space."));
+    m_panicButton = new QPushButton(tr("Panic"), header);
+    m_panicButton->setObjectName(QStringLiteral("Panic"));
+    m_panicButton->setFocusPolicy(Qt::NoFocus);
+    m_panicButton->setCursor(Qt::PointingHandCursor);
+    m_panicButton->setToolTip(tr("Fade everything out (Esc). Press again to stop at once."));
+    volumeRow->addSpacing(8);
+    volumeRow->addWidget(m_talkButton);
+    volumeRow->addWidget(m_panicButton);
+    connect(m_talkButton, &QPushButton::toggled, this, [this](bool on) {
+        m_duck.setHeld(Duck::Button, on);
+    });
+    connect(m_panicButton, &QPushButton::clicked, this, &MainWindow::panic);
     m_loadBar = new QProgressBar(m_mainPage);
     m_loadBar->setObjectName(QStringLiteral("LoadProgress"));
     m_loadBar->setTextVisible(false);
@@ -411,9 +448,13 @@ void MainWindow::buildUi()
     m_loadLabel = new QLabel(m_mainPage);
     m_loadLabel->setObjectName(QStringLiteral("LoadProgressLabel"));
     m_loadLabel->hide();
+    m_midiStatus = new QLabel(header);
+    m_midiStatus->setObjectName(QStringLiteral("MidiStatus"));
+    m_midiStatus->hide();
     volumeRow->addSpacing(16);
     volumeRow->addWidget(m_loadBar);
     volumeRow->addWidget(m_loadLabel);
+    volumeRow->addWidget(m_midiStatus);
     m_settingsPathLabel = new SettingsPathLabel(header);
     m_settingsPathLabel->setObjectName(QStringLiteral("SettingsPath"));
     m_settingsPathLabel->hide();
@@ -521,134 +562,9 @@ void MainWindow::buildUi()
     addSceneRow->addWidget(m_addScene, 1);
     scenesLayout->addLayout(addSceneRow);
 
-    m_editorPage = new QWidget(m_sidebarStack);
-    auto* editLayout = new QVBoxLayout(m_editorPage);
-    editLayout->setContentsMargins(12, 12, 4, 12);
-    editLayout->setSpacing(10);
-    m_editTitle = new QLabel(m_editorPage);
-    m_editTitle->setObjectName(QStringLiteral("EditTitle"));
-    m_editTitle->setWordWrap(true);
-    m_editTitle->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
-    m_addSample = new QPushButton(tr("+  Add"), m_editorPage);
-    m_addSample->setObjectName(QStringLiteral("AddSample"));
-    m_addSample->setFixedHeight(26); // matches the sample rows
-    m_addSample->setCursor(Qt::PointingHandCursor);
-    m_addSample->setToolTip(tr("Add samples to this pad"));
-    auto* editTop = new QHBoxLayout();
-    editTop->setContentsMargins(0, 0, 8, 0);
-    editTop->addWidget(m_editTitle, 1);
-    editTop->addWidget(m_addSample);
-    editLayout->addLayout(editTop);
-
-    auto* sampleScroll = new QScrollArea(m_editorPage);
-    m_sampleScroll = sampleScroll;
-    sampleScroll->setFrameShape(QFrame::NoFrame);
-    sampleScroll->setWidgetResizable(true);
-    sampleScroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
-    sampleScroll->setVerticalScrollBarPolicy(Qt::ScrollBarAsNeeded);
-    sampleScroll->viewport()->setAutoFillBackground(true);
-    auto* sampleHost = new ReorderListHost(SampleRowWidget::dragMimeType(), sampleScroll);
-    sampleHost->setObjectName(QStringLiteral("SampleListHost"));
-    m_sampleListLayout = new QVBoxLayout(sampleHost);
-    m_sampleListLayout->setContentsMargins(0, 4, 8, 4);
-    m_sampleListLayout->setSpacing(3);
-    m_sampleListLayout->addStretch();
-    sampleScroll->setWidget(sampleHost);
-    editLayout->addWidget(sampleScroll, 1);
-    sampleHost->setAcceptsFiles(true);
-    connect(sampleHost, &ReorderListHost::filesDropped, this, [this](const QStringList& paths) {
-        auto* pad = activePad();
-        if (!pad || !Pad::confirmFileCount(this, paths.size())) {
-            return;
-        }
-        pad->loadFiles(paths, false);
-        rebuildEditSamples();
-    }, Qt::QueuedConnection); // after the drag finishes, so a question box can open
-    connect(sampleHost, &ReorderListHost::itemReordered, this, [this](int sampleId, int insertIndex) {
-        auto* pad = activePad();
-        if (!pad) {
-            return;
-        }
-        const auto& players = pad->soundPlayer().player;
-        for (int i = 0; i < static_cast<int>(players.size()); ++i) {
-            if (players[i]->id == sampleId) {
-                moveEditorSample(i, insertIndex);
-                return;
-            }
-        }
-    }, Qt::QueuedConnection); // after QDrag::exec returns, so the source row is still alive
-
-    m_pan = new QSlider(Qt::Horizontal, m_editorPage);
-    m_pan->setRange(0, 1000);
-    m_pan->setValue(500);
-    m_pitch = new QSlider(Qt::Horizontal, m_editorPage);
-    m_pitch->setRange(0, 3000);
-    m_pitch->setValue(1000);
-    m_gain = new QSlider(Qt::Horizontal, m_editorPage);
-    m_gain->setRange(0, VolumeDb::sliderSpan(kSampleGainMinDb, kSampleGainMaxDb));
-    m_gain->setValue(VolumeDb::toSlider(VolumeDb::kUnityDb, kSampleGainMinDb));
-    m_randomPan = new QCheckBox(tr("Random Pan"), m_editorPage);
-    m_width = new QSlider(Qt::Horizontal, m_editorPage);
-    m_width->setRange(0, 100);
-    m_width->setValue(100);
-    m_width->setToolTip(tr("Stereo width: 100% is the file's full stereo image, 0% plays it as mono at the pan position."));
-    m_sampleLoop = new QCheckBox(tr("Loop"), m_editorPage);
-    m_sampleLoop->setToolTip(tr("Loop this sample seamlessly between its loop points (set them on the Waveform tab).\n"
-                                "The pad's loop icon shows and switches this for the sample that is playing."));
-
-    // Displayed value = slider value * scale + offset; the spin box range follows the slider range.
-    auto makeValueBox = [&](QSlider* slider, double scale, double offset) {
-        auto* box = new QDoubleSpinBox(m_editorPage);
-        box->setDecimals(3);
-        box->setSingleStep(scale * slider->singleStep() * 10.0);
-        box->setRange(slider->minimum() * scale + offset, slider->maximum() * scale + offset);
-        box->setValue(slider->value() * scale + offset);
-        box->setAlignment(Qt::AlignRight);
-        box->setKeyboardTracking(false);
-        box->setMinimumWidth(72);
-        connect(slider, &QSlider::valueChanged, box, [box, scale, offset](int v) {
-            const QSignalBlocker blocker(box);
-            box->setValue(v * scale + offset);
-        });
-        connect(box, qOverload<double>(&QDoubleSpinBox::valueChanged), slider, [slider, scale, offset](double d) {
-            slider->setValue(static_cast<int>(std::lround((d - offset) / scale)));
-        });
-        return box;
-    };
-    m_panValue = makeValueBox(m_pan, 0.002, -1.0);
-    m_pitchValue = makeValueBox(m_pitch, 0.001, 0.0);
-    m_gainValue = makeValueBox(m_gain, 0.1, kSampleGainMinDb);
-    m_gainValue->setDecimals(1);
-    m_gainValue->setSuffix(QStringLiteral(" dB"));
-    m_gainValue->setMinimumWidth(88);
-    m_widthValue = makeValueBox(m_width, 1.0, 0.0);
-    m_widthValue->setDecimals(0);
-    m_widthValue->setSuffix(QStringLiteral(" %"));
-
-    m_sampleControls = new QWidget(m_editorPage);
-    auto* controlsLayout = new QVBoxLayout(m_sampleControls);
-    controlsLayout->setContentsMargins(0, 0, 0, 0);
-    auto addLabeled = [&](const QString& label, QWidget* w, QWidget* value) {
-        auto* row = new QHBoxLayout();
-        row->setContentsMargins(0, 0, 8, 0);
-        auto* caption = new QLabel(label, m_sampleControls);
-        caption->setSizePolicy(QSizePolicy::Maximum, QSizePolicy::Preferred);
-        row->addWidget(caption);
-        row->addWidget(w, 1);
-        row->addWidget(value);
-        controlsLayout->addLayout(row);
-        return caption;
-    };
-    m_panLabel = addLabeled(tr("Panning"), m_pan, m_panValue);
-    m_widthLabel = addLabeled(tr("Width"), m_width, m_widthValue);
-    addLabeled(tr("Pitch"), m_pitch, m_pitchValue);
-    addLabeled(tr("Gain"), m_gain, m_gainValue);
-    auto* checkLayout = new QVBoxLayout();
-    checkLayout->setContentsMargins(0, 0, 8, 0);
-    checkLayout->addWidget(m_randomPan);
-    checkLayout->addWidget(m_sampleLoop);
-    controlsLayout->addLayout(checkLayout);
-    editLayout->addWidget(m_sampleControls);
+    m_editor = new EditorPanel(&m_config, m_sidebarStack);
+    connect(m_editor, &EditorPanel::samplesChanged, this, &MainWindow::updateMainControls);
+    connect(m_editor, &EditorPanel::loopRegionChanged, this, [this](AudioSample*) { m_bottom->refreshWaveform(); });
 
     m_fileBrowser = new FileBrowserWidget(&m_config, m_sidebarStack);
     m_fileBrowser->setProjectFoldersProvider([this]() {
@@ -667,7 +583,7 @@ void MainWindow::buildUi()
     });
 
     m_sidebarStack->addWidget(m_scenesPage);
-    m_sidebarStack->addWidget(m_editorPage);
+    m_sidebarStack->addWidget(m_editor);
     m_sidebarStack->addWidget(m_fileBrowser);
     sideLayout->addWidget(sideTabBar);
     sideLayout->addWidget(m_sidebarStack, 1);
@@ -682,7 +598,27 @@ void MainWindow::buildUi()
     connect(m_settingsPage, &SettingsPage::sceneLimitChanged, this, [this]() {
         m_addScene->setEnabled(static_cast<unsigned int>(m_scenes.size()) < m_config.maxScenes);
     });
-    connect(m_settingsPage, &SettingsPage::reverbChanged, this, &MainWindow::refreshSendLabels);
+    connect(m_settingsPage, &SettingsPage::outputDeviceChanged, this, [this]() {
+        applyOutputDevice();
+        saveLocalSettings();
+    });
+    connect(m_settingsPage, &SettingsPage::previewDeviceChanged, this, [this]() {
+        applyPreviewDevice();
+        saveLocalSettings();
+    });
+    connect(m_settingsPage, &SettingsPage::keyboardPadsChanged, this, &MainWindow::refreshKeyHints);
+    m_settingsPage->setMidi(m_midi, &m_controls);
+    connect(m_settingsPage, &SettingsPage::midiInputChosen, this, [this](const QString& port) {
+        m_midiPort = port;
+        m_midi->close();
+        openMidiInput();
+        saveLocalSettings();
+    });
+    connect(m_settingsPage, &SettingsPage::midiLearnRequested, this, [this](ControlAction action) {
+        startMidiLearn(action);
+    });
+    connect(m_settingsPage, &SettingsPage::midiMapChanged, this, &MainWindow::saveLocalSettings);
+    connect(m_settingsPage, &SettingsPage::reverbChanged, this, [this]() { m_bottom->refreshSendLabels(); });
     m_themePage = new ThemePage(m_pages);
     connect(m_themePage, &ThemePage::backRequested, this, [this]() {
         setPage(Page::Main);
@@ -694,240 +630,10 @@ void MainWindow::buildUi()
     m_pages->addWidget(m_themePage);
     outer->addWidget(m_pages, 1);
 
-    m_bottomPanel = new QWidget(central);
-    m_bottomPanel->setObjectName(QStringLiteral("BottomPanel"));
-    m_bottomPanel->setAttribute(Qt::WA_StyledBackground, true);
-    auto* bottomLayout = new QVBoxLayout(m_bottomPanel);
-    bottomLayout->setContentsMargins(0, 0, 0, 0);
-    bottomLayout->setSpacing(0);
-
-    auto* tabBar = new QWidget(m_bottomPanel);
-    tabBar->setObjectName(QStringLiteral("BottomTabBar"));
-    tabBar->setAttribute(Qt::WA_StyledBackground, true);
-    auto* tabRow = new QHBoxLayout(tabBar);
-    tabRow->setContentsMargins(8, 0, 8, 0);
-    tabRow->setSpacing(0);
-    m_waveTab = new QPushButton(tr("Waveform"), tabBar);
-    m_waveTab->setObjectName(QStringLiteral("BottomTab"));
-    m_waveTab->setFocusPolicy(Qt::NoFocus);
-    m_padTab = new QPushButton(tr("Pad"), tabBar);
-    m_padTab->setObjectName(QStringLiteral("BottomTab"));
-    m_padTab->setFocusPolicy(Qt::NoFocus);
-    m_sampleTab = new QPushButton(tr("Info"), tabBar);
-    m_sampleTab->setObjectName(QStringLiteral("BottomTab"));
-    m_sampleTab->setFocusPolicy(Qt::NoFocus);
-    m_collapseBottom = new QPushButton(QStringLiteral("\u25B4"), tabBar);
-    m_collapseBottom->setObjectName(QStringLiteral("BottomCollapse"));
-    m_collapseBottom->setFocusPolicy(Qt::NoFocus);
-    m_collapseBottom->setFixedSize(28, 24);
-    m_collapseBottom->setToolTip(tr("Hide panel"));
-    tabRow->addWidget(m_waveTab, 0, Qt::AlignBottom);
-    tabRow->addWidget(m_padTab, 0, Qt::AlignBottom);
-    tabRow->addWidget(m_sampleTab, 0, Qt::AlignBottom);
-    tabRow->addStretch();
-    tabRow->addWidget(m_collapseBottom, 0, Qt::AlignVCenter);
-
-    m_bottomStack = new QStackedWidget(m_bottomPanel);
-    m_bottomStack->setObjectName(QStringLiteral("BottomPages"));
-
-    auto* samplePage = new QWidget(m_bottomStack);
-    auto* sampleLayout = new QVBoxLayout(samplePage);
-    sampleLayout->setContentsMargins(20, 12, 20, 12);
-    m_infoLabel = new QLabel(samplePage);
-    m_infoLabel->setObjectName(QStringLiteral("SampleInfo"));
-    m_infoLabel->setWordWrap(true);
-    m_infoLabel->setAlignment(Qt::AlignTop | Qt::AlignLeft);
-    m_infoLabel->setMinimumHeight(m_infoLabel->fontMetrics().lineSpacing() * 6);
-    sampleLayout->addWidget(m_infoLabel);
-    sampleLayout->addStretch();
-
-    auto* padPage = new QWidget(m_bottomStack);
-    // Delay and playback options on the left, the four effect sends on the right.
-    auto* padRow = new QHBoxLayout(padPage);
-    padRow->setContentsMargins(20, 12, 20, 12);
-    padRow->setSpacing(36);
-    auto* padGrid = new QGridLayout();
-    padGrid->setContentsMargins(0, 0, 0, 0);
-    padGrid->setHorizontalSpacing(14);
-    padGrid->setVerticalSpacing(10);
-    m_minDelay = new QSpinBox(padPage);
-    m_minDelay->setRange(0, 600);
-    m_minDelay->setButtonSymbols(QAbstractSpinBox::UpDownArrows);
-    m_minDelay->setAlignment(Qt::AlignRight);
-    m_minDelay->setMinimumWidth(72);
-    m_minDelay->setMaximumWidth(140);
-    m_minDelay->setSuffix(tr(" s"));
-    m_maxDelay = new QSpinBox(padPage);
-    m_maxDelay->setRange(0, 600);
-    m_maxDelay->setButtonSymbols(QAbstractSpinBox::UpDownArrows);
-    m_maxDelay->setAlignment(Qt::AlignRight);
-    m_maxDelay->setMinimumWidth(72);
-    m_maxDelay->setMaximumWidth(140);
-    m_maxDelay->setSuffix(tr(" s"));
-    for (int bus = 0; bus < OpenALSoundPlayer::kSendCount; ++bus) {
-        m_sendSliders[bus] = new QSlider(Qt::Horizontal, padPage);
-        m_sendSliders[bus]->setRange(0, 1000);
-        m_sendSliders[bus]->setMinimumWidth(240);
-        m_sendSliders[bus]->setEnabled(false);
-        m_sendLabels[bus] = new QLabel(padPage);
-    }
-    m_randomPlayback = new QCheckBox(tr("Random Playback"), padPage);
-    m_randomPlayback->hide();
-    m_repeat = new QCheckBox(tr("Repeat"), padPage);
-    m_repeat->setToolTip(tr("After the last sample, start the list again after the delay.\n"
-                            "To loop one sample seamlessly, use the pad's loop icon instead."));
-    m_repeat->setEnabled(false);
-    m_delayOn = new QCheckBox(tr("Delay"), padPage);
-    m_delayOn->setToolTip(tr("Wait a random time between min and max before each sample.\n"
-                             "Off: samples follow on straight away; min and max are kept."));
-    m_delayOn->setEnabled(false);
-    m_resetDelay = new QPushButton(tr("Reset delay"), padPage);
-    m_resetDelay->setToolTip(tr("Set min and max delay to 0"));
-    m_resetDelay->setEnabled(false);
-    m_delayReadout = new QLabel(padPage);
-    m_delayReadout->setObjectName(QStringLiteral("FieldHint"));
-    m_delayReadout->setToolTip(tr("The delay picked for the current sample, and the time left while it counts down"));
-    padGrid->addWidget(m_delayOn, 0, 0);
-    padGrid->addWidget(m_resetDelay, 0, 1);
-    padGrid->addWidget(m_delayReadout, 0, 2, 1, 2);
-    padGrid->addWidget(new QLabel(tr("Min delay"), padPage), 1, 0);
-    padGrid->addWidget(m_minDelay, 1, 1);
-    padGrid->addWidget(new QLabel(tr("Max delay"), padPage), 1, 2);
-    padGrid->addWidget(m_maxDelay, 1, 3);
-    padGrid->addWidget(m_repeat, 2, 0, 1, 1);
-    padGrid->addWidget(m_randomPlayback, 2, 1, 1, 3);
-    m_scenePad = new QCheckBox(tr("Plays with scene"), padPage);
-    m_scenePad->setToolTip(tr("When the scene is played from the scene list, only its scene pads start "
-                              "(or every pad, if it has none).\nCtrl+click a pad to switch this on or off."));
-    m_scenePad->setEnabled(false);
-    padGrid->addWidget(m_scenePad, 3, 0, 1, 4);
-    padGrid->setRowStretch(4, 1);
-    padGrid->setColumnMinimumWidth(0, 130);
-
-    // EAX reverbs on top, convolution reverbs below.
-    auto* sendGrid = new QGridLayout();
-    sendGrid->setContentsMargins(0, 0, 0, 0);
-    sendGrid->setHorizontalSpacing(14);
-    sendGrid->setVerticalSpacing(10);
-    for (int bus = 0; bus < OpenALSoundPlayer::kSendCount; ++bus) {
-        sendGrid->addWidget(m_sendLabels[bus], bus, 0);
-        sendGrid->addWidget(m_sendSliders[bus], bus, 1);
-    }
-    sendGrid->setColumnStretch(1, 1);
-    sendGrid->setRowStretch(OpenALSoundPlayer::kSendCount, 1);
-    padRow->addLayout(padGrid, 0);
-    padRow->addLayout(sendGrid, 1);
-    refreshSendLabels();
-
-    m_bottomStack->addWidget(samplePage);
-    m_bottomStack->addWidget(padPage);
-    m_waveform = new WaveformWidget(m_bottomStack);
-    m_bottomStack->addWidget(m_waveform);
-    connect(m_waveform, &WaveformWidget::seekRequested, this, [this](float pct) {
-        // Same sample the waveform is showing: the one selected in the Editor.
-        auto* pad = activePad();
-        const int shown = waveformSampleIndex();
-        if (!pad || shown < 0) {
-            return;
-        }
-        pad->soundPlayer().seekSample(shown, pct);
-    });
-    connect(m_waveform, &WaveformWidget::loopPointsChanged, this, [this](double startPct, double endPct, bool finished) {
-        // Applied on release: the waveform shows the drag itself, and the audio changes once.
-        // The sample is the one shown when the drag began, even if the pad has moved on since.
-        if (!finished) {
-            if (m_loopDragSampleId < 0) {
-                if (AudioSample* shown = waveformSample()) {
-                    m_loopDragSampleId = shown->id;
-                }
-            }
-            return;
-        }
-        AudioSample* sample = waveformSample();
-        if (m_loopDragSampleId >= 0) {
-            sample = nullptr;
-            if (auto* pad = activePad()) {
-                for (AudioSample* candidate : pad->soundPlayer().player) {
-                    if (candidate->id == m_loopDragSampleId) {
-                        sample = candidate;
-                    }
-                }
-            }
-            m_loopDragSampleId = -1;
-        }
-        if (!sample) {
-            return;
-        }
-        const double duration = sample->audioPlayer->getDuration();
-        if (duration <= 0.0) {
-            return;
-        }
-        LoopRegion region = sample->loopRegion();
-        region.start = startPct <= 0.0 ? 0.0 : startPct * duration;
-        region.end = endPct >= 1.0 ? -1.0 : endPct * duration;
-        applyLoopRegion(sample, region);
-    });
-    connect(m_waveform, &WaveformWidget::loopToggled, this, [this](bool on) {
-        if (AudioSample* sample = waveformSample()) {
-            LoopRegion region = sample->loopRegion();
-            region.loop = on;
-            applyLoopRegion(sample, region);
-        }
-    });
-    connect(m_waveform, &WaveformWidget::crossfadeChanged, this, [this](int ms) {
-        if (AudioSample* sample = waveformSample()) {
-            LoopRegion region = sample->loopRegion();
-            region.crossfadeMs = ms;
-            applyLoopRegion(sample, region);
-        }
-    });
-    connect(m_waveform, &WaveformWidget::playToEndToggled, this, [this](bool on) {
-        if (AudioSample* sample = waveformSample()) {
-            LoopRegion region = sample->loopRegion();
-            region.playToEnd = on;
-            applyLoopRegion(sample, region);
-        }
-    });
-    connect(m_waveform, &WaveformWidget::playFromStartToggled, this, [this](bool on) {
-        if (AudioSample* sample = waveformSample()) {
-            LoopRegion region = sample->loopRegion();
-            region.playFromStart = on;
-            applyLoopRegion(sample, region);
-        }
-    });
-    // Tall enough for every page, so nothing (like the Random Playback box) is clipped.
-    m_bottomPageHeight = std::max({m_infoLabel->minimumHeight() + 24, padPage->sizeHint().height(), 148});
-    m_bottomStack->setFixedHeight(m_bottomPageHeight);
-
-    bottomLayout->addWidget(tabBar);
-    bottomLayout->addWidget(m_bottomStack);
-    outer->addWidget(m_bottomPanel, 0);
-
-    connect(m_sampleTab, &QPushButton::clicked, this, [this]() {
-        if (!m_bottomCollapsed && m_bottomStack->currentIndex() == 0) {
-            setBottomCollapsed(true);
-            return;
-        }
-        setBottomTab(0);
-    });
-    connect(m_padTab, &QPushButton::clicked, this, [this]() {
-        if (!m_bottomCollapsed && m_bottomStack->currentIndex() == 1) {
-            setBottomCollapsed(true);
-            return;
-        }
-        setBottomTab(1);
-    });
-    connect(m_waveTab, &QPushButton::clicked, this, [this]() {
-        if (!m_bottomCollapsed && m_bottomStack->currentIndex() == 2) {
-            setBottomCollapsed(true);
-            return;
-        }
-        setBottomTab(2);
-    });
-    connect(m_collapseBottom, &QPushButton::clicked, this, [this]() {
-        setBottomCollapsed(!m_bottomCollapsed);
-    });
-    setBottomTab(2);
+    m_bottom = new BottomPanel(&m_config, central);
+    outer->addWidget(m_bottom, 0);
+    connect(m_bottom, &BottomPanel::collapseRequested, this, [this](bool collapsed) { setBottomCollapsed(collapsed); });
+    connect(m_bottom, &BottomPanel::loopRegionChanged, this, [this](AudioSample* sample) { m_editor->syncLoop(sample); });
 
     connect(m_addScene, &QPushButton::clicked, this, &MainWindow::addNewScene);
     connect(m_scenesTab, &QPushButton::clicked, this, [this]() {
@@ -939,136 +645,25 @@ void MainWindow::buildUi()
     connect(m_filesTab, &QPushButton::clicked, this, [this]() {
         setSidebarView(SidebarView::Files);
     });
+    m_mainVolume->setContextMenuPolicy(Qt::CustomContextMenu);
+    connect(m_mainVolume, &QWidget::customContextMenuRequested, this, [this](const QPoint& at) {
+        QMenu menu(this);
+        QAction* learn = menu.addAction(tr("MIDI learn"));
+        QAction* forget = menu.addAction(tr("Forget MIDI"));
+        forget->setEnabled(m_controls.bindingFor(ControlAction::MasterVolume) != nullptr);
+        QAction* chosen = menu.exec(m_mainVolume->mapToGlobal(at));
+        if (chosen == learn) {
+            startMidiLearn(ControlAction::MasterVolume);
+        } else if (chosen == forget) {
+            m_controls.clear(ControlAction::MasterVolume);
+            saveLocalSettings();
+            m_settingsPage->refreshMidi();
+        }
+    });
     connect(m_mainVolume, &QSlider::valueChanged, this, [this](int v) {
         const float db = VolumeDb::fromSlider(v, VolumeDb::kFloorDb);
         m_config.setMasterVolume(VolumeDb::toLinearMuted(db));
         m_mainVolumeValue->setText(VolumeDb::format(db));
-    });
-    connect(m_minDelay, qOverload<int>(&QSpinBox::valueChanged), this, [this](int v) {
-        if (m_updatingControls) return;
-        if (auto* pad = activePad()) {
-            pad->soundPlayer().setMinDelay(v);
-            if (v > pad->soundPlayer().getMaxDelay()) {
-                pad->soundPlayer().setMaxDelay(v);
-                m_maxDelay->setValue(v);
-            }
-            for (int i = 0; i < static_cast<int>(pad->soundPlayer().player.size()); ++i) {
-                pad->soundPlayer().recalculateDelay(i);
-            }
-            pad->notifyChanged(); // the delay border comes and goes with the delay
-            updateMainControls();
-        }
-    });
-    connect(m_maxDelay, qOverload<int>(&QSpinBox::valueChanged), this, [this](int v) {
-        if (m_updatingControls) return;
-        if (auto* pad = activePad()) {
-            pad->soundPlayer().setMaxDelay(v);
-            if (v < pad->soundPlayer().getMinDelay()) {
-                pad->soundPlayer().setMinDelay(v);
-                m_minDelay->setValue(v);
-            }
-            for (int i = 0; i < static_cast<int>(pad->soundPlayer().player.size()); ++i) {
-                pad->soundPlayer().recalculateDelay(i);
-            }
-            pad->notifyChanged(); // the delay border comes and goes with the delay
-            updateMainControls();
-        }
-    });
-    for (int bus = 0; bus < OpenALSoundPlayer::kSendCount; ++bus) {
-        connect(m_sendSliders[bus], &QSlider::valueChanged, this, [this, bus](int v) {
-            if (m_updatingControls) return;
-            if (auto* pad = activePad()) {
-                pad->setSend(bus, v / 1000.0f);
-            }
-        });
-    }
-    connect(m_randomPlayback, &QCheckBox::toggled, this, [this](bool on) {
-        if (m_updatingControls) return;
-        if (auto* pad = activePad()) {
-            pad->soundPlayer().setRandomPlayback(on);
-        }
-    });
-    connect(m_scenePad, &QCheckBox::toggled, this, [this](bool on) {
-        if (m_updatingControls) return;
-        if (auto* pad = activePad()) {
-            pad->setScenePad(on);
-        }
-    });
-    connect(m_resetDelay, &QPushButton::clicked, this, [this]() {
-        // Through the spin boxes, so the pad, its samples' delays and the border all follow.
-        m_minDelay->setValue(0);
-        m_maxDelay->setValue(0);
-        refreshDelayReadout();
-    });
-    connect(m_delayOn, &QCheckBox::toggled, this, [this](bool on) {
-        if (m_updatingControls) return;
-        if (auto* pad = activePad()) {
-            pad->soundPlayer().setDelayEnabled(on);
-            m_minDelay->setEnabled(on);
-            m_maxDelay->setEnabled(on);
-            pad->notifyChanged(); // the delay border comes and goes with the delay
-            refreshDelayReadout();
-        }
-    });
-    connect(m_repeat, &QCheckBox::toggled, this, [this](bool on) {
-        if (m_updatingControls) return;
-        if (auto* pad = activePad()) {
-            pad->setRepeating(on);
-        }
-    });
-    connect(m_sampleLoop, &QCheckBox::toggled, this, [this](bool on) {
-        if (m_updatingControls) return;
-        if (auto* pad = activePad(); pad && pad->soundPlayer().player.size() > static_cast<size_t>(m_config.activeSampleIdx)) {
-            AudioSample* sample = pad->soundPlayer().player.at(m_config.activeSampleIdx);
-            LoopRegion region = sample->loopRegion();
-            region.loop = on;
-            applyLoopRegion(sample, region);
-        }
-    });
-    connect(m_pan, &QSlider::valueChanged, this, [this](int v) {
-        if (m_updatingControls) return;
-        if (auto* pad = activePad(); pad && pad->soundPlayer().player.size() > static_cast<size_t>(m_config.activeSampleIdx)) {
-            auto* sample = pad->soundPlayer().player.at(m_config.activeSampleIdx);
-            if (sample->audioPlayer->canPan()) {
-                sample->setPan((v / 1000.0f) * 2.0f - 1.0f);
-            }
-        }
-    });
-    connect(m_pitch, &QSlider::valueChanged, this, [this](int v) {
-        if (m_updatingControls) return;
-        if (auto* pad = activePad(); pad && pad->soundPlayer().player.size() > static_cast<size_t>(m_config.activeSampleIdx)) {
-            pad->soundPlayer().player.at(m_config.activeSampleIdx)->setPitch(v / 1000.0f);
-        }
-    });
-    connect(m_gain, &QSlider::valueChanged, this, [this](int v) {
-        if (m_updatingControls) return;
-        if (auto* pad = activePad(); pad && pad->soundPlayer().player.size() > static_cast<size_t>(m_config.activeSampleIdx)) {
-            pad->soundPlayer().player.at(m_config.activeSampleIdx)->setGain(
-                VolumeDb::toLinear(VolumeDb::fromSlider(v, kSampleGainMinDb)));
-        }
-    });
-    connect(m_randomPan, &QCheckBox::toggled, this, [this](bool on) {
-        if (m_updatingControls) return;
-        if (auto* pad = activePad()) {
-            pad->soundPlayer().setRandomPan(on);
-        }
-    });
-    connect(m_width, &QSlider::valueChanged, this, [this](int v) {
-        if (m_updatingControls) return;
-        if (auto* pad = activePad(); pad && pad->soundPlayer().player.size() > static_cast<size_t>(m_config.activeSampleIdx)) {
-            pad->soundPlayer().player.at(m_config.activeSampleIdx)->setWidth(v / 100.0f);
-        }
-    });
-    connect(m_addSample, &QPushButton::clicked, this, [this]() {
-        if (auto* pad = activePad()) {
-            const QString start = m_config.loadDialogDir(pad->currentSamplePath());
-            const QStringList paths = QFileDialog::getOpenFileNames(this, tr("Load files"), start,
-                AudioFormats::dialogFilters().join(QStringLiteral(";;")));
-            if (!paths.isEmpty()) {
-                pad->loadFiles(paths, false);
-                rebuildEditSamples();
-            }
-        }
     });
 
     syncSettingsPage();
@@ -1088,7 +683,18 @@ void MainWindow::buildUi()
 
 void MainWindow::connectScene(Scene* scene)
 {
+    for (int i = 0; i < scene->padWidgets.size(); ++i) {
+        scene->padWidgets[i]->setKeyHint(m_config.keyboardPads ? KeyLayout::keyLabel(i, scene->columns()) : QString());
+    }
     connect(scene, &Scene::padSelected, this, &MainWindow::onPadClicked);
+    connect(scene, &Scene::goRequested, this, [this](int sceneId) {
+        for (int i = 0; i < m_scenes.size(); ++i) {
+            if (m_scenes[i]->id == sceneId) {
+                goToScene(i);
+                return;
+            }
+        }
+    });
     connect(scene->row(), &SceneRowWidget::deleteRequested, this, &MainWindow::deleteScene);
     for (int i = 0; i < scene->pads.size(); ++i) {
         Pad* pad = scene->pads[i];
@@ -1104,23 +710,32 @@ void MainWindow::connectScene(Scene* scene)
             }
         });
         connect(pad, &Pad::filesDropped, this, [this]() { updateMainControls(); });
+        scene->padWidgets[i]->setMidiMenu(MidiInput::available());
+        connect(scene->padWidgets[i], &SoundPadWidget::midiLearnRequested, this, [this](int padId, bool volume) {
+            startMidiLearn(volume ? ControlAction::PadVolume : ControlAction::PadPlay, padId);
+        });
+        connect(scene->padWidgets[i], &SoundPadWidget::midiForgetRequested, this, [this](int padId) {
+            m_controls.clear(ControlAction::PadPlay, padId);
+            m_controls.clear(ControlAction::PadVolume, padId);
+            saveLocalSettings();
+            m_settingsPage->refreshMidi();
+        });
         connect(pad, &Pad::scenePadChanged, this, [this, pad]() {
-            if (pad == activePad() && m_scenePad) {
-                const bool was = m_updatingControls;
-                m_updatingControls = true;
-                m_scenePad->setChecked(pad->isScenePad());
-                m_updatingControls = was;
+            if (pad == activePad()) {
+                syncPanelPad();
+                m_bottom->syncScenePad();
             }
         });
         connect(pad, &Pad::sampleLoopChanged, this, [this, pad]() {
             if (pad == activePad()) {
-                updateEditControls();
+                syncPanelPad();
+                m_editor->updateControls();
             }
         });
         connect(&pad->soundPlayer(), &SoundPlayer::panRandomised, this, [this, pad](int sampleIndex, float) {
-            if (pad == activePad() && sampleIndex == m_config.activeSampleIdx
-                && sampleIndex < static_cast<int>(pad->soundPlayer().player.size())) {
-                updatePanControl(pad->soundPlayer().player.at(sampleIndex));
+            if (pad == activePad()) {
+                syncPanelPad();
+                m_editor->syncPan(sampleIndex);
             }
         });
         connect(pad, &Pad::loadStateChanged, this, [this, pad]() {
@@ -1273,8 +888,11 @@ void MainWindow::enableScene(int idx)
     if (idx < 0 || idx >= m_scenes.size()) {
         return;
     }
+    // Selecting a scene finishes its fades, except a crossfade, which carries on.
     for (Scene* scene : m_scenes) {
-        scene->endFade();
+        if (!scene->isCrossfading()) {
+            scene->endFade();
+        }
     }
     m_config.prevSceneIdx = m_config.activeSceneIdx;
     m_config.activeSceneIdx = idx;
@@ -1298,6 +916,35 @@ void MainWindow::enableScene(int idx)
     // Opening a project, restoring a backup, adding or deleting a scene, or stepping through
     // scenes with the keys: the active scene may be below or above what the list shows.
     scrollToSceneRow(m_scenes[idx]->row());
+}
+
+void MainWindow::goToScene(int idx)
+{
+    if (idx < 0 || idx >= m_scenes.size()) {
+        return;
+    }
+    const int fadeMs = static_cast<int>(std::lround(std::clamp(m_config.crossfadeSeconds, 0.0, 30.0) * 1000.0));
+    Scene* target = m_scenes[idx];
+    if (idx != m_config.activeSceneIdx) {
+        enableScene(idx);
+    }
+    for (Scene* scene : m_scenes) {
+        if (scene == target || !(scene->isPlaying || scene->isAudible())) {
+            continue;
+        }
+        scene->isPlaying = false;
+        if (fadeMs > 0) {
+            scene->stop(fadeMs, true);
+        } else {
+            scene->stopImmediate();
+        }
+        scene->row()->setPlaying(false);
+    }
+    if (!target->isPlaying) {
+        target->isPlaying = true;
+        target->play(fadeMs, true);
+        target->row()->setPlaying(true);
+    }
 }
 
 void MainWindow::moveScene(int fromIndex, int insertIndex)
@@ -1330,49 +977,8 @@ void MainWindow::updateSceneListLayout()
 
 void MainWindow::updateMainControls()
 {
-    auto* pad = activePad();
-    m_updatingControls = true;
-    if (pad && pad->isLoaded()) {
-        m_minDelay->setValue(pad->soundPlayer().getMinDelay());
-        m_maxDelay->setValue(pad->soundPlayer().getMaxDelay());
-        for (int bus = 0; bus < OpenALSoundPlayer::kSendCount; ++bus) {
-            m_sendSliders[bus]->setValue(static_cast<int>(pad->sendLevel(bus) * 1000.0f));
-        }
-        m_randomPlayback->setChecked(pad->soundPlayer().isPlayingRandom());
-        m_randomPlayback->setVisible(pad->soundPlayer().player.size() > 1);
-        m_repeat->setChecked(pad->isRepeating());
-        m_repeat->setEnabled(true);
-        m_infoPad = nullptr;
-        m_infoSound = -1;
-        refreshSampleInfo();
-        const bool delayOn = pad->soundPlayer().isDelayEnabled();
-        m_delayOn->setChecked(delayOn);
-        m_delayOn->setEnabled(true);
-        m_resetDelay->setEnabled(true);
-        m_scenePad->setChecked(pad->isScenePad());
-        m_scenePad->setEnabled(true);
-        m_minDelay->setEnabled(delayOn);
-        m_maxDelay->setEnabled(delayOn);
-        for (int bus = 0; bus < OpenALSoundPlayer::kSendCount; ++bus) {
-            m_sendSliders[bus]->setEnabled(AudioDevice::sendAvailable(bus));
-        }
-    } else {
-        m_infoLabel->setText(tr("channels: —\nformat: —\nsub-format: —\nsample rate: —\npath: —\nNum sounds: —"));
-        m_randomPlayback->hide();
-        m_repeat->setChecked(false);
-        m_repeat->setEnabled(false);
-        m_delayOn->setEnabled(false);
-        m_resetDelay->setEnabled(false);
-        m_scenePad->setChecked(false);
-        m_scenePad->setEnabled(false);
-        m_minDelay->setEnabled(false);
-        m_maxDelay->setEnabled(false);
-        for (QSlider* slider : m_sendSliders) {
-            slider->setEnabled(false);
-        }
-    }
-    m_updatingControls = false;
-
+    syncPanelPad();
+    m_bottom->refreshPadControls();
     for (Scene* scene : m_scenes) {
         for (SoundPadWidget* w : scene->padWidgets) {
             w->setSelected(scene == activeScene() && w->padId() == m_config.activeSoundIdx);
@@ -1380,173 +986,28 @@ void MainWindow::updateMainControls()
     }
 }
 
-void MainWindow::refreshSampleInfo()
+// Both panels edit the selected pad. Called wherever it may have changed, and every tick.
+Pad* MainWindow::syncPanelPad()
 {
-    auto* pad = activePad();
-    if (!m_infoLabel || !pad || !pad->isLoaded() || pad->soundPlayer().player.empty()) {
-        return;
-    }
-    const SoundPlayer& player = pad->soundPlayer();
-    const int cur = std::clamp(player.getCurSound(), 0, static_cast<int>(player.player.size()) - 1);
-    if (pad == m_infoPad && cur == m_infoSound) {
-        return;
-    }
-    m_infoPad = pad;
-    m_infoSound = cur;
-    auto* audio = player.player[static_cast<size_t>(cur)]->audioPlayer;
-    QString path;
-    if (cur < static_cast<int>(pad->samplePaths().size())) {
-        path = pad->samplePath(cur);
-    }
-    m_infoLabel->setText(tr("channels: %1\nformat: %2\nsub-format: %3\nsample rate: %4\npath: %5\nNum sounds: %6")
-        .arg(audio->getNumChannels())
-        .arg(QString::fromStdString(audio->getFormatString()))
-        .arg(QString::fromStdString(audio->getSubFormatString()))
-        .arg(audio->getSampleRate())
-        .arg(path)
-        .arg(player.player.size()));
-}
-
-void MainWindow::refreshDelayReadout()
-{
-    if (!m_delayReadout) {
-        return;
-    }
-    auto* pad = activePad();
-    QString text;
-    if (!pad || !pad->isLoaded() || pad->soundPlayer().player.empty()) {
-        text = QStringLiteral("—");
-    } else {
-        const SoundPlayer& player = pad->soundPlayer();
-        if (!player.isDelayEnabled()) {
-            text = tr("Off");
-        } else if (!player.hasDelay()) {
-            text = tr("No delay set");
-        } else if (player.isPlayingDelay()) {
-            text = tr("Next in %1 s of %2 s").arg(player.getRemainingDelay(), 0, 'f', 1).arg(player.getTotalDelay(), 0, 'f', 2);
-        } else {
-            text = tr("Current delay %1 s").arg(player.getTotalDelay(), 0, 'f', 2);
-        }
-    }
-    if (m_delayReadout->text() != text) {
-        m_delayReadout->setText(text);
-    }
-}
-
-void MainWindow::refreshWaveform()
-{
-    // Only does work while the tab is on screen. Reads positions the same way the
-    // sample rows do (no stream locks), so it cannot hold up playback.
-    if (!m_waveform || m_bottomCollapsed || !m_bottomStack || m_bottomStack->currentWidget() != m_waveform) {
-        return;
-    }
-    auto* pad = activePad();
-    const int cur = waveformSampleIndex();
-    if (!pad || cur < 0) {
-        m_waveform->setSample(QString(), 0.0f);
-        return;
-    }
-    const SoundPlayer& player = pad->soundPlayer();
-    const OpenALSoundPlayer* audio = player.player[static_cast<size_t>(cur)]->audioPlayer;
-    if (!audio || !audio->isLoaded()) {
-        m_waveform->setSample(QString(), 0.0f);
-        return;
-    }
-    QString path;
-    if (cur < static_cast<int>(pad->samplePaths().size())) {
-        path = pad->samplePath(cur);
-    } else {
-        path = FsPath::toQString(audio->getFilePath());
-    }
-    m_waveform->setSample(path, audio->getDuration());
-    if (!m_waveform->isDraggingHandle()) {
-        m_loopDragSampleId = -1; // a drag that ended without a release (the sample changed)
-    }
-    // A selected sample that isn't the one playing shows a still playhead.
-    const bool playing = cur == player.getCurSound() && player.isPlaying() && !player.isPlayingDelay();
-    m_waveform->setPlayhead(audio->getAudiblePosition(), playing);
-
-    const double duration = audio->getDuration();
-    const LoopRegion region = audio->getLoopRegion();
-    WaveformWidget::LoopView view;
-    if (duration > 0.0) {
-        view.startPct = std::clamp(region.start / duration, 0.0, 1.0);
-        view.endPct = region.end > 0.0 ? std::clamp(region.end / duration, view.startPct, 1.0) : 1.0;
-        // Clamped to half the loop, as the player does.
-        const double xf = std::min(std::clamp(region.crossfadeMs, 0.0, LoopRegion::kMaxCrossfadeMs) / 1000.0,
-                                   (view.endPct - view.startPct) * duration / 2.0);
-        view.crossfadePct = std::max(0.0, xf / duration);
-    }
-    view.loop = region.loop;
-    view.playFromStart = region.playFromStart;
-    view.playToEnd = region.playToEnd;
-    view.crossfadeMs = static_cast<int>(std::lround(region.crossfadeMs));
-    m_waveform->setLoopView(view);
-}
-
-// The sample selected in the Editor (which follows the playing sample while the pad plays),
-// or the pad's current one if the selection is out of range.
-int MainWindow::waveformSampleIndex() const
-{
-    auto* pad = const_cast<MainWindow*>(this)->activePad();
-    if (!pad || !pad->isLoaded() || pad->soundPlayer().player.empty()) {
-        return -1;
-    }
-    const SoundPlayer& player = pad->soundPlayer();
-    const int count = static_cast<int>(player.player.size());
-    if (m_config.activeSampleIdx >= 0 && m_config.activeSampleIdx < count) {
-        return m_config.activeSampleIdx;
-    }
-    return std::clamp(player.getCurSound(), 0, count - 1);
-}
-
-AudioSample* MainWindow::waveformSample() const
-{
-    const int index = waveformSampleIndex();
-    if (index < 0) {
-        return nullptr;
-    }
-    return const_cast<MainWindow*>(this)->activePad()->soundPlayer().player[static_cast<size_t>(index)];
-}
-
-void MainWindow::applyLoopRegion(AudioSample* sample, const LoopRegion& region)
-{
-    if (!sample) {
-        return;
-    }
-    sample->setLoopRegion(region);
-    // The Editor shows the same settings for its selected sample.
-    auto* pad = activePad();
-    if (pad && m_config.activeSampleIdx >= 0
-        && m_config.activeSampleIdx < static_cast<int>(pad->soundPlayer().player.size())
-        && pad->soundPlayer().player[static_cast<size_t>(m_config.activeSampleIdx)] == sample) {
-        const bool wasUpdating = m_updatingControls;
-        m_updatingControls = true;
-        m_sampleLoop->setChecked(region.loop);
-        m_updatingControls = wasUpdating;
-    }
-    refreshWaveform();
+    Pad* pad = activePad();
+    m_editor->setPad(pad);
+    m_bottom->setPad(pad);
+    return pad;
 }
 
 void MainWindow::setBottomTab(int index)
 {
-    if (!m_bottomStack) {
-        return;
-    }
-    m_bottomStack->setCurrentIndex(index);
-    refreshTabButton(m_sampleTab, index == 0);
-    refreshTabButton(m_padTab, index == 1);
-    refreshTabButton(m_waveTab, index == 2);
-    if (m_bottomCollapsed) {
+    m_bottom->setCurrentTab(index);
+    if (m_bottom->isCollapsed()) {
         setBottomCollapsed(false);
     }
 }
 
 void MainWindow::setBottomCollapsed(bool collapsed, bool resizeWindow)
 {
-    const bool changed = m_bottomCollapsed != collapsed;
-    m_bottomCollapsed = collapsed;
-    const bool resizing = changed && resizeWindow && m_bottomPageHeight > 0 && isVisible()
+    const bool changed = m_bottom->isCollapsed() != collapsed;
+    const int pageHeight = m_bottom->pageHeight();
+    const bool resizing = changed && resizeWindow && pageHeight > 0 && isVisible()
         && !isMaximized() && !isFullScreen();
     if (resizing) {
         // Toggling the panel first hands its height to the pad grid, then the window resize
@@ -1557,158 +1018,19 @@ void MainWindow::setBottomCollapsed(bool collapsed, bool resizeWindow)
         centralWidget()->setUpdatesEnabled(false);
         QTimer::singleShot(250, this, &MainWindow::releaseGridPaint);
     }
-    if (m_bottomStack) {
-        m_bottomStack->setVisible(!collapsed);
-    }
+    m_bottom->setCollapsedState(collapsed);
     if (resizing) {
         // Apply the panel change to the layout now, while painting is held, so the window
         // resize below is the only layout pass anyone sees.
         settleLayouts();
-        resize(width(), height() + (collapsed ? -m_bottomPageHeight : m_bottomPageHeight));
-    }
-    if (m_collapseBottom) {
-        m_collapseBottom->setText(collapsed ? QStringLiteral("\u25BE") : QStringLiteral("\u25B4"));
-        m_collapseBottom->setToolTip(collapsed ? tr("Show panel") : tr("Hide panel"));
-    }
-    if (collapsed) {
-        refreshTabButton(m_sampleTab, false);
-        refreshTabButton(m_padTab, false);
-        refreshTabButton(m_waveTab, false);
-    } else if (m_bottomStack) {
-        refreshTabButton(m_sampleTab, m_bottomStack->currentIndex() == 0);
-        refreshTabButton(m_padTab, m_bottomStack->currentIndex() == 1);
-        refreshTabButton(m_waveTab, m_bottomStack->currentIndex() == 2);
-    }
-}
-
-void MainWindow::refreshTabButton(QPushButton* button, bool active)
-{
-    if (!button) {
-        return;
-    }
-    button->setProperty("active", active);
-    button->style()->unpolish(button);
-    button->style()->polish(button);
-    button->update();
-}
-
-void MainWindow::updateEditControls()
-{
-    auto* pad = activePad();
-    if (!pad || pad->soundPlayer().player.empty()) {
-        return;
-    }
-    m_config.activeSampleIdx = std::clamp(m_config.activeSampleIdx, 0, static_cast<int>(pad->soundPlayer().player.size()) - 1);
-    auto* sample = pad->soundPlayer().player.at(m_config.activeSampleIdx);
-    m_updatingControls = true;
-    const bool stereo = sample->audioPlayer->getNumChannels() == 2;
-    m_width->setVisible(stereo);
-    m_widthValue->setVisible(stereo);
-    m_widthLabel->setVisible(stereo);
-    m_width->setValue(static_cast<int>(std::lround(sample->getWidth() * 100.0f)));
-    updatePanControl(sample);
-    m_pitch->setValue(static_cast<int>(sample->getPitch() * 1000.0f));
-    m_gain->setValue(std::clamp(
-        VolumeDb::toSlider(VolumeDb::toDb(sample->getGain()), kSampleGainMinDb),
-        m_gain->minimum(),
-        m_gain->maximum()));
-    m_randomPan->setChecked(pad->soundPlayer().isRandomPan());
-    const LoopRegion region = sample->loopRegion();
-    m_sampleLoop->setChecked(region.loop);
-    m_editTitle->setText(pad->soundName().toUpper());
-    m_updatingControls = false;
-}
-
-void MainWindow::updatePanControl(AudioSample* sample)
-{
-    const bool pannable = sample->audioPlayer->canPan();
-    m_pan->setVisible(pannable);
-    m_panValue->setVisible(pannable);
-    m_panLabel->setVisible(pannable);
-    m_randomPan->setVisible(pannable);
-    const bool wasUpdating = m_updatingControls;
-    m_updatingControls = true;
-    m_pan->setValue(static_cast<int>(((sample->getPan() + 1.0f) / 2.0f) * 1000.0f));
-    m_updatingControls = wasUpdating;
-}
-
-void MainWindow::moveEditorSample(int fromIndex, int insertIndex)
-{
-    auto* pad = activePad();
-    if (!pad) {
-        return;
-    }
-    const int dest = pad->moveSample(fromIndex, insertIndex);
-    if (dest < 0) {
-        return;
-    }
-    m_config.activeSampleIdx = dest;
-    if (dest < static_cast<int>(pad->soundPlayer().player.size())) {
-        m_config.activeSampleId = pad->soundPlayer().player[static_cast<size_t>(dest)]->id;
-    }
-    rebuildEditSamples();
-}
-
-void MainWindow::rebuildEditSamples()
-{
-    qDeleteAll(m_sampleRows);
-    m_sampleRows.clear();
-    auto* pad = activePad();
-    if (!pad) {
-        updateMainControls();
-        return;
-    }
-    for (AudioSample* sample : pad->soundPlayer().player) {
-        auto* row = new SampleRowWidget(sample->id, sample->path, m_sampleListLayout->parentWidget());
-        m_sampleListLayout->insertWidget(m_sampleListLayout->count() - 1, row);
-        m_sampleRows.push_back(row);
-        const auto selectSample = [this, pad](int id, bool play) {
-            for (int i = 0; i < static_cast<int>(pad->soundPlayer().player.size()); ++i) {
-                if (pad->soundPlayer().player[i]->id == id) {
-                    m_config.activeSampleId = id;
-                    m_config.activeSampleIdx = i;
-                    if (play) {
-                        pad->soundPlayer().playSample(i);
-                    }
-                    updateEditControls();
-                    break;
-                }
-            }
-        };
-        connect(row, &SampleRowWidget::clicked, this, [selectSample](int id) { selectSample(id, false); });
-        connect(row, &SampleRowWidget::doubleClicked, this, [selectSample](int id) { selectSample(id, true); });
-    }
-    updateEditControls();
-    updateMainControls();
-}
-
-void MainWindow::refreshSendLabels()
-{
-    for (int which = 0; which < OpenALSoundPlayer::kEaxReverbCount; ++which) {
-        if (!m_sendLabels[which]) {
-            continue;
-        }
-        const QString preset = QString::fromStdString(
-            AudioDevice::reverbPresetLabel(AudioDevice::reverbPresetIndex(which)));
-        m_sendLabels[which]->setText(tr("%1 reverb send").arg(preset));
-        m_sendLabels[which]->setToolTip(tr("Send into EAX reverb %1 (%2). Choose the preset in Settings.").arg(which + 1).arg(preset));
-    }
-    for (int which = 0; which < OpenALSoundPlayer::kConvolutionCount; ++which) {
-        QLabel* label = m_sendLabels[OpenALSoundPlayer::kEaxReverbCount + which];
-        if (!label) {
-            continue;
-        }
-        const QString file = FsPath::toQString(AudioDevice::convolutionImpulsePath(which));
-        const QString name = file.isEmpty() ? tr("Convolution %1").arg(which + 1) : QFileInfo(file).completeBaseName();
-        label->setText(tr("%1 reverb send").arg(name));
-        label->setToolTip(tr("Send into convolution reverb %1 (%2). Choose the impulse in Settings.").arg(which + 1).arg(file));
+        resize(width(), height() + (collapsed ? -pageHeight : pageHeight));
     }
 }
 
 void MainWindow::syncSettingsPage()
 {
     m_settingsPage->sync();
-    refreshSendLabels();
+    m_bottom->refreshSendLabels();
     m_themePage->refresh();
     if (m_addScene) {
         m_addScene->setEnabled(static_cast<unsigned int>(m_scenes.size()) < m_config.maxScenes);
@@ -1724,6 +1046,19 @@ void MainWindow::applyAppSettings(const QJsonObject& global)
         m_config.maxScenes = static_cast<unsigned int>(
             std::clamp(global.value(QStringLiteral("scenelimit")).toInt(static_cast<int>(m_config.maxScenes)), 1, 64));
     }
+    if (global.contains(QStringLiteral("keyboardpads"))) {
+        m_config.keyboardPads = global.value(QStringLiteral("keyboardpads")).toBool(true);
+        refreshKeyHints();
+    }
+    if (global.contains(QStringLiteral("talkoverdepth"))) {
+        m_config.talkOverDepthDb = std::clamp(global.value(QStringLiteral("talkoverdepth")).toDouble(m_config.talkOverDepthDb), -40.0, 0.0);
+    }
+    if (global.contains(QStringLiteral("panictime"))) {
+        m_config.panicSeconds = std::clamp(global.value(QStringLiteral("panictime")).toDouble(m_config.panicSeconds), 0.0, 10.0);
+    }
+    if (global.contains(QStringLiteral("crossfadetime"))) {
+        m_config.crossfadeSeconds = std::clamp(global.value(QStringLiteral("crossfadetime")).toDouble(m_config.crossfadeSeconds), 0.0, 30.0);
+    }
     if (global.contains(QStringLiteral("gridwidth"))) {
         m_config.gridWidth = std::clamp(global.value(QStringLiteral("gridwidth")).toInt(m_config.gridWidth), 1, 12);
     }
@@ -1732,6 +1067,17 @@ void MainWindow::applyAppSettings(const QJsonObject& global)
     }
     if (global.contains(QStringLiteral("library"))) {
         m_config.defaultLibraryLocation = global.value(QStringLiteral("library")).toString().trimmed();
+    }
+    // The devices are this computer's (local.json). A project saved before that carries them
+    // in its own settings: used only until this computer has its own.
+    const QJsonObject& devices = m_local.contains(QStringLiteral("outputdevice")) ? m_local : global;
+    if (devices.contains(QStringLiteral("outputdevice"))) {
+        m_config.outputDevice = devices.value(QStringLiteral("outputdevice")).toString();
+        applyOutputDevice();
+    }
+    if (devices.contains(QStringLiteral("previewdevice"))) {
+        m_config.previewDevice = devices.value(QStringLiteral("previewdevice")).toString();
+        applyPreviewDevice();
     }
     // Keys for the first reverbs are the original ones; the second ones add a "2".
     for (int which = 0; which < OpenALSoundPlayer::kEaxReverbCount; ++which) {
@@ -1775,11 +1121,12 @@ void MainWindow::setPage(Page page)
     }
     m_page = page;
     // The Sample / Pad / Waveform panel belongs to the pad grid, not to Settings or Theme.
-    if (m_bottomPanel) {
-        m_bottomPanel->setVisible(page == Page::Main && !m_scenesFocus);
+    if (m_bottom) {
+        m_bottom->setVisible(page == Page::Main && !m_scenesFocus);
     }
     if (page == Page::Settings) {
         m_settingsPage->refreshWaveformCacheInfo();
+        m_settingsPage->refreshDevices();
         m_pages->setCurrentWidget(m_settingsPage);
     } else if (page == Page::Theme) {
         m_pages->setCurrentWidget(m_themePage);
@@ -1808,8 +1155,8 @@ void MainWindow::setScenesFocus(bool on)
     m_padStack->setVisible(!on);
     m_editorTab->setVisible(!on);
     m_filesTab->setVisible(!on); // files are dragged onto pads, which this mode hides
-    if (m_bottomPanel) {
-        m_bottomPanel->setVisible(!on && m_page == Page::Main);
+    if (m_bottom) {
+        m_bottom->setVisible(!on && m_page == Page::Main);
     }
     // With the pads hidden the scene list takes the full width.
     m_bodyLayout->setStretchFactor(m_sidebarWidget, on ? 1 : 0);
@@ -1903,28 +1250,16 @@ void MainWindow::setSidebarView(SidebarView view)
     if (view == SidebarView::Scenes) {
         scrollToActiveScene(); // the list may have been laid out while hidden
     }
-    refreshTabButton(m_scenesTab, view == SidebarView::Scenes);
-    refreshTabButton(m_editorTab, view == SidebarView::Editor);
-    refreshTabButton(m_filesTab, view == SidebarView::Files);
+    setTabButtonActive(m_scenesTab, view == SidebarView::Scenes);
+    setTabButtonActive(m_editorTab, view == SidebarView::Editor);
+    setTabButtonActive(m_filesTab, view == SidebarView::Files);
 }
 
 void MainWindow::refreshEditorPage()
 {
-    auto* pad = activePad();
-    m_sidebarStack->setCurrentWidget(m_editorPage);
-    if (!pad || pad->soundPlayer().player.empty()) {
-        qDeleteAll(m_sampleRows);
-        m_sampleRows.clear();
-        m_sampleControls->hide();
-        m_editTitle->setText(pad ? pad->soundName().toUpper() : QString());
-        return;
-    }
-    if (m_sampleRows.isEmpty()) {
-        m_config.activeSampleIdx = 0;
-        m_config.activeSampleId = pad->soundPlayer().player[0]->id;
-    }
-    m_sampleControls->show();
-    rebuildEditSamples();
+    m_sidebarStack->setCurrentWidget(m_editor);
+    syncPanelPad();
+    m_editor->refresh();
 }
 
 QString MainWindow::currentSettingsFilePath() const
@@ -1970,6 +1305,7 @@ void MainWindow::saveOnExit()
         return;
     }
     m_savedOnExit = true;
+    saveLocalSettings();
     m_config.lastSettingsPath = currentSettingsFilePath();
     const QString path = currentSettingsFilePath();
     ProjectBackups::backup(path, true);
@@ -2278,6 +1614,10 @@ bool MainWindow::saveConfigTo(const QString& path, bool copyFiles, bool settings
     global.insert(QStringLiteral("activesceneid"), m_config.activeSceneIdx);
     global.insert(QStringLiteral("autosave"), m_config.autosave);
     global.insert(QStringLiteral("scenelimit"), static_cast<int>(m_config.maxScenes));
+    global.insert(QStringLiteral("crossfadetime"), m_config.crossfadeSeconds);
+    global.insert(QStringLiteral("talkoverdepth"), m_config.talkOverDepthDb);
+    global.insert(QStringLiteral("keyboardpads"), m_config.keyboardPads);
+    global.insert(QStringLiteral("panictime"), m_config.panicSeconds);
     global.insert(QStringLiteral("gridwidth"), m_config.gridWidth);
     global.insert(QStringLiteral("gridheight"), m_config.gridHeight);
     global.insert(QStringLiteral("library"), m_config.defaultLibraryLocation);
@@ -2298,7 +1638,6 @@ bool MainWindow::saveConfigTo(const QString& path, bool copyFiles, bool settings
     global.insert(QStringLiteral("theme"), Theme::instance().idName());
     global.insert(QStringLiteral("themecolors"), Theme::instance().colorsJson());
     global.insert(QStringLiteral("themecolorsets"), Theme::instance().colorSetsJson());
-    saveWindowLayout(global);
     m_fileBrowser->saveSettings(global);
 
     if (settingsOnly) {
@@ -2588,7 +1927,6 @@ void MainWindow::loadConfigFrom(const QString& path)
         VolumeDb::kUnityDb));
     m_config.setMasterVolume(VolumeDb::toLinearMuted(VolumeDb::fromSlider(m_mainVolume->value(), VolumeDb::kFloorDb)));
     m_config.activeSceneIdx = global.value(QStringLiteral("activesceneid")).toInt();
-    restoreWindowLayout(global);
 
     for (Scene* scene : m_scenes) {
         m_padStack->removeWidget(scene->grid());
@@ -2620,6 +1958,17 @@ void MainWindow::loadConfigFrom(const QString& path)
     m_addScene->setEnabled(static_cast<unsigned int>(m_scenes.size()) < m_config.maxScenes);
 }
 
+void MainWindow::saveLocalSettings()
+{
+    QJsonObject midi = m_controls.toJson();
+    midi.insert(QStringLiteral("input"), m_midiPort);
+    m_local.insert(QStringLiteral("midi"), midi);
+    m_local.insert(QStringLiteral("outputdevice"), m_config.outputDevice);
+    m_local.insert(QStringLiteral("previewdevice"), m_config.previewDevice);
+    saveWindowLayout(m_local);
+    m_config.saveLocalSettings(m_local);
+}
+
 void MainWindow::saveWindowLayout(QJsonObject& global) const
 {
     // In the scenes strip, save the window it came from so the next launch opens full size.
@@ -2633,8 +1982,8 @@ void MainWindow::saveWindowLayout(QJsonObject& global) const
     global.insert(QStringLiteral("windowmaximized"), strip ? m_expandedMaximized : isMaximized());
     global.insert(QStringLiteral("windowgeometry"),
         QString::fromLatin1((strip ? m_expandedGeometry : saveGeometry()).toBase64()));
-    global.insert(QStringLiteral("bottomcollapsed"), m_bottomCollapsed);
-    global.insert(QStringLiteral("bottomtab"), m_bottomStack ? m_bottomStack->currentIndex() : 0);
+    global.insert(QStringLiteral("bottomcollapsed"), m_bottom->isCollapsed());
+    global.insert(QStringLiteral("bottomtab"), m_bottom->currentTab());
 }
 
 void MainWindow::restoreWindowLayout(const QJsonObject& global)
@@ -2940,6 +2289,10 @@ void MainWindow::tick()
     refreshLoadUi();
     OpenALSoundPlayer::updateAll();
     m_fileBrowser->tick();
+    // Before the scenes update, so every pad takes the new level this tick.
+    m_duck.setDepthDb(static_cast<float>(m_config.talkOverDepthDb));
+    m_config.setMasterFade(m_duck.update(m_clock.elapsed()));
+    refreshTalkButton();
     for (Scene* scene : m_scenes) {
         if (scene->selectRequested) {
             scene->selectRequested = false;
@@ -2952,10 +2305,11 @@ void MainWindow::tick()
         }
         scene->update();
     }
+    Pad* pad = syncPanelPad();
     if (m_page == Page::Main) {
         // The selected sample follows the pad as it moves on to another sample, in every
         // view, so the Editor and the Waveform tab show the one playing.
-        if (auto* pad = activePad()) {
+        if (pad) {
             const SoundPlayer& player = pad->soundPlayer();
             const int cur = player.getCurSound();
             if (pad != m_followedPad) {
@@ -2967,59 +2321,114 @@ void MainWindow::tick()
             } else if (cur != m_followedSound && cur >= 0 && cur < static_cast<int>(player.player.size())) {
                 m_followedSound = cur;
                 if (cur != m_config.activeSampleIdx) {
-                    m_config.activeSampleIdx = cur;
-                    m_config.activeSampleId = player.player[static_cast<size_t>(cur)]->id;
-                    updateEditControls();
+                    m_editor->selectSample(cur);
                 }
             }
         }
-        refreshSampleInfo();
-        refreshDelayReadout();
-        refreshWaveform();
-    }
-    if (m_page == Page::Main && m_sidebar == SidebarView::Editor) {
-        auto* pad = activePad();
-        if (pad) {
-            for (int i = 0; i < m_sampleRows.size() && i < static_cast<int>(pad->soundPlayer().player.size()); ++i) {
-                m_sampleRows[i]->setProgress(pad->soundPlayer().player[i]->audioPlayer->getPosition());
-                m_sampleRows[i]->setSelected(i == m_config.activeSampleIdx);
-            }
-            // The selected sample changed (arrow keys, or the pad moving on while it plays):
-            // keep its row in view. After this tick, once a rebuilt list has been laid out.
-            const int idx = m_config.activeSampleIdx;
-            if ((pad != m_shownSamplePad || idx != m_shownSampleIdx) && idx >= 0 && idx < m_sampleRows.size()) {
-                m_shownSamplePad = pad;
-                m_shownSampleIdx = idx;
-                const QPointer<QWidget> row(m_sampleRows[idx]);
-                QTimer::singleShot(0, this, [this, row]() {
-                    if (row && m_sampleScroll) {
-                        m_sampleScroll->ensureWidgetVisible(row, 0, 6);
-                    }
-                });
-            }
+        m_bottom->tick();
+        if (m_sidebar == SidebarView::Editor) {
+            m_editor->tick();
         }
+    }
+}
+
+bool MainWindow::moveOutputTo(const QString& device)
+{
+    if (device.isEmpty()) {
+        return false;
+    }
+    if (device == m_curDevice && AudioDevice::isConnected()) {
+        return true;
+    }
+    const int result = AudioDevice::reopen(device.toUtf8().constData());
+    if (result == 0) {
+        qInfo() << "Audio output moved to" << device;
+        m_curDevice = device;
+        m_failedDevice.clear();
+        return true;
+    }
+    // Logged once per device: the default is tried again every second.
+    if (device != m_failedDevice) {
+        qWarning() << "Couldn't move audio output to" << device << "(code" << result << ")";
+        m_failedDevice = device;
+    }
+    return false;
+}
+
+void MainWindow::applyOutputDevice()
+{
+    const QString chosen = m_config.outputDevice;
+    const QString fallback = QString::fromStdString(AudioDevice::defaultDeviceName());
+    m_lastDefaultDevice = fallback;
+    if (chosen.isEmpty()) {
+        moveOutputTo(fallback);
+        m_settingsPage->setDeviceStatus(QString());
+        return;
+    }
+    if (moveOutputTo(chosen)) {
+        m_settingsPage->setDeviceStatus(QString());
+        return;
+    }
+    // Kept as the choice, and tried again whenever the system's devices change.
+    moveOutputTo(fallback);
+    m_settingsPage->setDeviceStatus(tr("%1 isn't available: playing on the system default until it is.").arg(chosen));
+}
+
+void MainWindow::applyPreviewDevice()
+{
+    const QString chosen = m_config.previewDevice;
+    if (QString::fromStdString(CueOutput::deviceName()) == chosen && (CueOutput::isOpen() || chosen.isEmpty())) {
+        return;
+    }
+    // A preview playing on one output isn't moved to the other: stop it.
+    if (m_fileBrowser) {
+        m_fileBrowser->stopPreview();
+    }
+    if (chosen.isEmpty()) {
+        CueOutput::close();
+        m_settingsPage->setDeviceStatus(QString());
+        return;
+    }
+    if (CueOutput::open(chosen.toStdString())) {
+        m_settingsPage->setDeviceStatus(QString());
+    } else {
+        m_settingsPage->setDeviceStatus(tr("Couldn't open %1 for previews: they play on the main output.").arg(chosen));
     }
 }
 
 void MainWindow::checkAudioDevice()
 {
-    // Follows the system's default output. No device enumeration here: this runs every
-    // second on the UI thread, and listing devices can take a while on PipeWire/Pulse.
-    const QString next = QString::fromStdString(AudioDevice::defaultDeviceName());
-    if (next.isEmpty() || next == m_curDevice) {
+    // A chosen MIDI input that wasn't there: look again every few seconds.
+    if (!m_midiPort.isEmpty() && !m_midi->isOpen() && ++m_midiRetry >= 3) {
+        m_midiRetry = 0;
+        openMidiInput();
+    }
+    // No device enumeration here: this runs every second on the UI thread, and listing
+    // devices can take a while on PipeWire/Pulse.
+    const QString def = QString::fromStdString(AudioDevice::defaultDeviceName());
+    const QString chosen = m_config.outputDevice;
+    if (chosen.isEmpty()) {
+        // Follows the system's default output.
+        if (!def.isEmpty() && def != m_curDevice) {
+            moveOutputTo(def);
+        }
         return;
     }
-    const int result = AudioDevice::reopen(next.toUtf8().constData());
-    if (result == 0) {
-        qInfo() << "Audio output moved to" << next;
-        m_curDevice = next;
-        m_failedDevice.clear();
+    // A chosen device. If it went away, play on the default meanwhile.
+    if (m_curDevice == chosen && !AudioDevice::isConnected() && !def.isEmpty()) {
+        qWarning() << "Audio output" << chosen << "disconnected";
+        if (moveOutputTo(def)) {
+            m_settingsPage->setDeviceStatus(tr("%1 was disconnected: playing on the system default until it's back.").arg(chosen));
+        }
+        m_lastDefaultDevice = def;
         return;
     }
-    // Not taken as current, so it's tried again next second; logged once per device.
-    if (next != m_failedDevice) {
-        qWarning() << "Couldn't move audio output to" << next << "(code" << result << ")";
-        m_failedDevice = next;
+    // A change of default is the sign that devices came or went: try the chosen one again.
+    if (m_curDevice != chosen && def != m_lastDefaultDevice) {
+        m_lastDefaultDevice = def;
+        if (moveOutputTo(chosen)) {
+            m_settingsPage->setDeviceStatus(QString());
+        }
     }
 }
 
@@ -3065,10 +2474,10 @@ void MainWindow::resizeEvent(QResizeEvent* event)
 // out with the old panel height. Push the change up through the layouts right away.
 void MainWindow::settleLayouts()
 {
-    if (m_bottomPanel && m_bottomPanel->layout()) {
-        m_bottomPanel->layout()->invalidate();
-        m_bottomPanel->layout()->activate();
-        m_bottomPanel->updateGeometry();
+    if (m_bottom && m_bottom->layout()) {
+        m_bottom->layout()->invalidate();
+        m_bottom->layout()->activate();
+        m_bottom->updateGeometry();
     }
     if (QLayout* layout = centralWidget()->layout()) {
         layout->invalidate();
@@ -3145,11 +2554,240 @@ bool MainWindow::eventFilter(QObject* watched, QEvent* event)
     if (event->type() == QEvent::KeyPress && watched->isWidgetType()
         && static_cast<QWidget*>(watched)->window() == this) {
         auto* key = static_cast<QKeyEvent*>(event);
-        if (handlePadClipKey(key) || handleReorderKey(key)) {
+        if (handleLiveKey(key) || handlePadClipKey(key) || handleReorderKey(key)) {
             return true;
         }
     }
+    if (event->type() == QEvent::KeyRelease && watched->isWidgetType()
+        && static_cast<QWidget*>(watched)->window() == this) {
+        if (handleLiveKey(static_cast<QKeyEvent*>(event))) {
+            return true;
+        }
+    }
+    // A held Space whose release goes to another window would hold the duck for ever.
+    if (watched == this && event->type() == QEvent::WindowDeactivate) {
+        m_duck.setHeld(Duck::Key, false);
+    }
     return QMainWindow::eventFilter(watched, event);
+}
+
+bool MainWindow::keyboardIsBusy() const
+{
+    QWidget* focus = QApplication::focusWidget();
+    if (auto* edit = qobject_cast<QLineEdit*>(focus); edit && !edit->isReadOnly()) {
+        return true;
+    }
+    if (qobject_cast<QAbstractSpinBox*>(focus) || qobject_cast<QComboBox*>(focus)
+        || qobject_cast<QAbstractItemView*>(focus)) {
+        return true;
+    }
+    return QApplication::activePopupWidget() != nullptr;
+}
+
+bool MainWindow::handleLiveKey(QKeyEvent* event)
+{
+    if (event->modifiers() & (Qt::ControlModifier | Qt::AltModifier | Qt::MetaModifier)) {
+        return false;
+    }
+    const bool press = event->type() == QEvent::KeyPress;
+    if (event->key() == Qt::Key_Space) {
+        if (event->isAutoRepeat()) {
+            return m_duck.isHeldBy(Duck::Key); // swallow the repeats of a held Space
+        }
+        if (!press) {
+            if (m_duck.isHeldBy(Duck::Key)) {
+                m_duck.setHeld(Duck::Key, false);
+                return true;
+            }
+            return false;
+        }
+        // The Files tab previews with Space.
+        if (m_page != Page::Main || m_sidebar == SidebarView::Files || keyboardIsBusy()) {
+            return false;
+        }
+        m_duck.setHeld(Duck::Key, true);
+        return true;
+    }
+    // The pads, by keyboard row (KeyLayout). Shift is left for later use.
+    if (m_config.keyboardPads && !(event->modifiers() & Qt::ShiftModifier)) {
+        Scene* scene = activeScene();
+        const int index = scene ? KeyLayout::padForKey(event->key(), scene->columns(), scene->rows()) : -1;
+        if (index >= 0) {
+            if (m_page != Page::Main || keyboardIsBusy()) {
+                return false;
+            }
+            if (press && !event->isAutoRepeat()) {
+                if (Pad* pad = scene->padAt(index)) {
+                    pad->togglePlay();
+                }
+            }
+            return true; // a held key's repeats and its release are taken too
+        }
+    }
+    if (event->key() == Qt::Key_Escape && press && !event->isAutoRepeat()) {
+        if (m_controls.isLearning()) {
+            cancelMidiLearn();
+            return true;
+        }
+        if (m_page != Page::Main || keyboardIsBusy()) {
+            return false;
+        }
+        panic();
+        return true;
+    }
+    return false;
+}
+
+void MainWindow::panic()
+{
+    const qint64 now = m_clock.elapsed();
+    const bool again = now < m_panicUntilMs;
+    const int fadeMs = static_cast<int>(std::lround(std::clamp(m_config.panicSeconds, 0.0, 10.0) * 1000.0));
+    for (Scene* scene : m_scenes) {
+        if (again || fadeMs <= 0) {
+            scene->stopImmediate();
+        } else if (scene->isPlaying || scene->isAudible()) {
+            scene->isPlaying = false;
+            scene->stop(fadeMs, true); // carries on if another scene is selected meanwhile
+            scene->row()->setPlaying(false);
+        }
+    }
+    if (m_fileBrowser) {
+        m_fileBrowser->stopPreview();
+    }
+    m_panicUntilMs = (again || fadeMs <= 0) ? 0 : now + fadeMs;
+}
+
+void MainWindow::openMidiInput()
+{
+    if (m_midiPort.isEmpty()) {
+        m_midi->close();
+        return;
+    }
+    if (m_midi->isOpen() && m_midi->portName() == m_midiPort) {
+        return;
+    }
+    m_midi->open(m_midiPort);
+    if (m_settingsPage) {
+        m_settingsPage->refreshMidi();
+    }
+}
+
+void MainWindow::showMidiStatus(const QString& text, int hideAfterMs)
+{
+    m_midiStatus->setText(text);
+    m_midiStatus->setVisible(!text.isEmpty());
+    m_settingsPage->setMidiStatus(text); // learning can start from there too
+    const int serial = ++m_midiStatusSerial;
+    if (hideAfterMs > 0) {
+        QTimer::singleShot(hideAfterMs, this, [this, serial]() {
+            if (serial == m_midiStatusSerial) {
+                m_midiStatus->hide();
+                m_settingsPage->setMidiStatus(QString());
+            }
+        });
+    }
+}
+
+void MainWindow::startMidiLearn(ControlAction action, int pad)
+{
+    if (!MidiInput::available()) {
+        showMidiStatus(tr("This build of Feedra has no MIDI."), 4000);
+        return;
+    }
+    if (!m_midi->isOpen()) {
+        showMidiStatus(tr("No MIDI input: choose one in Settings, under Live controls."), 5000);
+        return;
+    }
+    m_controls.startLearn(action, pad);
+    showMidiStatus(ControlMap::isContinuous(action)
+            ? tr("MIDI learn, %1: move a fader or knob (Esc cancels)").arg(ControlMap::actionName(action, pad))
+            : tr("MIDI learn, %1: press a pad, key or button (Esc cancels)").arg(ControlMap::actionName(action, pad)));
+}
+
+void MainWindow::cancelMidiLearn()
+{
+    m_controls.cancelLearn();
+    showMidiStatus(QString());
+}
+
+void MainWindow::handleMidi(const MidiMessage& message)
+{
+    const ControlAction learningAction = m_controls.learningAction();
+    const int learningPad = m_controls.learningPad();
+    bool learned = false;
+    const std::vector<ControlCommand> commands = m_controls.handle(message, &learned);
+    if (learned) {
+        if (const ControlBinding* binding = m_controls.bindingFor(learningAction, learningPad)) {
+            showMidiStatus(tr("%1: %2").arg(ControlMap::actionName(learningAction, learningPad), ControlMap::describe(*binding)), 3000);
+        }
+        saveLocalSettings();
+        m_settingsPage->refreshMidi();
+        return;
+    }
+    const auto sliderValue = [](float v) {
+        return static_cast<int>(std::lround(v * VolumeDb::sliderSpan(VolumeDb::kFloorDb, VolumeDb::kUnityDb)));
+    };
+    for (const ControlCommand& command : commands) {
+        Scene* scene = activeScene();
+        switch (command.action) {
+        case ControlAction::PadPlay:
+            if (Pad* pad = scene ? scene->padAt(command.pad) : nullptr) {
+                pad->togglePlay();
+            }
+            break;
+        case ControlAction::PadVolume:
+            if (Pad* pad = scene ? scene->padAt(command.pad) : nullptr) {
+                pad->setPadVolume(VolumeDb::toLinearMuted(VolumeDb::fromSlider(sliderValue(command.value), VolumeDb::kFloorDb)));
+            }
+            break;
+        case ControlAction::MasterVolume:
+            m_mainVolume->setValue(sliderValue(command.value));
+            break;
+        case ControlAction::NextScene:
+            if (m_config.activeSceneIdx + 1 < m_scenes.size()) {
+                enableScene(m_config.activeSceneIdx + 1);
+            }
+            break;
+        case ControlAction::PreviousScene:
+            if (m_config.activeSceneIdx > 0) {
+                enableScene(m_config.activeSceneIdx - 1);
+            }
+            break;
+        case ControlAction::GoToScene:
+            goToScene(m_config.activeSceneIdx);
+            break;
+        case ControlAction::Panic:
+            panic();
+            break;
+        case ControlAction::TalkOver:
+            m_duck.setHeld(Duck::Midi, command.pressed);
+            break;
+        }
+    }
+}
+
+void MainWindow::refreshKeyHints()
+{
+    for (Scene* scene : m_scenes) {
+        for (int i = 0; i < scene->padWidgets.size(); ++i) {
+            scene->padWidgets[i]->setKeyHint(m_config.keyboardPads ? KeyLayout::keyLabel(i, scene->columns()) : QString());
+        }
+    }
+}
+
+void MainWindow::refreshTalkButton()
+{
+    if (!m_talkButton) {
+        return;
+    }
+    // Lit while ducked, however it's held (Space or MIDI as well as the button).
+    const bool live = m_duck.isActive();
+    if (m_talkButton->property("live").toBool() != live) {
+        m_talkButton->setProperty("live", live);
+        m_talkButton->style()->unpolish(m_talkButton);
+        m_talkButton->style()->polish(m_talkButton);
+    }
 }
 
 bool MainWindow::handleReorderKey(QKeyEvent* event)
@@ -3157,7 +2795,9 @@ bool MainWindow::handleReorderKey(QKeyEvent* event)
     if (m_page != Page::Main || (event->modifiers() & Qt::ControlModifier)) {
         return false;
     }
-    if (event->key() != Qt::Key_Up && event->key() != Qt::Key_Down) {
+    // Enter in the scene list crossfades to the selected scene.
+    const bool isGo = (event->key() == Qt::Key_Return || event->key() == Qt::Key_Enter) && !event->isAutoRepeat();
+    if (event->key() != Qt::Key_Up && event->key() != Qt::Key_Down && !isGo) {
         return false;
     }
     QWidget* focus = QApplication::focusWidget();
@@ -3170,6 +2810,13 @@ bool MainWindow::handleReorderKey(QKeyEvent* event)
 
     if (m_sidebar == SidebarView::Files) {
         return false; // the arrows move through the file list
+    }
+    if (isGo) {
+        if (m_sidebar != SidebarView::Scenes) {
+            return false;
+        }
+        goToScene(m_config.activeSceneIdx);
+        return true;
     }
     const bool up = event->key() == Qt::Key_Up;
     if (m_sidebar == SidebarView::Scenes) {
@@ -3194,9 +2841,8 @@ bool MainWindow::handleReorderKey(QKeyEvent* event)
         next = idx + 1;
     }
     if (next != idx) {
-        m_config.activeSampleIdx = next;
-        m_config.activeSampleId = pad->soundPlayer().player[static_cast<size_t>(next)]->id;
-        updateEditControls();
+        syncPanelPad();
+        m_editor->selectSample(next);
     }
     return true;
 }

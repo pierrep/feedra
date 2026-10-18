@@ -8,6 +8,7 @@
 #include <cstdint>
 #include <filesystem>
 #include <string>
+#include <vector>
 
 #if defined(__APPLE__) && !defined(FEEDRA_OPENAL_SOFT)
 #include <OpenAL/al.h>
@@ -35,6 +36,13 @@ void process();
 // reopen returns 0 on success, -1 without the extension, -2 with no device, -3 if it failed.
 std::string defaultDeviceName();
 int reopen(const char* deviceName);
+// Every output device, by the names alcOpenDevice and reopen() take. Enumerating can take a
+// moment on PipeWire/Pulse, so call it when a list is shown, not every tick.
+std::vector<std::string> outputDevices();
+// The device the output is on now.
+std::string currentDeviceName();
+// False once the device has gone away (unplugged; ALC_EXT_disconnect). Cheap.
+bool isConnected();
 
 // Float buffers (AL_EXT_FLOAT32). Any thread.
 bool floatOutput();

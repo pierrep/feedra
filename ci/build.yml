@@ -14,7 +14,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
-            qt6-base-dev libopenal-dev libsndfile1-dev libmpg123-dev pkg-config ninja-build
+            qt6-base-dev libopenal-dev libsndfile1-dev libmpg123-dev libasound2-dev pkg-config ninja-build
       - name: Configure
         run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo -DFEEDRA_WARNINGS_AS_ERRORS=ON
       - name: Build
@@ -57,4 +57,4 @@ jobs:
       # The OpenAL and libsndfile DLLs aren't in the repository (bin/*.dll is ignored), so only
       # the tests that don't play audio run here.
       - name: Test
-        run: ctest --test-dir build --output-on-failure -E "^(engine|project_roundtrip)$"
+        run: ctest --test-dir build --output-on-failure -E "^(engine|cue|project_roundtrip|panels|scene_fades|live_window)$"

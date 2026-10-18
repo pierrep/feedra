@@ -33,30 +33,54 @@ public:
     QVector<SoundPadWidget*> padWidgets;
 
     Pad* padAt(int idx) const;
+    int columns() const { return m_columns; }
+    int rows() const { return m_rows; }
     SoundPadWidget* padWidgetAt(int idx) const;
-    void play();
-    void pause();
-    void stop();
+    // The fade for play, pause and stop from the scene's own buttons.
+    static constexpr int kDefaultFadeMs = 500;
+
+    // Pads resuming from a pause fade in; pads starting from the top start at full level (a
+    // fade would swallow their opening). With `fadeInStarts`, as in a crossfade, every pad
+    // that starts fades in too.
+    void play(int fadeMs = kDefaultFadeMs, bool fadeInStarts = false);
+    void pause(int fadeMs = kDefaultFadeMs);
+    // `crossfade`: part of a crossfade, so selecting another scene doesn't cut it short.
+    void stop(int fadeMs = kDefaultFadeMs, bool crossfade = false);
     void update();
     void endFade();
+    // Fading in or out as part of a crossfade (MainWindow::goToScene).
+    bool isCrossfading() const { return m_fading && m_crossfade; }
+    // Any pad playing, as of the last update().
+    bool isAudible() const { return m_audible; }
+    // The fade's gain at `phase` (0 silent, 1 full): equal power, so two scenes crossing keep
+    // the same loudness, and a fade sounds even all the way down.
+    static float fadeGain(float phase);
     void setActive(bool active);
     void layoutGrid();
     void stopImmediate();
 
 signals:
     void padSelected(int sceneId, int padId);
+    void goRequested(int sceneId);
 
 private:
     AppConfig* m_config = nullptr;
+    int m_columns = 1;
+    int m_rows = 1;
     QWidget* m_grid = nullptr;
     SceneRowWidget* m_row = nullptr;
     bool m_fading = false;
+    bool m_crossfade = false;
+    bool m_audible = false;
     int m_fadeDirection = 0;
+    int m_fadeMs = kDefaultFadeMs;
+    float m_fadePhase = 1.0f; // 0 silent .. 1 full; the gain is fadeGain(phase)
     float m_fadeVolume = 1.0f;
-    float m_fadeFrom = 1.0f; // level when the current fade began, so a reversed fade doesn't jump
+    float m_phaseFrom = 1.0f; // phase when the current fade began, so a reversed fade doesn't jump
     QElapsedTimer m_fadeTimer;
     std::function<void()> m_fadeCallback;
-    // Pads that carry on from a pause when the scene plays: only these fade in.
+    // The pads that fade in when the scene plays: those carrying on from a pause, and in a
+    // crossfade every pad that starts.
     QSet<Pad*> m_resuming;
     int m_scenePadCount = -1; // last count shown in the play button's tooltip
 };

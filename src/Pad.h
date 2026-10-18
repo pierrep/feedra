@@ -64,10 +64,15 @@ public:
     // They stay in the project when it's saved.
     QStringList missingPaths() const;
 
+    // The pad's play button: play, or pause if it's playing. Nothing while it loads or is
+    // empty. The keyboard and MIDI use this too.
+    void togglePlay();
+
     // Once per UI tick: the player's tick and the pad's volume.
     void updateAudio();
     // Pad volume x master x fades, applied straight away.
     void setFadeVolume(float fade);
+    float fadeVolume() const { return m_fadeVolume; }
     void applyVolume();
 
     void setLoadQueue(SampleLoadQueue* queue) { m_queue = queue; }

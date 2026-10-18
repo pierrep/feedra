@@ -39,13 +39,14 @@ QColor mixColors(const QColor& a, const QColor& b, qreal t)
 class SceneIconButton : public QAbstractButton
 {
 public:
-    enum class Kind { Play, Stop, Delete };
+    enum class Kind { Play, Go, Stop, Delete };
 
     SceneIconButton(Kind kind, QWidget* parent = nullptr)
         : QAbstractButton(parent)
         , m_kind(kind)
     {
         setObjectName(kind == Kind::Play ? QStringLiteral("ScenePlay")
+            : kind == Kind::Go           ? QStringLiteral("SceneGo")
             : kind == Kind::Stop         ? QStringLiteral("SceneStop")
                                          : QStringLiteral("SceneDelete"));
         setFixedSize(22, 22);
@@ -53,6 +54,7 @@ public:
         setCursor(Qt::PointingHandCursor);
         setAttribute(Qt::WA_Hover);
         setToolTip(kind == Kind::Play ? tr("Play / pause scene")
+            : kind == Kind::Go        ? tr("Crossfade to this scene: the playing scenes fade out as it fades in (Enter)")
             : kind == Kind::Stop      ? tr("Stop scene")
                                       : tr("Delete scene"));
     }
@@ -122,6 +124,20 @@ protected:
                     << QPointF(c.x() + 5.5, c.y());
                 p.drawPolygon(tri);
             }
+        } else if (m_kind == Kind::Go) {
+            // Crossfade: one level falling as another rises, and an arrow into this scene.
+            p.setBrush(Qt::NoBrush);
+            p.setPen(QPen(fg, 1.5, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
+            QPainterPath falling;
+            falling.moveTo(c.x() - 6.0, c.y() - 4.5);
+            falling.cubicTo(c.x() - 1.0, c.y() - 4.5, c.x() + 1.0, c.y() + 4.5, c.x() + 6.0, c.y() + 4.5);
+            QPainterPath rising;
+            rising.moveTo(c.x() - 6.0, c.y() + 4.5);
+            rising.cubicTo(c.x() - 1.0, c.y() + 4.5, c.x() + 1.0, c.y() - 4.5, c.x() + 6.0, c.y() - 4.5);
+            p.drawPath(falling);
+            p.drawPath(rising);
+            p.drawLine(QPointF(c.x() + 6.0, c.y() - 4.5), QPointF(c.x() + 3.4, c.y() - 6.6));
+            p.drawLine(QPointF(c.x() + 6.0, c.y() - 4.5), QPointF(c.x() + 3.6, c.y() - 2.2));
         } else if (m_kind == Kind::Stop) {
             p.drawRoundedRect(QRectF(c.x() - 4.5, c.y() - 4.5, 9, 9), 1.5, 1.5);
         } else {
@@ -172,6 +188,7 @@ SceneRowWidget::SceneRowWidget(int sceneId, const QString& name, QWidget* parent
     m_name->setFocusPolicy(Qt::NoFocus);
     m_name->installEventFilter(this);
     m_name->setCursorPosition(0);
+    m_go = new SceneIconButton(SceneIconButton::Kind::Go, this);
     m_play = new SceneIconButton(SceneIconButton::Kind::Play, this);
     m_stop = new SceneIconButton(SceneIconButton::Kind::Stop, this);
     m_remove = new SceneIconButton(SceneIconButton::Kind::Delete, this);
@@ -184,12 +201,16 @@ SceneRowWidget::SceneRowWidget(int sceneId, const QString& name, QWidget* parent
     });
 
     layout->addWidget(m_name, 1);
+    layout->addWidget(m_go);
     layout->addWidget(m_play);
     layout->addWidget(m_stop);
     layout->addWidget(m_remove);
 
     connect(m_play, &QAbstractButton::clicked, this, [this]() {
         emit playPauseRequested(m_id);
+    });
+    connect(m_go, &QAbstractButton::clicked, this, [this]() {
+        emit goRequested(m_id);
     });
     connect(m_stop, &QAbstractButton::clicked, this, [this]() {
         emit stopRequested(m_id);
@@ -201,6 +222,7 @@ SceneRowWidget::SceneRowWidget(int sceneId, const QString& name, QWidget* parent
     connect(&Theme::instance(), &Theme::changed, this, [this]() {
         update();
         m_play->update();
+        m_go->update();
         m_stop->update();
         m_remove->update();
     });
@@ -212,6 +234,8 @@ void SceneRowWidget::refreshTools()
 {
     const bool hover = underMouse();
     static_cast<SceneIconButton*>(m_stop)->setShown(m_playing || hover);
+    // Go fades into this scene, so only while it isn't playing.
+    static_cast<SceneIconButton*>(m_go)->setShown(hover && !m_playing && m_go->isEnabled());
     static_cast<SceneIconButton*>(m_remove)->setShown(hover && m_remove->isEnabled());
 }
 

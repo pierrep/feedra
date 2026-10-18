@@ -3,6 +3,7 @@
 
 #include "AppConfig.h"
 #include "AudioFormats.h"
+#include "CueOutput.h"
 #include "OpenALSoundPlayer.h"
 #include "PeakStore.h"
 #include "SoundPadWidget.h"
@@ -899,7 +900,10 @@ FileBrowserWidget::FileBrowserWidget(AppConfig* config, QWidget* parent)
         }
     });
     connect(m_previewWave, &PreviewWave::seekRequested, this, [this](float pct) {
-        if (m_player && isPreviewing()) {
+        if (m_cueRequest && isPreviewing()) {
+            CueOutput::seek(pct);
+            m_previewWave->setPosition(pct);
+        } else if (m_player && isPreviewing()) {
             m_player->seekTo(pct);
             m_previewWave->setPosition(pct);
         }
@@ -1290,6 +1294,15 @@ void FileBrowserWidget::previewFile(const QString& path)
     m_previewStartedMs = QDateTime::currentMSecsSinceEpoch();
     const int generation = ++m_previewGeneration;
 
+    if (CueOutput::isOpen()) {
+        // The cue output opens the file on its own thread.
+        m_cueRequest = CueOutput::play(FsPath::fromQString(path));
+        applyPreviewVolume();
+        refreshPreviewUi();
+        m_view->viewport()->update();
+        return;
+    }
+
     // Open the file off the UI thread (a stream only reads its first few buffers, but a slow
     // disk or a big mp3's header scan shouldn't stall the window), then start it here.
     QPointer<FileBrowserWidget> self(this);
@@ -1341,6 +1354,10 @@ void FileBrowserWidget::togglePreview(const QString& path)
 void FileBrowserWidget::stopPreview()
 {
     ++m_previewGeneration; // a file still opening is dropped when it arrives
+    if (m_cueRequest) {
+        CueOutput::stop();
+        m_cueRequest = 0;
+    }
     if (m_player) {
         m_player->stop();
         m_player.reset();
@@ -1357,16 +1374,51 @@ void FileBrowserWidget::stopPreview()
 
 void FileBrowserWidget::applyPreviewVolume()
 {
+    const float own = VolumeDb::toLinearMuted(VolumeDb::fromSlider(m_previewVolume->value(), VolumeDb::kFloorDb));
+    if (m_cueRequest) {
+        // On the cue output only its own level: the main fader is the room's.
+        CueOutput::setVolume(own);
+        return;
+    }
     if (!m_player) {
         return;
     }
     // Its own level, under the main fader. Scene fades don't touch it: it isn't part of a scene.
-    const float own = VolumeDb::toLinearMuted(VolumeDb::fromSlider(m_previewVolume->value(), VolumeDb::kFloorDb));
     m_player->setVolume(own * m_config->masterVolume());
+}
+
+void FileBrowserWidget::tickCue()
+{
+    applyPreviewVolume();
+    const CueOutput::Status status = CueOutput::status();
+    if (status.request != m_cueRequest) {
+        // Not taken yet. Give up if the cue thread never answers (it would have in 10 ms).
+        if (QDateTime::currentMSecsSinceEpoch() - m_previewStartedMs > 3000) {
+            stopPreview();
+        }
+        return;
+    }
+    if (status.failed) {
+        m_cueRequest = 0;
+        m_previewFailed = true;
+        refreshPreviewUi();
+        m_view->viewport()->update();
+        return;
+    }
+    if (status.ended || !status.playing) {
+        stopPreview();
+        return;
+    }
+    m_previewWave->setPosition(status.position);
+    m_previewTime->setText(formatTime(status.position * status.duration) + QStringLiteral(" / ") + formatTime(status.duration));
 }
 
 void FileBrowserWidget::tick()
 {
+    if (m_cueRequest) {
+        tickCue();
+        return;
+    }
     if (!m_player) {
         return;
     }

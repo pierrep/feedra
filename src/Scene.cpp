@@ -88,7 +88,9 @@ Scene::Scene(AppConfig* config, int id, const QString& name, QWidget* gridParent
         this->name = QString("Scene %1").arg(id + 1);
     }
 
-    auto* host = new PadGridWidget(config->gridWidth, config->gridHeight);
+    m_columns = std::max(1, config->gridWidth);
+    m_rows = std::max(1, config->gridHeight);
+    auto* host = new PadGridWidget(m_columns, m_rows);
     const int count = config->gridWidth * config->gridHeight;
     pads.reserve(count);
     for (int i = 0; i < count; ++i) {
@@ -130,6 +132,9 @@ Scene::Scene(AppConfig* config, int id, const QString& name, QWidget* gridParent
             m_row->setPlaying(true);
         }
     });
+    connect(m_row, &SceneRowWidget::goRequested, this, [this]() {
+        emit goRequested(this->id);
+    });
     connect(m_row, &SceneRowWidget::stopRequested, this, [this]() {
         isPlaying = false;
         stop();
@@ -162,15 +167,26 @@ SoundPadWidget* Scene::padWidgetAt(int idx) const
     return padWidgets[idx];
 }
 
-void Scene::play()
+float Scene::fadeGain(float phase)
+{
+    return std::sin(std::clamp(phase, 0.0f, 1.0f) * 1.57079632679f);
+}
+
+void Scene::play(int fadeMs, bool fadeInStarts)
 {
     // Pads carrying on from a pause fade in, so they don't jump back in mid-sound. Pads
-    // starting from the top start at full level: a fade would swallow their opening.
+    // starting from the top start at full level, unless this is a crossfade.
     // Pressing play during a pause's fade-out carries on from the level reached.
     const bool wasFadingOut = m_fading && m_fadeDirection == 1;
     m_fadeCallback = {};
     m_resuming.clear();
     bool anyScenePads = false;
+    for (Pad* pad : pads) {
+        if (!pad->isLoading()) {
+            anyScenePads = anyScenePads || (pad->isScenePad() && pad->isLoaded());
+        }
+    }
+    QVector<Pad*> starting;
     for (Pad* pad : pads) {
         if (pad->isLoading()) {
             continue;
@@ -178,37 +194,42 @@ void Scene::play()
         // Paused part-way (or still fading out from a pause): carries on, scene pad or not.
         // A pad already playing by itself is left as it is.
         const SoundPlayer& player = pad->soundPlayer();
-        if (player.isResuming() && (wasFadingOut || !player.isPlaying())) {
+        const bool resume = player.isResuming() && (wasFadingOut || !player.isPlaying());
+        // Starting fresh: the scene pads if there are any, otherwise every pad with sounds.
+        if (!resume && !(anyScenePads ? pad->isScenePad() : true)) {
+            continue;
+        }
+        if (resume || (fadeInStarts && pad->hasSounds() && (!player.isPlaying() || wasFadingOut))) {
             m_resuming.insert(pad);
         }
-        anyScenePads = anyScenePads || (pad->isScenePad() && pad->isLoaded());
+        starting.push_back(pad);
     }
-    m_fading = !m_resuming.isEmpty();
+    m_fading = !m_resuming.isEmpty() && fadeMs > 0;
+    m_crossfade = m_fading && fadeInStarts;
     m_fadeDirection = 0;
-    m_fadeFrom = m_fading ? (wasFadingOut ? m_fadeVolume : 0.0f) : 1.0f;
-    m_fadeVolume = m_fadeFrom;
+    m_fadeMs = std::max(1, fadeMs);
+    m_phaseFrom = m_fading ? (wasFadingOut ? m_fadePhase : 0.0f) : 1.0f;
+    m_fadePhase = m_phaseFrom;
+    m_fadeVolume = fadeGain(m_fadePhase);
     m_fadeTimer.restart();
-    for (Pad* pad : pads) {
-        if (pad->isLoading()) {
-            continue;
-        }
-        const bool resume = m_resuming.contains(pad);
-        // Starting fresh: the scene pads if there are any, otherwise every pad with sounds.
-        const bool start = resume || (anyScenePads ? pad->isScenePad() : true);
-        if (!start) {
-            continue;
-        }
-        pad->setFadeVolume(resume ? m_fadeVolume : 1.0f);
+    for (Pad* pad : starting) {
+        pad->setFadeVolume(m_resuming.contains(pad) ? m_fadeVolume : 1.0f);
         pad->soundPlayer().setPaused(false);
+    }
+    if (!m_fading) {
+        m_resuming.clear();
     }
 }
 
-void Scene::pause()
+void Scene::pause(int fadeMs)
 {
-    // Carry on from the level reached if already fading out (e.g. stop during a pause).
-    m_fadeFrom = (m_fading && m_fadeDirection == 1) ? m_fadeVolume : 1.0f;
+    // Carry on from the level reached if already fading out (e.g. pause during a stop), or
+    // fading everything in (a crossfade reversed).
+    m_phaseFrom = (m_fading && (m_fadeDirection == 1 || m_crossfade)) ? m_fadePhase : 1.0f;
     m_fading = true;
+    m_crossfade = false;
     m_fadeDirection = 1;
+    m_fadeMs = std::max(1, fadeMs);
     m_fadeTimer.restart();
     m_fadeCallback = [this]() {
         for (Pad* pad : pads) {
@@ -217,12 +238,15 @@ void Scene::pause()
     };
 }
 
-void Scene::stop()
+void Scene::stop(int fadeMs, bool crossfade)
 {
-    // Carry on from the level reached if already fading out (e.g. stop during a pause).
-    m_fadeFrom = (m_fading && m_fadeDirection == 1) ? m_fadeVolume : 1.0f;
+    // Carry on from the level reached if already fading out (e.g. stop during a pause), or
+    // fading everything in (a crossfade reversed).
+    m_phaseFrom = (m_fading && (m_fadeDirection == 1 || m_crossfade)) ? m_fadePhase : 1.0f;
     m_fading = true;
+    m_crossfade = crossfade;
     m_fadeDirection = 1;
+    m_fadeMs = std::max(1, fadeMs);
     m_fadeTimer.restart();
     m_fadeCallback = [this]() {
         for (Pad* pad : pads) {
@@ -244,12 +268,13 @@ void Scene::stopImmediate()
 void Scene::update()
 {
     if (m_fading) {
-        constexpr float fadeDuration = 500.0f;
+        const float duration = static_cast<float>(m_fadeMs);
         const float elapsed = static_cast<float>(m_fadeTimer.elapsed());
-        const float t = std::min(1.0f, elapsed / fadeDuration);
+        const float t = std::min(1.0f, elapsed / duration);
         const float target = m_fadeDirection == 0 ? 1.0f : 0.0f;
-        m_fadeVolume = m_fadeFrom + (target - m_fadeFrom) * t;
-        if (elapsed > fadeDuration) {
+        m_fadePhase = m_phaseFrom + (target - m_phaseFrom) * t;
+        m_fadeVolume = fadeGain(m_fadePhase);
+        if (elapsed >= duration) {
             endFade();
         }
     }
@@ -264,6 +289,7 @@ void Scene::update()
     for (SoundPadWidget* widget : padWidgets) {
         widget->updateView();
     }
+    m_audible = audible;
     m_row->setAudible(audible);
 
     int scenePads = 0;
@@ -284,9 +310,11 @@ void Scene::endFade()
         return;
     }
     m_fading = false;
+    m_crossfade = false;
     if (m_fadeCallback) {
         m_fadeCallback();
     }
+    m_fadePhase = 1.0f;
     m_fadeVolume = 1.0f;
     m_resuming.clear();
 }

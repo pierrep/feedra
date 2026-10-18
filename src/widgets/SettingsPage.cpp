@@ -2,6 +2,8 @@
 
 #include "AppConfig.h"
 #include "AudioDevice.h"
+#include "CueOutput.h"
+#include "MidiInput.h"
 #include "FsPath.h"
 #include "PeakStore.h"
 #include "SettingsCards.h"
@@ -9,9 +11,11 @@
 
 #include <QCheckBox>
 #include <QComboBox>
+#include <QDoubleSpinBox>
 #include <QFileDialog>
 #include <QFileInfo>
 #include <QFrame>
+#include <QGridLayout>
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QLineEdit>
@@ -33,7 +37,7 @@ SettingsPage::SettingsPage(AppConfig& config, QWidget* parent)
     outer->setSpacing(20);
     QPushButton* back = nullptr;
     outer->addWidget(makePageHeader(this, tr("Settings"),
-        tr("How new scenes and pads start out, where samples live, and the reverb."), &back));
+        tr("How new scenes and pads start out, where samples live, the audio output and the reverb."), &back));
     connect(back, &QPushButton::clicked, this, &SettingsPage::backRequested);
     QVBoxLayout* cards = makeCardColumn(this, outer);
     QWidget* host = cards->parentWidget();
@@ -76,6 +80,21 @@ SettingsPage::SettingsPage(AppConfig& config, QWidget* parent)
     gridSizeRow->addWidget(m_gridRows);
     gridSizeRow->addStretch();
     scenes.addRow(tr("Pad grid"), gridSize, tr("Applies to scenes added after the change."));
+
+    m_crossfade = new QDoubleSpinBox(scenes.frame);
+    m_crossfade->setRange(0.0, 30.0);
+    m_crossfade->setDecimals(1);
+    m_crossfade->setSingleStep(0.5);
+    m_crossfade->setSuffix(tr(" s"));
+    m_crossfade->setMaximumWidth(120);
+    scenes.addRow(tr("Crossfade"), m_crossfade,
+        tr("Going to a scene (its Go button, or Enter in the scene list) fades the playing scenes "
+           "out over this time while it fades in. 0 cuts straight across."));
+    connect(m_crossfade, qOverload<double>(&QDoubleSpinBox::valueChanged), this, [this](double value) {
+        if (!m_updating) {
+            m_config.crossfadeSeconds = value;
+        }
+    });
     cards->addWidget(scenes.frame);
 
     // Library
@@ -112,6 +131,187 @@ SettingsPage::SettingsPage(AppConfig& config, QWidget* parent)
                                                         : tr("Cleared %1 waveforms, %2").arg(removed.files).arg(size));
     });
     cards->addWidget(library.frame);
+
+    // Live controls
+    SettingsCard live = makeCard(host, tr("Live controls"),
+        tr("For running a session: talking over the scenes, and stopping everything."));
+    m_talkOverDepth = new QDoubleSpinBox(live.frame);
+    m_talkOverDepth->setRange(-40.0, -1.0);
+    m_talkOverDepth->setDecimals(0);
+    m_talkOverDepth->setSingleStep(1.0);
+    m_talkOverDepth->setSuffix(tr(" dB"));
+    m_talkOverDepth->setMaximumWidth(120);
+    live.addRow(tr("Talk-over"), m_talkOverDepth,
+        tr("Hold Space, or click Talk in the header, and every scene dips by this much so you can be "
+           "heard. File previews aren't dipped."));
+    m_panicTime = new QDoubleSpinBox(live.frame);
+    m_panicTime->setRange(0.0, 10.0);
+    m_panicTime->setDecimals(1);
+    m_panicTime->setSingleStep(0.5);
+    m_panicTime->setSuffix(tr(" s"));
+    m_panicTime->setMaximumWidth(120);
+    live.addRow(tr("Panic"), m_panicTime,
+        tr("Esc, or Panic in the header, fades everything out over this time. Press it again to "
+           "stop at once."));
+    m_keyboardPads = new QCheckBox(tr("Play pads from the keyboard"), live.frame);
+    live.addRow(tr("Keyboard"), m_keyboardPads,
+        tr("The pad grid's rows are the keyboard's: 1-0, Q-P, A-; and Z-/, left to right. Each pad "
+           "shows its key. Enter goes to the selected scene; arrows move through the scene list."));
+    connect(m_keyboardPads, &QCheckBox::toggled, this, [this](bool on) {
+        if (!m_updating) {
+            m_config.keyboardPads = on;
+            emit keyboardPadsChanged();
+        }
+    });
+    // MIDI
+    m_midiInput = new QComboBox(live.frame);
+    m_midiInput->setMaximumWidth(420);
+    m_midiInput->setSizeAdjustPolicy(QComboBox::AdjustToMinimumContentsLengthWithIcon);
+    m_midiInput->setMinimumContentsLength(24);
+    auto* midiRefresh = new QPushButton(tr("Refresh"), live.frame);
+    midiRefresh->setToolTip(tr("List the MIDI inputs again, after plugging one in"));
+    auto* midiRow = new QWidget(live.frame);
+    auto* midiLayout = new QHBoxLayout(midiRow);
+    midiLayout->setContentsMargins(0, 0, 0, 0);
+    midiLayout->setSpacing(8);
+    midiLayout->addWidget(m_midiInput, 1);
+    midiLayout->addWidget(midiRefresh);
+    live.addRow(tr("MIDI input"), midiRow,
+        MidiInput::available()
+            ? tr("A pad controller, keyboard or fader box. Right-click a pad, or the main volume, to "
+                 "learn a control for it. Pads follow the selected scene.")
+            : tr("This build of Feedra has no MIDI (it was built without ALSA)."));
+    m_midiDefaultNotes = new QCheckBox(tr("Notes from 36 play the pads in order"), live.frame);
+    live.addRow(QString(), m_midiDefaultNotes,
+        tr("Note 36 is pad 1, 37 pad 2, and so on, on any channel: where most pad controllers start. "
+           "A learned control comes first."));
+
+    auto* actions = new QWidget(live.frame);
+    auto* actionGrid = new QGridLayout(actions);
+    actionGrid->setContentsMargins(0, 0, 0, 0);
+    actionGrid->setHorizontalSpacing(10);
+    actionGrid->setVerticalSpacing(6);
+    const ControlAction globalActions[6] = { ControlAction::MasterVolume, ControlAction::NextScene,
+        ControlAction::PreviousScene, ControlAction::GoToScene, ControlAction::Panic, ControlAction::TalkOver };
+    for (int row = 0; row < 6; ++row) {
+        const ControlAction action = globalActions[row];
+        actionGrid->addWidget(new QLabel(ControlMap::actionName(action), actions), row, 0);
+        m_midiBindings[row] = new QLabel(actions);
+        m_midiBindings[row]->setObjectName(QStringLiteral("FieldHint"));
+        actionGrid->addWidget(m_midiBindings[row], row, 1);
+        auto* learn = new QPushButton(tr("Learn"), actions);
+        auto* clear = new QPushButton(tr("Clear"), actions);
+        learn->setEnabled(MidiInput::available());
+        actionGrid->addWidget(learn, row, 2);
+        actionGrid->addWidget(clear, row, 3);
+        connect(learn, &QPushButton::clicked, this, [this, action]() { emit midiLearnRequested(action); });
+        connect(clear, &QPushButton::clicked, this, [this, action]() {
+            if (m_controls) {
+                m_controls->clear(action);
+                refreshMidi();
+                emit midiMapChanged();
+            }
+        });
+    }
+    actionGrid->setColumnStretch(1, 1);
+    live.addRow(tr("MIDI controls"), actions);
+
+    auto* padsRow = new QWidget(live.frame);
+    auto* padsLayout = new QHBoxLayout(padsRow);
+    padsLayout->setContentsMargins(0, 0, 0, 0);
+    m_midiPads = new QLabel(padsRow);
+    m_midiPads->setWordWrap(true);
+    auto* clearAll = new QPushButton(tr("Clear all MIDI"), padsRow);
+    padsLayout->addWidget(m_midiPads, 1);
+    padsLayout->addWidget(clearAll);
+    live.addRow(tr("Pads"), padsRow);
+    m_midiStatus = new QLabel(live.frame);
+    m_midiStatus->setObjectName(QStringLiteral("FieldHint"));
+    m_midiStatus->setWordWrap(true);
+    m_midiStatus->hide();
+    live.addFullRow(m_midiStatus);
+
+    connect(midiRefresh, &QPushButton::clicked, this, &SettingsPage::refreshMidi);
+    connect(m_midiInput, qOverload<int>(&QComboBox::currentIndexChanged), this, [this](int index) {
+        if (!m_updating && index >= 0) {
+            emit midiInputChosen(m_midiInput->itemData(index).toString());
+        }
+    });
+    connect(m_midiDefaultNotes, &QCheckBox::toggled, this, [this](bool on) {
+        if (!m_updating && m_controls) {
+            m_controls->setDefaultNotes(on);
+            emit midiMapChanged();
+        }
+    });
+    connect(clearAll, &QPushButton::clicked, this, [this]() {
+        if (m_controls) {
+            m_controls->clearAll();
+            refreshMidi();
+            emit midiMapChanged();
+        }
+    });
+    m_liveCard = live;
+    cards->addWidget(live.frame);
+    connect(m_talkOverDepth, qOverload<double>(&QDoubleSpinBox::valueChanged), this, [this](double value) {
+        if (!m_updating) {
+            m_config.talkOverDepthDb = value;
+        }
+    });
+    connect(m_panicTime, qOverload<double>(&QDoubleSpinBox::valueChanged), this, [this](double value) {
+        if (!m_updating) {
+            m_config.panicSeconds = value;
+        }
+    });
+
+    // Output
+    SettingsCard output = makeCard(host, tr("Audio output"),
+        tr("Where the scenes play, and where the Files tab's previews go."));
+    m_outputDevice = new QComboBox(output.frame);
+    m_outputDevice->setMaximumWidth(420);
+    m_outputDevice->setSizeAdjustPolicy(QComboBox::AdjustToMinimumContentsLengthWithIcon);
+    m_outputDevice->setMinimumContentsLength(24);
+    auto* refresh = new QPushButton(tr("Refresh"), output.frame);
+    refresh->setToolTip(tr("List the devices again, after plugging one in"));
+    auto* outputRow = new QWidget(output.frame);
+    auto* outputLayout = new QHBoxLayout(outputRow);
+    outputLayout->setContentsMargins(0, 0, 0, 0);
+    outputLayout->setSpacing(8);
+    outputLayout->addWidget(m_outputDevice, 1);
+    outputLayout->addWidget(refresh);
+    output.addRow(tr("Output"), outputRow,
+        tr("System default follows the system's output as it changes. A chosen device is kept; "
+           "if it's unplugged, sound moves to the default until it's back."));
+    m_previewDevice = new QComboBox(output.frame);
+    m_previewDevice->setMaximumWidth(420);
+    m_previewDevice->setSizeAdjustPolicy(QComboBox::AdjustToMinimumContentsLengthWithIcon);
+    m_previewDevice->setMinimumContentsLength(24);
+    output.addRow(tr("Previews"), m_previewDevice,
+        CueOutput::available()
+            ? tr("Headphones here keep file previews to yourself: the table only hears the scenes.")
+            : tr("Previews can't use a second device with this OpenAL library."));
+    m_previewDevice->setEnabled(CueOutput::available());
+    m_deviceStatus = new QLabel(output.frame);
+    m_deviceStatus->setObjectName(QStringLiteral("FieldHint"));
+    m_deviceStatus->setWordWrap(true);
+    m_deviceStatus->hide();
+    output.addFullRow(m_deviceStatus);
+    cards->addWidget(output.frame);
+    connect(refresh, &QPushButton::clicked, this, &SettingsPage::refreshDevices);
+    connect(m_outputDevice, qOverload<int>(&QComboBox::currentIndexChanged), this, [this](int index) {
+        if (m_updating || index < 0) {
+            return;
+        }
+        m_config.outputDevice = m_outputDevice->itemData(index).toString();
+        emit outputDeviceChanged();
+    });
+    connect(m_previewDevice, qOverload<int>(&QComboBox::currentIndexChanged), this, [this](int index) {
+        if (m_updating || index < 0) {
+            return;
+        }
+        m_config.previewDevice = m_previewDevice->itemData(index).toString();
+        emit previewDeviceChanged();
+    });
+    refreshDevices();
 
     // Reverb
     SettingsCard reverb = makeCard(host, tr("Reverb"),
@@ -276,14 +476,101 @@ void SettingsPage::refreshWaveformCacheInfo()
                                                   : tr("%1 waveforms, %2").arg(stats.files).arg(size));
 }
 
+void SettingsPage::refreshDevices()
+{
+    const bool wasUpdating = m_updating;
+    m_updating = true;
+    const std::vector<std::string> devices = AudioDevice::outputDevices();
+    const auto fill = [&devices](QComboBox* box, const QString& none) {
+        box->clear();
+        box->addItem(none, QString());
+        for (const std::string& name : devices) {
+            const QString text = QString::fromStdString(name);
+            box->addItem(text, text);
+        }
+    };
+    fill(m_outputDevice, tr("System default"));
+    fill(m_previewDevice, tr("Same as the output"));
+    selectDevice(m_outputDevice, m_config.outputDevice);
+    selectDevice(m_previewDevice, m_config.previewDevice);
+    m_updating = wasUpdating;
+}
+
+// A device that isn't plugged in stays chosen, shown as missing.
+void SettingsPage::selectDevice(QComboBox* box, const QString& name)
+{
+    int index = box->findData(name);
+    if (index < 0) {
+        box->addItem(tr("%1 (not connected)").arg(name), name);
+        index = box->count() - 1;
+    }
+    box->setCurrentIndex(index);
+}
+
+void SettingsPage::setMidi(MidiInput* input, ControlMap* map)
+{
+    m_midi = input;
+    m_controls = map;
+    refreshMidi();
+}
+
+void SettingsPage::refreshMidi()
+{
+    if (!m_midi || !m_controls) {
+        return;
+    }
+    const bool wasUpdating = m_updating;
+    m_updating = true;
+    const QString chosen = m_midi->isOpen() ? m_midi->portName() : m_midiInput->currentData().toString();
+    m_midiInput->clear();
+    m_midiInput->addItem(tr("None"), QString());
+    for (const QString& port : m_midi->ports()) {
+        m_midiInput->addItem(port, port);
+    }
+    selectDevice(m_midiInput, chosen);
+    m_midiInput->setEnabled(MidiInput::available());
+    m_midiDefaultNotes->setChecked(m_controls->defaultNotes());
+    const ControlAction globalActions[6] = { ControlAction::MasterVolume, ControlAction::NextScene,
+        ControlAction::PreviousScene, ControlAction::GoToScene, ControlAction::Panic, ControlAction::TalkOver };
+    for (int row = 0; row < 6; ++row) {
+        const ControlBinding* binding = m_controls->bindingFor(globalActions[row]);
+        m_midiBindings[row]->setText(binding ? ControlMap::describe(*binding) : tr("—"));
+    }
+    int pads = 0;
+    for (const ControlBinding& binding : m_controls->bindings()) {
+        pads += (binding.action == ControlAction::PadPlay || binding.action == ControlAction::PadVolume) ? 1 : 0;
+    }
+    m_midiPads->setText(pads == 0 ? tr("No pad controls learned. Right-click a pad to learn one.")
+                                  : tr("%n pad control(s) learned. Right-click a pad to learn or forget.", nullptr, pads));
+    m_updating = wasUpdating;
+}
+
+void SettingsPage::setMidiStatus(const QString& text)
+{
+    m_midiStatus->setText(text);
+    m_midiStatus->setVisible(!text.isEmpty());
+}
+
+void SettingsPage::setDeviceStatus(const QString& text)
+{
+    m_deviceStatus->setText(text);
+    m_deviceStatus->setVisible(!text.isEmpty());
+}
+
 void SettingsPage::sync()
 {
     m_updating = true;
+    selectDevice(m_outputDevice, m_config.outputDevice);
+    selectDevice(m_previewDevice, m_config.previewDevice);
     m_loadLastSettings->setChecked(m_config.loadLastSettings);
     m_autosave->setChecked(m_config.autosave);
     m_sceneLimit->setValue(static_cast<int>(m_config.maxScenes));
     m_gridColumns->setValue(m_config.gridWidth);
     m_gridRows->setValue(m_config.gridHeight);
+    m_crossfade->setValue(m_config.crossfadeSeconds);
+    m_talkOverDepth->setValue(m_config.talkOverDepthDb);
+    m_panicTime->setValue(m_config.panicSeconds);
+    m_keyboardPads->setChecked(m_config.keyboardPads);
     m_libraryPath->setText(m_config.defaultLibraryLocation);
     for (int which = 0; which < AudioDevice::kEaxReverbCount; ++which) {
         m_reverbPreset[which]->setCurrentIndex(AudioDevice::reverbPresetIndex(which));
