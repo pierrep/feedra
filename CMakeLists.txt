@@ -166,10 +166,25 @@ else()
         Threads::Threads
     )
 
+    # Libraries outside the system folders (e.g. OpenAL Soft in /usr/local/lib) need their
+    # folder on the run path. System folders must stay off it: they're searched anyway, and
+    # these entries come before Qt's own folder, so a system Qt in the same folder would be
+    # loaded instead of the Qt this was built against (e.g. ~/Qt/6.x).
+    set(_feedra_system_libdirs
+        ${CMAKE_CXX_IMPLICIT_LINK_DIRECTORIES}
+        ${CMAKE_C_IMPLICIT_LINK_DIRECTORIES}
+        ${CMAKE_PLATFORM_IMPLICIT_LINK_DIRECTORIES}
+        /lib /usr/lib /lib64 /usr/lib64
+        /lib/${CMAKE_LIBRARY_ARCHITECTURE} /usr/lib/${CMAKE_LIBRARY_ARCHITECTURE})
     foreach(_rpath_dir ${OPENAL_LIBRARY_DIRS} ${SNDFILE_LIBRARY_DIRS} ${MPG123_LIBRARY_DIRS})
-        if(_rpath_dir)
-            set_property(TARGET feedra APPEND PROPERTY BUILD_RPATH "${_rpath_dir}")
+        if(NOT _rpath_dir)
+            continue()
         endif()
+        get_filename_component(_rpath_real "${_rpath_dir}" REALPATH)
+        if(_rpath_dir IN_LIST _feedra_system_libdirs OR _rpath_real IN_LIST _feedra_system_libdirs)
+            continue()
+        endif()
+        set_property(TARGET feedra APPEND PROPERTY BUILD_RPATH "${_rpath_dir}")
     endforeach()
 
     if(NOT APPLE)
