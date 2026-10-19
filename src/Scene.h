@@ -4,6 +4,7 @@
 #include "widgets/SceneRowWidget.h"
 
 #include <QElapsedTimer>
+#include <QJsonObject>
 #include <QObject>
 #include <QString>
 #include <QSet>
@@ -57,6 +58,19 @@ public:
     static float fadeGain(float phase);
     void setActive(bool active);
     void layoutGrid();
+
+    // The Intensity slider (0 calmest .. 1 most intense), crossfading the pads that have a
+    // layer (Intensity.h). What's heard glides to a new setting over Intensity::kGlideSeconds
+    // for the full range; `glide` false jumps (opening a project).
+    float intensity() const { return m_intensity; }
+    void setIntensity(float intensity, bool glide = true);
+    // Where the glide has got to: what's being heard.
+    float heardIntensity() const { return m_heardIntensity; }
+    // The layers the scene's pads use (bit Intensity::Layer), as of the last update().
+    int layerMask() const { return m_layerMask; }
+    // The scene's own settings in its project object ("intensity", written when not 0).
+    void writeSettings(QJsonObject& sceneObj) const;
+    void readSettings(const QJsonObject& sceneObj);
     void stopImmediate();
 
 signals:
@@ -83,4 +97,9 @@ private:
     // crossfade every pad that starts.
     QSet<Pad*> m_resuming;
     int m_scenePadCount = -1; // last count shown in the play button's tooltip
+    float m_intensity = 0.0f;
+    float m_heardIntensity = 0.0f;
+    int m_layerMask = 0;
+    QElapsedTimer m_intensityClock;
+    void updateLayers();
 };

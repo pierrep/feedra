@@ -107,3 +107,12 @@ add_test(NAME undo COMMAND test_undo)
 set_tests_properties(undo PROPERTIES
     ENVIRONMENT "ALSOFT_DRIVERS=null;QT_QPA_PLATFORM=offscreen"
     TIMEOUT 120)
+
+# Intensity layers: the crossfade, and the slider in the window.
+add_executable(test_intensity test_intensity.cpp)
+target_link_libraries(test_intensity PRIVATE feedra_app)
+feedra_warnings(test_intensity)
+add_test(NAME intensity COMMAND test_intensity)
+set_tests_properties(intensity PROPERTIES
+    ENVIRONMENT "ALSOFT_DRIVERS=null;QT_QPA_PLATFORM=offscreen"
+    TIMEOUT 120)

@@ -64,12 +64,12 @@ QJsonObject makeProject(const QString& media)
     QJsonObject rain = sample(media + "/rain.wav", {{"gain", 0.9}, {"pitch", 1.1}, {"pan", -0.3}, {"width", 0.5},
         {"loop", true}, {"loopstart", 0.2}, {"loopend", 1.2}, {"crossfade", 50.0}, {"playfromstart", false}, {"playtoend", true}});
     QJsonObject tavern{
-        {"id", 0}, {"name", "Tavern"}, {"activesound", 1},
+        {"id", 0}, {"name", "Tavern"}, {"activesound", 1}, {"intensity", 0.5},
         {"0-0", QJsonObject{{"isstream", true}, {"repeat", true}, {"soundname", "Rain"}, {"volume", 0.5}, {"playrandom", true},
                     {"mindelay", 1}, {"maxdelay", 3}, {"delayon", true}, {"reverbsend", 0.25}, {"eaxsend2", 0.1},
                     {"reverbsend2", 0.3}, {"convsend2", 0.05}, {"scenepad", true},
                     {"samples", QJsonObject{{"sample-0", rain}, {"sample-1", sample(media + "/wind.wav", {{"gain", 0.6}})}}}}},
-        {"0-1", QJsonObject{{"isstream", false}, {"soundname", "Wind"}, {"volume", 0.7}, {"delayon", false},
+        {"0-1", QJsonObject{{"isstream", false}, {"soundname", "Wind"}, {"volume", 0.7}, {"delayon", false}, {"layer", "tense"},
                     {"samples", QJsonObject{{"sample-0", sample(media + "/wind.wav", {{"pan", 0.5}, {"panrandom", true}})}}}}},
         {"0-5", QJsonObject{{"isstream", true}, {"soundname", "Missing one"}, {"volume", 1.0},
                     {"samples", QJsonObject{{"sample-0", sample(media + "/gone.wav")},
@@ -188,6 +188,10 @@ int main(int argc, char** argv)
     const QJsonObject wind = padOf(saved, "scene0", "0-1");
     CHECK(!wind.value("isstream").toBool(true), "memory pad became streamed");
     CHECK(wind.value("panrandom").toBool(), "random pan lost");
+    CHECK(wind.value("layer").toString() == "tense" && !rain.contains("layer"), "intensity layer: '%s'",
+          qPrintable(wind.value("layer").toString()));
+    CHECK(near(saved.value("scene0").toObject().value("intensity").toDouble(), 0.5)
+              && !saved.value("scene1").toObject().contains("intensity"), "scene intensity not kept");
 
     const QJsonObject missing = padOf(saved, "scene0", "0-5");
     CHECK(sampleOf(missing, 0).value("path").toString().endsWith(QString::fromUtf8("\xc3\xb6rk \xc3\xa9.wav")), "non-ASCII file didn't load: %s",

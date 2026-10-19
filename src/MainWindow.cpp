@@ -1,4 +1,5 @@
 #include "MainWindow.h"
+#include "Intensity.h"
 #include "AudioFormats.h"
 #include "CueOutput.h"
 #include "FsPath.h"
@@ -550,6 +551,52 @@ void MainWindow::buildUi()
         m_duck.setHeld(Duck::Button, on);
     });
     connect(m_panicButton, &QPushButton::clicked, this, &MainWindow::panic);
+
+    // Intensity: the selected scene's slider between its Calm, Tense and Combat pads.
+    m_intensityBox = new QWidget(header);
+    auto* intensityRow = new QHBoxLayout(m_intensityBox);
+    intensityRow->setContentsMargins(0, 0, 0, 0);
+    intensityRow->setSpacing(8);
+    auto* intensityCaption = new QLabel(tr("Intensity"), m_intensityBox);
+    intensityCaption->setObjectName(QStringLiteral("HeaderLabel"));
+    m_intensity = new QSlider(Qt::Horizontal, m_intensityBox);
+    m_intensity->setObjectName(QStringLiteral("Intensity"));
+    m_intensity->setRange(0, 1000);
+    m_intensity->setPageStep(250);
+    m_intensity->setFixedWidth(160);
+    m_intensity->setFocusPolicy(Qt::NoFocus); // the arrow keys and Space stay with the pads
+    m_intensity->setToolTip(tr("Crossfades the selected scene between its Calm, Tense and Combat pads "
+                               "(set a pad's layer on the Pad tab). Right-click to learn a MIDI control."));
+    m_intensityValue = new QLabel(m_intensityBox);
+    m_intensityValue->setObjectName(QStringLiteral("MainVolumeValue"));
+    m_intensityValue->setMinimumWidth(110);
+    intensityRow->addWidget(intensityCaption);
+    intensityRow->addWidget(m_intensity);
+    intensityRow->addWidget(m_intensityValue);
+    m_intensityBox->hide();
+    volumeRow->addSpacing(8);
+    volumeRow->addWidget(m_intensityBox);
+    connect(m_intensity, &QSlider::valueChanged, this, [this](int v) {
+        if (Scene* scene = activeScene()) {
+            scene->setIntensity(static_cast<float>(v) / 1000.0f);
+            m_intensityValue->setText(Intensity::describe(scene->layerMask(), scene->intensity()));
+        }
+    });
+    m_intensity->setContextMenuPolicy(Qt::CustomContextMenu);
+    connect(m_intensity, &QWidget::customContextMenuRequested, this, [this](const QPoint& at) {
+        QMenu menu(this);
+        QAction* learn = menu.addAction(tr("MIDI learn"));
+        QAction* forget = menu.addAction(tr("Forget MIDI"));
+        forget->setEnabled(m_controls.bindingFor(ControlAction::Intensity) != nullptr);
+        QAction* chosen = menu.exec(m_intensity->mapToGlobal(at));
+        if (chosen == learn) {
+            startMidiLearn(ControlAction::Intensity);
+        } else if (chosen == forget) {
+            m_controls.clear(ControlAction::Intensity);
+            saveLocalSettings();
+            m_settingsPage->refreshMidi();
+        }
+    });
     m_loadBar = new QProgressBar(m_mainPage);
     m_loadBar->setObjectName(QStringLiteral("LoadProgress"));
     m_loadBar->setTextVisible(false);
@@ -1021,6 +1068,7 @@ QJsonObject MainWindow::sceneToJson(const Scene* scene) const
     obj.insert(QStringLiteral("id"), scene->id);
     obj.insert(QStringLiteral("name"), scene->row() ? scene->row()->sceneName() : scene->name);
     obj.insert(QStringLiteral("activesound"), scene->activeSoundIdx);
+    scene->writeSettings(obj);
     for (const Pad* pad : scene->pads) {
         pad->saveToJson(obj);
     }
@@ -1037,6 +1085,7 @@ void MainWindow::insertSceneFromJson(int index, const QJsonObject& obj)
     }
     auto* scene = new Scene(&m_config, id, obj.value(QStringLiteral("name")).toString(), m_padStack, m_sceneListHost, this);
     scene->activeSoundIdx = obj.value(QStringLiteral("activesound")).toInt(0);
+    scene->readSettings(obj);
     connectScene(scene);
     // Saved with absolute paths, so no folder to resolve against.
     const QJsonObject root{ { QStringLiteral("scene"), obj } };
@@ -1909,6 +1958,7 @@ bool MainWindow::saveConfigTo(const QString& path, bool copyFiles, bool settings
         scene->name = sceneName;
         sceneObj.insert(QStringLiteral("name"), sceneName);
         sceneObj.insert(QStringLiteral("activesound"), scene->activeSoundIdx);
+        scene->writeSettings(sceneObj);
         for (Pad* pad : scene->pads) {
             pad->saveToJson(sceneObj);
             const QString padKey = QString("%1-%2").arg(scene->id).arg(pad->padId());
@@ -2086,6 +2136,7 @@ void MainWindow::importScenesFrom(const QString& path)
         auto* scene = new Scene(&m_config, newId, sceneObj.value(QStringLiteral("name")).toString(),
             m_padStack, m_sceneListHost, this);
         scene->activeSoundIdx = std::max(0, mapPad(sceneObj.value(QStringLiteral("activesound")).toInt(0)));
+        scene->readSettings(sceneObj);
         connectScene(scene);
         for (Pad* pad : scene->pads) {
             pad->loadFromJson(padRoot, QFileInfo(path).absolutePath());
@@ -2180,6 +2231,7 @@ void MainWindow::loadConfigFrom(const QString& path)
         const QString name = sceneObj.value(QStringLiteral("name")).toString();
         auto* scene = new Scene(&m_config, id, name, m_padStack, m_sceneListHost, this);
         scene->activeSoundIdx = sceneObj.value(QStringLiteral("activesound")).toInt(0);
+        scene->readSettings(sceneObj);
         connectScene(scene);
         for (Pad* pad : scene->pads) {
             pad->loadFromJson(root, projectDir);
@@ -2557,6 +2609,7 @@ void MainWindow::tick()
         }
         scene->update();
     }
+    refreshIntensityControl();
     Pad* pad = syncPanelPad();
     if (m_page == Page::Main) {
         // The selected sample follows the pad as it moves on to another sample, in every
@@ -2996,6 +3049,12 @@ void MainWindow::handleMidi(const MidiMessage& message)
         case ControlAction::MasterVolume:
             m_mainVolume->setValue(sliderValue(command.value));
             break;
+        case ControlAction::Intensity:
+            if (scene) {
+                scene->setIntensity(command.value);
+                refreshIntensityControl();
+            }
+            break;
         case ControlAction::NextScene:
             if (m_config.activeSceneIdx + 1 < m_scenes.size()) {
                 enableScene(m_config.activeSceneIdx + 1);
@@ -3025,6 +3084,27 @@ void MainWindow::refreshKeyHints()
         for (int i = 0; i < scene->padWidgets.size(); ++i) {
             scene->padWidgets[i]->setKeyHint(m_config.keyboardPads ? KeyLayout::keyLabel(i, scene->columns()) : QString());
         }
+    }
+}
+
+void MainWindow::refreshIntensityControl()
+{
+    Scene* scene = activeScene();
+    const int mask = scene ? scene->layerMask() : 0;
+    if (m_intensityBox->isHidden() == (mask != 0)) {
+        m_intensityBox->setVisible(mask != 0);
+    }
+    if (!scene || mask == 0) {
+        return;
+    }
+    const int value = static_cast<int>(std::lround(scene->intensity() * 1000.0f));
+    if (m_intensity->value() != value && !m_intensity->isSliderDown()) {
+        const QSignalBlocker block(m_intensity);
+        m_intensity->setValue(value);
+    }
+    const QString text = Intensity::describe(mask, scene->intensity());
+    if (m_intensityValue->text() != text) {
+        m_intensityValue->setText(text);
     }
 }
 

@@ -1,6 +1,7 @@
 #include "Scene.h"
 #include "AppConfig.h"
 #include "Fade.h"
+#include "Intensity.h"
 
 #include <algorithm>
 #include <QScrollArea>
@@ -197,7 +198,8 @@ void Scene::play(int fadeMs, bool fadeInStarts)
         const SoundPlayer& player = pad->soundPlayer();
         const bool resume = player.isResuming() && (wasFadingOut || !player.isPlaying());
         // Starting fresh: the scene pads if there are any, otherwise every pad with sounds.
-        if (!resume && !(anyScenePads ? pad->isScenePad() : true)) {
+        // Layered pads always start, so the Intensity slider has them all to cross between.
+        if (!resume && !(anyScenePads ? (pad->isScenePad() || pad->layer() != Intensity::None) : true)) {
             continue;
         }
         if (resume || (fadeInStarts && pad->hasSounds() && (!player.isPlaying() || wasFadingOut))) {
@@ -279,6 +281,7 @@ void Scene::update()
             endFade();
         }
     }
+    updateLayers();
     bool audible = false;
     // A fade-in applies only to the pads resuming from a pause; a fade-out applies to all.
     const bool fadingIn = m_fading && m_fadeDirection == 0;
@@ -302,6 +305,57 @@ void Scene::update()
         m_row->setPlayToolTip(scenePads > 0
             ? tr("Play / pause scene: starts its %n scene pad(s)", nullptr, scenePads)
             : tr("Play / pause scene: starts every pad"));
+    }
+}
+
+void Scene::setIntensity(float intensity, bool glide)
+{
+    // Restarted only when a glide begins, so a slider being dragged (many changes a tick)
+    // doesn't hold the glide back.
+    const bool gliding = m_heardIntensity != m_intensity;
+    m_intensity = std::clamp(intensity, 0.0f, 1.0f);
+    if (!glide) {
+        m_heardIntensity = m_intensity;
+    } else if (!gliding) {
+        m_intensityClock.restart();
+    }
+}
+
+void Scene::writeSettings(QJsonObject& sceneObj) const
+{
+    if (m_intensity > 0.0f) {
+        sceneObj.insert(QStringLiteral("intensity"), m_intensity);
+    }
+}
+
+void Scene::readSettings(const QJsonObject& sceneObj)
+{
+    setIntensity(static_cast<float>(sceneObj.value(QStringLiteral("intensity")).toDouble(0.0)), false);
+}
+
+void Scene::updateLayers()
+{
+    // Glide what's heard towards the slider.
+    if (m_heardIntensity != m_intensity) {
+        const float seconds = m_intensityClock.isValid() ? static_cast<float>(m_intensityClock.restart()) / 1000.0f : 0.0f;
+        const float step = std::min(1.0f, seconds / Intensity::kGlideSeconds);
+        if (std::fabs(m_intensity - m_heardIntensity) <= step) {
+            m_heardIntensity = m_intensity;
+        } else {
+            m_heardIntensity += m_intensity > m_heardIntensity ? step : -step;
+        }
+    }
+    int mask = 0;
+    for (const Pad* pad : pads) {
+        if (pad->layer() != Intensity::None && pad->hasSounds()) {
+            mask |= 1 << pad->layer();
+        }
+    }
+    m_layerMask = mask;
+    const int count = Intensity::layerCount(mask);
+    for (Pad* pad : pads) {
+        const int index = Intensity::layerIndex(mask, pad->layer());
+        pad->setLayerGain(index < 0 ? 1.0f : Intensity::layerGain(index, count, m_heardIntensity));
     }
 }
 

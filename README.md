@@ -40,6 +40,7 @@ ctest --test-dir build --output-on-failure
 - `live`: the talk-over duck, which key plays which pad, and the MIDI map (learning included).
 - `live_window`: pad keys, Space, Esc and MIDI messages in the real window.
 - `pad_play`: per-pad fades (in, out, turning round, saving).
+- `intensity`: the layer crossfade, and the Intensity slider, MIDI and the Pad tab's layer in the window.
 - `undo`: undo and redo of settings, cut and paste, moving pads and deleting a scene, in the window.
 
 CI (`.github/workflows/build.yml`) builds on Linux, macOS and Windows and runs them.
@@ -57,6 +58,7 @@ Configure with `-DFEEDRA_WARNINGS_AS_ERRORS=ON` to fail on warnings, `-DFEEDRA_B
 - `SoundPlayer`: a pad's list of samples, delays, random order and handovers.
 - `Pad`: one pad's samples and settings, and its fades. `Scene` owns a
   scene's pads; `SoundPadWidget` draws one. `Fade`: the equal-power fade curve.
+  `Intensity`: a scene's Calm, Tense and Combat layers and the crossfade between them.
 - `ProjectFile`, `ProjectBackups`: the project file's format, export and backups.
 - `MainWindow`: the layout, menus and the routing between the panels: `widgets/EditorPanel`
   (the sample list and controls), `widgets/BottomPanel` (Waveform, Pad and Info tabs),

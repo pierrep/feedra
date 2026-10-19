@@ -169,6 +169,7 @@ private:
     bool m_uiLoading = false;
     bool m_uiPlaying = false;
     bool m_uiDelay = false;
+    int m_uiLayerLevel = -1; // the layer chip's brightness, in steps, so it repaints as the slider moves
     QString m_timeText;
     QString m_peakPath;
     QString m_volumeStyle;

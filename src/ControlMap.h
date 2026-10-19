@@ -32,6 +32,7 @@ enum class ControlAction {
     PadPlay,       // play / pause a pad (a button)
     PadVolume,     // a pad's volume (a fader or knob)
     MasterVolume,  // the main volume (a fader or knob)
+    Intensity,     // the selected scene's Intensity slider (a fader or knob)
     NextScene,
     PreviousScene,
     GoToScene,     // crossfade to the selected scene

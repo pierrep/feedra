@@ -1,4 +1,5 @@
 #include "SoundPadWidget.h"
+#include "Intensity.h"
 #include "FsPath.h"
 #include "AppConfig.h"
 #include "AudioFormats.h"
@@ -746,7 +747,10 @@ void SoundPadWidget::refreshUiState()
     if (stateChanged) {
         refreshChrome();
     }
-    if (stateChanged || time != m_timeText || (playing && !delay)) {
+    const int layerLevel = m_pad->layer() == Intensity::None ? -1 : static_cast<int>(std::lround(m_pad->layerGain() * 20.0f));
+    const bool layerChanged = layerLevel != m_uiLayerLevel;
+    m_uiLayerLevel = layerLevel;
+    if (stateChanged || layerChanged || time != m_timeText || (playing && !delay)) {
         // Playing pads repaint every tick for the breathing glow.
         m_timeText = time;
         update();
@@ -883,6 +887,24 @@ void SoundPadWidget::paintEvent(QPaintEvent*)
         p.setFont(keyFont);
         p.setPen(theme.textMuted);
         p.drawText(cap, Qt::AlignCenter, m_keyHint);
+    }
+
+    // Its intensity layer: a small tag left of the play button, as bright as the layer is
+    // loud at the scene's Intensity setting.
+    if (m_pad->layer() != Intensity::None && !empty) {
+        QFont tagFont = font();
+        tagFont.setPixelSize(std::max(7, qRound(9 * s)));
+        tagFont.setWeight(QFont::DemiBold);
+        const QRectF tag = at(12, 44, 40, 16);
+        p.save();
+        p.setOpacity(0.35 + 0.65 * std::clamp(static_cast<qreal>(m_pad->layerGain()), 0.0, 1.0));
+        p.setPen(QPen(withAlpha(accent, 0.6), 1.0));
+        p.setBrush(withAlpha(accent, 0.16));
+        p.drawRoundedRect(tag, 3.0 * s, 3.0 * s);
+        p.setFont(tagFont);
+        p.setPen(theme.text);
+        p.drawText(tag, Qt::AlignCenter, Intensity::layerName(m_pad->layer()));
+        p.restore();
     }
 
     QFont captionFont = font();

@@ -37,6 +37,8 @@ public:
     // Pad-level volume (pad x master x fades), before each sample's own gain. Stored so a
     // sample can be given its correct volume *before* it starts, not a UI tick later.
     void setBaseVolume(float vol);
+    // What the pad last set (volume x master x fades x layer), before each sample's own gain.
+    float getBaseVolume() const { return baseVolume; }
     void setPosition(float pct);
     void setPositionMS(int ms);
     // Seek the current sample (or the delay countdown) the same way the Waveform tab does:

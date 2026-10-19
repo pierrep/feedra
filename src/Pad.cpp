@@ -4,6 +4,7 @@
 #include "AudioDevice.h"
 #include "AudioSample.h"
 #include "Fade.h"
+#include "Intensity.h"
 #include "FsPath.h"
 #include "SampleLoadQueue.h"
 #include "VolumeDb.h"
@@ -273,13 +274,37 @@ void Pad::setFadeVolume(float fade)
 
 void Pad::applyVolume()
 {
-    const float base = m_volume * m_config->masterVolume() * m_config->masterFade() * m_fadeVolume * padFadeGain();
+    const float base = m_volume * m_config->masterVolume() * m_config->masterFade() * m_fadeVolume * padFadeGain()
+        * m_layerGain;
     if (!m_player.isLoaded() || m_player.player.empty()) {
         return;
     }
     // SoundPlayer multiplies in each sample's own gain, and also applies this to a sample
     // right before it starts, so a newly selected sample never starts at the wrong volume.
     m_player.setBaseVolume(base);
+}
+
+void Pad::setLayer(int layer)
+{
+    layer = std::clamp(layer, 0, static_cast<int>(Intensity::Combat));
+    if (layer == m_layer) {
+        return;
+    }
+    m_layer = layer;
+    if (m_layer == Intensity::None) {
+        m_layerGain = 1.0f;
+        applyVolume();
+    }
+    emit changed(); // the pad shows its layer
+}
+
+void Pad::setLayerGain(float gain)
+{
+    gain = m_layer == Intensity::None ? 1.0f : std::clamp(gain, 0.0f, 1.0f);
+    if (gain != m_layerGain) {
+        m_layerGain = gain;
+        applyVolume();
+    }
 }
 
 void Pad::setSend(int bus, float send)
@@ -551,6 +576,7 @@ void Pad::loadFromJson(const QJsonObject& root, const QString& baseDir)
     setScenePad(pad.value(QStringLiteral("scenepad")).toBool(false));
     setFadeInTime(static_cast<float>(pad.value(QStringLiteral("fadein")).toDouble(0.0)));
     setFadeOutTime(static_cast<float>(pad.value(QStringLiteral("fadeout")).toDouble(0.0)));
+    setLayer(Intensity::layerFromId(pad.value(QStringLiteral("layer")).toString()));
     emit changed();
 }
 
@@ -589,6 +615,9 @@ void Pad::saveToJson(QJsonObject& sceneObj) const
     }
     if (m_fadeOut > 0.0f) {
         pad.insert(QStringLiteral("fadeout"), m_fadeOut);
+    }
+    if (m_layer != Intensity::None) {
+        pad.insert(QStringLiteral("layer"), Intensity::layerId(m_layer));
     }
 
     QJsonObject samples;
@@ -665,6 +694,8 @@ void Pad::clearPad()
     }
     m_fadeIn = 0.0f;
     m_fadeOut = 0.0f;
+    m_layer = Intensity::None;
+    m_layerGain = 1.0f;
     m_padFadeDirection = 0;
     m_padPhase = 1.0f;
     m_afterFade = AfterFade::None;
@@ -706,6 +737,7 @@ Pad::PadClip Pad::clip() const
     clip.scenePad = m_scenePad;
     clip.fadeIn = m_fadeIn;
     clip.fadeOut = m_fadeOut;
+    clip.layer = m_layer;
     clip.valid = !clip.samples.empty() || !clip.missing.empty();
     return clip;
 }
@@ -733,6 +765,7 @@ void Pad::pasteClip(const PadClip& clip)
     m_missingSamples = clip.missing;
     setFadeInTime(clip.fadeIn);
     setFadeOutTime(clip.fadeOut);
+    setLayer(clip.layer);
     m_notifyWhenDone = true;
     for (const PadClip::Sample& sample : clip.samples) {
         LoadSlot slot;
@@ -765,7 +798,8 @@ bool Pad::PadClip::operator==(const PadClip& o) const
     return stream == o.stream && repeat == o.repeat && delayOn == o.delayOn && minDelay == o.minDelay
         && maxDelay == o.maxDelay && randomPlayback == o.randomPlayback && randomPan == o.randomPan
         && name == o.name && volume == o.volume && samples == o.samples && missing == o.missing
-        && scenePad == o.scenePad && fadeIn == o.fadeIn && fadeOut == o.fadeOut;
+        && scenePad == o.scenePad && fadeIn == o.fadeIn && fadeOut == o.fadeOut
+        && layer == o.layer;
 }
 
 bool Pad::PadClip::sameSamples(const PadClip& o) const
@@ -821,6 +855,7 @@ void Pad::restoreClip(const PadClip& target)
     setScenePad(target.scenePad);
     setFadeInTime(target.fadeIn);
     setFadeOutTime(target.fadeOut);
+    setLayer(target.layer);
     applyVolume();
     emit sampleLoopChanged();
     emit changed();

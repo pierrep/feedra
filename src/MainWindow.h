@@ -167,6 +167,9 @@ private:
     // A text field, spin box, list or menu has the keyboard, so live keys leave it alone.
     bool keyboardIsBusy() const;
     void refreshTalkButton();
+    // The header's Intensity slider follows the selected scene, and shows only while that
+    // scene has layered pads.
+    void refreshIntensityControl();
     // The key caps on the pads, for the keyboard setting.
     void refreshKeyHints();
     // MIDI: carries out what a message asks for (ControlMap), or finishes learning.
@@ -245,6 +248,9 @@ private:
     qint64 m_panicUntilMs = 0; // a second Panic before this stops everything at once
     QPushButton* m_talkButton = nullptr;
     QPushButton* m_panicButton = nullptr;
+    QWidget* m_intensityBox = nullptr;
+    QSlider* m_intensity = nullptr;
+    QLabel* m_intensityValue = nullptr;
     QSlider* m_mainVolume = nullptr;
     QLabel* m_mainVolumeValue = nullptr;
     // Set while the panel toggles and the window resizes to match, so the pad grid

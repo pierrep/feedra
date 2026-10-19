@@ -57,4 +57,4 @@ jobs:
       # The OpenAL and libsndfile DLLs aren't in the repository (bin/*.dll is ignored), so only
       # the tests that don't play audio run here.
       - name: Test
-        run: ctest --test-dir build --output-on-failure -E "^(engine|cue|project_roundtrip|panels|scene_fades|live_window|pad_play|undo)$"
+        run: ctest --test-dir build --output-on-failure -E "^(engine|cue|project_roundtrip|panels|scene_fades|live_window|pad_play|undo|intensity)$"

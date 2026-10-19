@@ -13,6 +13,7 @@ const char* actionId(ControlAction action)
     case ControlAction::PadPlay: return "padplay";
     case ControlAction::PadVolume: return "padvolume";
     case ControlAction::MasterVolume: return "mastervolume";
+    case ControlAction::Intensity: return "intensity";
     case ControlAction::NextScene: return "nextscene";
     case ControlAction::PreviousScene: return "previousscene";
     case ControlAction::GoToScene: return "gotoscene";
@@ -25,8 +26,8 @@ const char* actionId(ControlAction action)
 bool actionFromId(const QString& id, ControlAction& out)
 {
     const ControlAction all[] = { ControlAction::PadPlay, ControlAction::PadVolume, ControlAction::MasterVolume,
-        ControlAction::NextScene, ControlAction::PreviousScene, ControlAction::GoToScene, ControlAction::Panic,
-        ControlAction::TalkOver };
+        ControlAction::Intensity, ControlAction::NextScene, ControlAction::PreviousScene, ControlAction::GoToScene,
+        ControlAction::Panic, ControlAction::TalkOver };
     for (ControlAction action : all) {
         if (id == QLatin1String(actionId(action))) {
             out = action;
@@ -45,7 +46,8 @@ bool usesPad(ControlAction action)
 
 bool ControlMap::isContinuous(ControlAction action)
 {
-    return action == ControlAction::PadVolume || action == ControlAction::MasterVolume;
+    return action == ControlAction::PadVolume || action == ControlAction::MasterVolume
+        || action == ControlAction::Intensity;
 }
 
 QString ControlMap::actionName(ControlAction action, int pad)
@@ -55,6 +57,7 @@ QString ControlMap::actionName(ControlAction action, int pad)
     case ControlAction::PadPlay: return tr("Pad %1 play").arg(pad + 1);
     case ControlAction::PadVolume: return tr("Pad %1 volume").arg(pad + 1);
     case ControlAction::MasterVolume: return tr("Main volume");
+    case ControlAction::Intensity: return tr("Scene intensity");
     case ControlAction::NextScene: return tr("Next scene");
     case ControlAction::PreviousScene: return tr("Previous scene");
     case ControlAction::GoToScene: return tr("Go to selected scene");

@@ -1,7 +1,7 @@
 #pragma once
 
 // The panel under the pad grid: the Waveform tab (playhead, seek, loop points), the Pad tab
-// (delay, repeat, scene pad, effect sends) and the Info tab (the current sample's format).
+// (delay, repeat, scene pad, fades, intensity layer, effect sends) and the Info tab (the current sample's format).
 //
 // Collapsing changes the window's height, so the panel only asks (collapseRequested) and the
 // window does it, calling setCollapsedState() in the middle.
@@ -18,6 +18,7 @@ class AudioSample;
 class Pad;
 class WaveformWidget;
 class QCheckBox;
+class QComboBox;
 class QDoubleSpinBox;
 class QLabel;
 class QPushButton;
@@ -114,6 +115,7 @@ private:
     QLabel* m_delayReadout = nullptr;
     QDoubleSpinBox* m_fadeIn = nullptr;
     QDoubleSpinBox* m_fadeOut = nullptr;
+    QComboBox* m_layer = nullptr; // the pad's intensity layer
 
     WaveformWidget* m_waveform = nullptr;
     int m_loopDragSampleId = -1; // the sample whose loop handles are being dragged

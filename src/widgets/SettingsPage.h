@@ -73,7 +73,8 @@ private:
     ControlMap* m_controls = nullptr;
     QComboBox* m_midiInput = nullptr;
     QCheckBox* m_midiDefaultNotes = nullptr;
-    QLabel* m_midiBindings[6] = {};
+    static constexpr int kGlobalMidiActions = 7;
+    QLabel* m_midiBindings[kGlobalMidiActions] = {};
     QLabel* m_midiPads = nullptr;
     QLabel* m_midiStatus = nullptr;
     QLineEdit* m_libraryPath = nullptr;

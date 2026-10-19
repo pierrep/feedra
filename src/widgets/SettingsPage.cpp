@@ -191,9 +191,10 @@ SettingsPage::SettingsPage(AppConfig& config, QWidget* parent)
     actionGrid->setContentsMargins(0, 0, 0, 0);
     actionGrid->setHorizontalSpacing(10);
     actionGrid->setVerticalSpacing(6);
-    const ControlAction globalActions[6] = { ControlAction::MasterVolume, ControlAction::NextScene,
-        ControlAction::PreviousScene, ControlAction::GoToScene, ControlAction::Panic, ControlAction::TalkOver };
-    for (int row = 0; row < 6; ++row) {
+    const ControlAction globalActions[kGlobalMidiActions] = { ControlAction::MasterVolume, ControlAction::Intensity,
+        ControlAction::NextScene, ControlAction::PreviousScene, ControlAction::GoToScene, ControlAction::Panic,
+        ControlAction::TalkOver };
+    for (int row = 0; row < kGlobalMidiActions; ++row) {
         const ControlAction action = globalActions[row];
         actionGrid->addWidget(new QLabel(ControlMap::actionName(action), actions), row, 0);
         m_midiBindings[row] = new QLabel(actions);
@@ -530,9 +531,10 @@ void SettingsPage::refreshMidi()
     selectDevice(m_midiInput, chosen);
     m_midiInput->setEnabled(MidiInput::available());
     m_midiDefaultNotes->setChecked(m_controls->defaultNotes());
-    const ControlAction globalActions[6] = { ControlAction::MasterVolume, ControlAction::NextScene,
-        ControlAction::PreviousScene, ControlAction::GoToScene, ControlAction::Panic, ControlAction::TalkOver };
-    for (int row = 0; row < 6; ++row) {
+    const ControlAction globalActions[kGlobalMidiActions] = { ControlAction::MasterVolume, ControlAction::Intensity,
+        ControlAction::NextScene, ControlAction::PreviousScene, ControlAction::GoToScene, ControlAction::Panic,
+        ControlAction::TalkOver };
+    for (int row = 0; row < kGlobalMidiActions; ++row) {
         const ControlBinding* binding = m_controls->bindingFor(globalActions[row]);
         m_midiBindings[row]->setText(binding ? ControlMap::describe(*binding) : tr("—"));
     }

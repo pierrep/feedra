@@ -88,7 +88,7 @@ public:
 
     // Once per UI tick: the player's tick and the pad's volume.
     void updateAudio();
-    // Pad volume x master x fades, applied straight away.
+    // Pad volume x master x fades x intensity layer, applied straight away.
     void setFadeVolume(float fade);
     float fadeVolume() const { return m_fadeVolume; }
     void applyVolume();
@@ -142,6 +142,7 @@ public:
         bool scenePad = false;
         float fadeIn = 0.0f;
         float fadeOut = 0.0f;
+        int layer = 0; // Intensity::Layer
         bool operator==(const PadClip& o) const;
         bool operator!=(const PadClip& o) const { return !(*this == o); }
         // The same files in the same order (settings aside).
@@ -161,6 +162,14 @@ public:
     // only they start; otherwise every pad with sounds does.
     bool isScenePad() const { return m_scenePad; }
     void setScenePad(bool on);
+
+    // The pad's intensity layer (Intensity::Layer: None, Calm, Tense or Combat). Layered pads
+    // start with their scene, and the scene's Intensity slider sets how much of each is heard.
+    int layer() const { return m_layer; }
+    void setLayer(int layer);
+    // Set by the scene every tick from its Intensity slider (1 without a layer).
+    float layerGain() const { return m_layerGain; }
+    void setLayerGain(float gain);
 
     void removeSampleAt(int index);
     // Returns where it went, or -1.
@@ -220,6 +229,8 @@ private:
     int m_sampleRate = 0;
     int m_channels = 0;
     bool m_scenePad = false;
+    int m_layer = 0;
+    float m_layerGain = 1.0f;
 
     // The pad's own fade (play, pause and stop from the pad, keys and MIDI).
     enum class AfterFade { None, Pause, Stop };

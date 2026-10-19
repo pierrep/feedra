@@ -4,12 +4,14 @@
 #include "AudioDevice.h"
 #include "AudioSample.h"
 #include "FsPath.h"
+#include "Intensity.h"
 #include "OpenALSoundPlayer.h"
 #include "Pad.h"
 #include "widgets/TabButton.h"
 #include "widgets/WaveformWidget.h"
 
 #include <QCheckBox>
+#include <QComboBox>
 #include <QDoubleSpinBox>
 #include <QFileInfo>
 #include <QGridLayout>
@@ -161,7 +163,20 @@ BottomPanel::BottomPanel(AppConfig* config, QWidget* parent)
     playGrid->addWidget(m_fadeIn, 0, 1);
     playGrid->addWidget(new QLabel(tr("Fade out"), padPage), 1, 0);
     playGrid->addWidget(m_fadeOut, 1, 1);
-    playGrid->setRowStretch(2, 1);
+    // The pad's intensity layer, for the scene's Intensity slider in the header.
+    m_layer = new QComboBox(padPage);
+    for (int layer = Intensity::None; layer <= Intensity::Combat; ++layer) {
+        m_layer->addItem(Intensity::layerName(layer), layer);
+    }
+    m_layer->setMinimumWidth(90);
+    m_layer->setMaximumWidth(120);
+    m_layer->setEnabled(false);
+    m_layer->setToolTip(tr("Calm, Tense or Combat: the scene's Intensity slider (in the header) crossfades "
+                           "between its layered pads, which all start with the scene and play together.\n"
+                           "None: the slider leaves this pad alone."));
+    playGrid->addWidget(new QLabel(tr("Layer"), padPage), 2, 0);
+    playGrid->addWidget(m_layer, 2, 1);
+    playGrid->setRowStretch(3, 1);
 
     // EAX reverbs on top, convolution reverbs below.
     auto* sendGrid = new QGridLayout();
@@ -323,6 +338,11 @@ BottomPanel::BottomPanel(AppConfig* config, QWidget* parent)
         if (m_updating || !m_pad) return;
         edit(tr("Fade time"), [&](Pad* pad) { pad->setFadeInTime(static_cast<float>(v)); });
     });
+    connect(m_layer, qOverload<int>(&QComboBox::currentIndexChanged), this, [this](int index) {
+        if (m_updating || !m_pad) return;
+        const int layer = m_layer->itemData(index).toInt();
+        edit(tr("Layer"), [&](Pad* pad) { pad->setLayer(layer); });
+    });
     connect(m_fadeOut, qOverload<double>(&QDoubleSpinBox::valueChanged), this, [this](double v) {
         if (m_updating || !m_pad) return;
         edit(tr("Fade time"), [&](Pad* pad) { pad->setFadeOutTime(static_cast<float>(v)); });
@@ -368,6 +388,8 @@ void BottomPanel::refreshPadControls()
         m_fadeOut->setValue(pad->fadeOutTime());
         m_fadeIn->setEnabled(true);
         m_fadeOut->setEnabled(true);
+        m_layer->setCurrentIndex(m_layer->findData(pad->layer()));
+        m_layer->setEnabled(true);
     } else {
         m_info->setText(tr("channels: —\nformat: —\nsub-format: —\nsample rate: —\npath: —\nNum sounds: —"));
         m_randomPlayback->hide();
@@ -384,6 +406,8 @@ void BottomPanel::refreshPadControls()
         }
         m_fadeIn->setEnabled(false);
         m_fadeOut->setEnabled(false);
+        m_layer->setCurrentIndex(0);
+        m_layer->setEnabled(false);
     }
     m_updating = false;
 }
