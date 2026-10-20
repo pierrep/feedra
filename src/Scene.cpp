@@ -236,7 +236,7 @@ void Scene::pause(int fadeMs)
     m_fadeTimer.restart();
     m_fadeCallback = [this]() {
         for (Pad* pad : pads) {
-            pad->pauseNow();
+            pad->pause();
         }
     };
 }
@@ -253,7 +253,7 @@ void Scene::stop(int fadeMs, bool crossfade)
     m_fadeTimer.restart();
     m_fadeCallback = [this]() {
         for (Pad* pad : pads) {
-            pad->stopNow();
+            pad->stop();
         }
     };
 }
@@ -263,7 +263,7 @@ void Scene::stopImmediate()
     endFade();
     isPlaying = false;
     for (Pad* pad : pads) {
-        pad->stopNow();
+        pad->stop();
     }
     m_row->setPlaying(false);
 }

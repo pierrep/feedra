@@ -110,6 +110,7 @@ public:
     void setInteractive(bool enabled);
     // The key that plays this pad, drawn as a small key cap (empty: none).
     void setKeyHint(const QString& key);
+    QString keyHint() const { return m_keyHint; }
     // Right-click offers MIDI learn and forget (when Feedra has MIDI).
     void setMidiMenu(bool on) { m_midiMenu = on; }
 

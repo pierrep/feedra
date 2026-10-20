@@ -2,6 +2,7 @@
 
 #include "AppConfig.h"
 #include "AudioDevice.h"
+#include "AudioLatency.h"
 #include "CueOutput.h"
 #include "MidiInput.h"
 #include "FsPath.h"
@@ -144,6 +145,21 @@ SettingsPage::SettingsPage(AppConfig& config, QWidget* parent)
     live.addRow(tr("Talk-over"), m_talkOverDepth,
         tr("Hold Space, or click Talk in the header, and every scene dips by this much so you can be "
            "heard. File previews aren't dipped."));
+    m_talkFadeIn = new QDoubleSpinBox(live.frame);
+    m_talkFadeOut = new QDoubleSpinBox(live.frame);
+    m_talkFadeIn->setObjectName(QStringLiteral("TalkFadeIn"));
+    m_talkFadeOut->setObjectName(QStringLiteral("TalkFadeOut"));
+    for (QDoubleSpinBox* box : {m_talkFadeIn, m_talkFadeOut}) {
+        box->setRange(0.0, 5.0);
+        box->setDecimals(2);
+        box->setSingleStep(0.05);
+        box->setSuffix(tr(" s"));
+        box->setMaximumWidth(120);
+    }
+    live.addRow(tr("Talk fade in"), m_talkFadeIn,
+        tr("How long the scenes take to dip to the talk-over level once you hold Space. 0 is instant."));
+    live.addRow(tr("Talk fade out"), m_talkFadeOut,
+        tr("How long they take to come back up after you let go. 0 is instant."));
     m_panicTime = new QDoubleSpinBox(live.frame);
     m_panicTime->setRange(0.0, 10.0);
     m_panicTime->setDecimals(1);
@@ -155,8 +171,8 @@ SettingsPage::SettingsPage(AppConfig& config, QWidget* parent)
            "stop at once."));
     m_keyboardPads = new QCheckBox(tr("Play pads from the keyboard"), live.frame);
     live.addRow(tr("Keyboard"), m_keyboardPads,
-        tr("The pad grid's rows are the keyboard's: 1-0, Q-P, A-; and Z-/, left to right. Each pad "
-           "shows its key. Enter goes to the selected scene; arrows move through the scene list."));
+        tr("The pad grid's rows are the keyboard's: 1-0, Q-P, A-; and Z-/, left to right. Hold Tab "
+           "to see each pad's key. Enter goes to the selected scene; arrows move through the scene list."));
     connect(m_keyboardPads, &QCheckBox::toggled, this, [this](bool on) {
         if (!m_updating) {
             m_config.keyboardPads = on;
@@ -258,6 +274,16 @@ SettingsPage::SettingsPage(AppConfig& config, QWidget* parent)
             m_config.talkOverDepthDb = value;
         }
     });
+    connect(m_talkFadeIn, qOverload<double>(&QDoubleSpinBox::valueChanged), this, [this](double value) {
+        if (!m_updating) {
+            m_config.talkOverFadeInSeconds = value;
+        }
+    });
+    connect(m_talkFadeOut, qOverload<double>(&QDoubleSpinBox::valueChanged), this, [this](double value) {
+        if (!m_updating) {
+            m_config.talkOverFadeOutSeconds = value;
+        }
+    });
     connect(m_panicTime, qOverload<double>(&QDoubleSpinBox::valueChanged), this, [this](double value) {
         if (!m_updating) {
             m_config.panicSeconds = value;
@@ -291,6 +317,17 @@ SettingsPage::SettingsPage(AppConfig& config, QWidget* parent)
             ? tr("Headphones here keep file previews to yourself: the table only hears the scenes.")
             : tr("Previews can't use a second device with this OpenAL library."));
     m_previewDevice->setEnabled(CueOutput::available());
+    m_outputLatency = new QComboBox(output.frame);
+    m_outputLatency->setObjectName(QStringLiteral("OutputLatency"));
+    m_outputLatency->setMaximumWidth(260);
+    for (int preset = 0; preset < AudioLatency::kPresetCount; ++preset) {
+        m_outputLatency->addItem(AudioLatency::label(preset), AudioLatency::id(preset));
+    }
+    const double refreshHz = AudioDevice::outputRefreshHz();
+    output.addRow(tr("Latency"), m_outputLatency,
+        tr("The delay between a press and the sound: smaller is snappier, but too small crackles on a "
+           "slow computer or with many pads and reverbs. Takes effect when Feedra next starts.%1")
+            .arg(refreshHz > 0.0 ? tr(" Now: %1 ms per buffer.").arg(1000.0 / refreshHz, 0, 'f', 1) : QString()));
     m_deviceStatus = new QLabel(output.frame);
     m_deviceStatus->setObjectName(QStringLiteral("FieldHint"));
     m_deviceStatus->setWordWrap(true);
@@ -304,6 +341,13 @@ SettingsPage::SettingsPage(AppConfig& config, QWidget* parent)
         }
         m_config.outputDevice = m_outputDevice->itemData(index).toString();
         emit outputDeviceChanged();
+    });
+    connect(m_outputLatency, qOverload<int>(&QComboBox::currentIndexChanged), this, [this](int index) {
+        if (m_updating || index < 0) {
+            return;
+        }
+        m_config.outputLatency = m_outputLatency->itemData(index).toString();
+        emit outputLatencyChanged();
     });
     connect(m_previewDevice, qOverload<int>(&QComboBox::currentIndexChanged), this, [this](int index) {
         if (m_updating || index < 0) {
@@ -564,6 +608,7 @@ void SettingsPage::sync()
     m_updating = true;
     selectDevice(m_outputDevice, m_config.outputDevice);
     selectDevice(m_previewDevice, m_config.previewDevice);
+    m_outputLatency->setCurrentIndex(std::max(0, m_outputLatency->findData(m_config.outputLatency)));
     m_loadLastSettings->setChecked(m_config.loadLastSettings);
     m_autosave->setChecked(m_config.autosave);
     m_sceneLimit->setValue(static_cast<int>(m_config.maxScenes));
@@ -571,6 +616,8 @@ void SettingsPage::sync()
     m_gridRows->setValue(m_config.gridHeight);
     m_crossfade->setValue(m_config.crossfadeSeconds);
     m_talkOverDepth->setValue(m_config.talkOverDepthDb);
+    m_talkFadeIn->setValue(m_config.talkOverFadeInSeconds);
+    m_talkFadeOut->setValue(m_config.talkOverFadeOutSeconds);
     m_panicTime->setValue(m_config.panicSeconds);
     m_keyboardPads->setChecked(m_config.keyboardPads);
     m_libraryPath->setText(m_config.defaultLibraryLocation);

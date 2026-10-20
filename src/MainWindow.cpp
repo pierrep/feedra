@@ -1,5 +1,6 @@
 #include "MainWindow.h"
 #include "Intensity.h"
+#include "AudioLatency.h"
 #include "AudioFormats.h"
 #include "CueOutput.h"
 #include "FsPath.h"
@@ -338,6 +339,9 @@ MainWindow::MainWindow(QWidget* parent)
     m_local = m_config.loadLocalSettings();
     PeakStore::instance().setCacheDir(m_config.waveformCacheDir());
     m_loads = new SampleLoadQueue(this);
+    // The output buffer size has to be set before the device opens.
+    m_config.outputLatency = AudioLatency::id(AudioLatency::fromId(m_local.value(QStringLiteral("outputlatency")).toString()));
+    AudioLatency::apply(AudioLatency::fromId(m_config.outputLatency), QFileInfo(m_config.localSettingsPath()).absolutePath());
     AudioDevice::initialize();
     for (int which = 0; which < OpenALSoundPlayer::kConvolutionCount; ++which) {
         AudioDevice::setConvolutionGain(AudioDevice::defaultConvolutionGain(), which);
@@ -763,6 +767,7 @@ void MainWindow::buildUi()
         applyOutputDevice();
         saveLocalSettings();
     });
+    connect(m_settingsPage, &SettingsPage::outputLatencyChanged, this, &MainWindow::saveLocalSettings);
     connect(m_settingsPage, &SettingsPage::previewDeviceChanged, this, [this]() {
         applyPreviewDevice();
         saveLocalSettings();
@@ -847,7 +852,7 @@ void MainWindow::buildUi()
 void MainWindow::connectScene(Scene* scene)
 {
     for (int i = 0; i < scene->padWidgets.size(); ++i) {
-        scene->padWidgets[i]->setKeyHint(m_config.keyboardPads ? KeyLayout::keyLabel(i, scene->columns()) : QString());
+        scene->padWidgets[i]->setKeyHint(m_config.keyboardPads && m_keyHintsShown ? KeyLayout::keyLabel(i, scene->columns()) : QString());
     }
     connect(scene, &Scene::padSelected, this, &MainWindow::onPadClicked);
     connect(scene, &Scene::goRequested, this, [this](int sceneId) {
@@ -1329,6 +1334,12 @@ void MainWindow::applyAppSettings(const QJsonObject& global)
     }
     if (global.contains(QStringLiteral("talkoverdepth"))) {
         m_config.talkOverDepthDb = std::clamp(global.value(QStringLiteral("talkoverdepth")).toDouble(m_config.talkOverDepthDb), -40.0, 0.0);
+    }
+    if (global.contains(QStringLiteral("talkfadein"))) {
+        m_config.talkOverFadeInSeconds = std::clamp(global.value(QStringLiteral("talkfadein")).toDouble(m_config.talkOverFadeInSeconds), 0.0, 5.0);
+    }
+    if (global.contains(QStringLiteral("talkfadeout"))) {
+        m_config.talkOverFadeOutSeconds = std::clamp(global.value(QStringLiteral("talkfadeout")).toDouble(m_config.talkOverFadeOutSeconds), 0.0, 5.0);
     }
     if (global.contains(QStringLiteral("panictime"))) {
         m_config.panicSeconds = std::clamp(global.value(QStringLiteral("panictime")).toDouble(m_config.panicSeconds), 0.0, 10.0);
@@ -1893,6 +1904,8 @@ bool MainWindow::saveConfigTo(const QString& path, bool copyFiles, bool settings
     global.insert(QStringLiteral("scenelimit"), static_cast<int>(m_config.maxScenes));
     global.insert(QStringLiteral("crossfadetime"), m_config.crossfadeSeconds);
     global.insert(QStringLiteral("talkoverdepth"), m_config.talkOverDepthDb);
+    global.insert(QStringLiteral("talkfadein"), m_config.talkOverFadeInSeconds);
+    global.insert(QStringLiteral("talkfadeout"), m_config.talkOverFadeOutSeconds);
     global.insert(QStringLiteral("keyboardpads"), m_config.keyboardPads);
     global.insert(QStringLiteral("panictime"), m_config.panicSeconds);
     global.insert(QStringLiteral("gridwidth"), m_config.gridWidth);
@@ -2249,6 +2262,7 @@ void MainWindow::saveLocalSettings()
     midi.insert(QStringLiteral("input"), m_midiPort);
     m_local.insert(QStringLiteral("midi"), midi);
     m_local.insert(QStringLiteral("outputdevice"), m_config.outputDevice);
+    m_local.insert(QStringLiteral("outputlatency"), m_config.outputLatency);
     m_local.insert(QStringLiteral("previewdevice"), m_config.previewDevice);
     saveWindowLayout(m_local);
     m_config.saveLocalSettings(m_local);
@@ -2595,6 +2609,7 @@ void MainWindow::tick()
     m_fileBrowser->tick();
     // Before the scenes update, so every pad takes the new level this tick.
     m_duck.setDepthDb(static_cast<float>(m_config.talkOverDepthDb));
+    m_duck.setTimesMs(qRound(m_config.talkOverFadeInSeconds * 1000.0), qRound(m_config.talkOverFadeOutSeconds * 1000.0));
     m_config.setMasterFade(m_duck.update(m_clock.elapsed()));
     refreshTalkButton();
     for (Scene* scene : m_scenes) {
@@ -2872,6 +2887,7 @@ bool MainWindow::eventFilter(QObject* watched, QEvent* event)
     // A held Space whose release goes to another window would hold the duck for ever.
     if (watched == this && event->type() == QEvent::WindowDeactivate) {
         m_duck.setHeld(Duck::Key, false);
+        setKeyHintsShown(false);
     }
     return QMainWindow::eventFilter(watched, event);
 }
@@ -2895,6 +2911,21 @@ bool MainWindow::handleLiveKey(QKeyEvent* event)
         return false;
     }
     const bool press = event->type() == QEvent::KeyPress;
+    // Holding Tab shows which key plays each pad.
+    if (event->key() == Qt::Key_Tab) {
+        if (!press) {
+            if (m_keyHintsShown) {
+                setKeyHintsShown(false);
+                return true;
+            }
+            return false;
+        }
+        if (m_page != Page::Main || !m_config.keyboardPads || keyboardIsBusy()) {
+            return false;
+        }
+        setKeyHintsShown(true);
+        return true; // also swallows the repeats, so focus doesn't move
+    }
     if (event->key() == Qt::Key_Space) {
         if (event->isAutoRepeat()) {
             return m_duck.isHeldBy(Duck::Key); // swallow the repeats of a held Space
@@ -3082,8 +3113,16 @@ void MainWindow::refreshKeyHints()
 {
     for (Scene* scene : m_scenes) {
         for (int i = 0; i < scene->padWidgets.size(); ++i) {
-            scene->padWidgets[i]->setKeyHint(m_config.keyboardPads ? KeyLayout::keyLabel(i, scene->columns()) : QString());
+            scene->padWidgets[i]->setKeyHint(m_config.keyboardPads && m_keyHintsShown ? KeyLayout::keyLabel(i, scene->columns()) : QString());
         }
+    }
+}
+
+void MainWindow::setKeyHintsShown(bool shown)
+{
+    if (shown != m_keyHintsShown) {
+        m_keyHintsShown = shown;
+        refreshKeyHints();
     }
 }
 

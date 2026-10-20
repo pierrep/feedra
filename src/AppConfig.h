@@ -62,12 +62,18 @@ public:
     double crossfadeSeconds = 3.0;
     // Talk-over (hold Space): how far every scene dips, in dB.
     double talkOverDepthDb = -12.0;
+    // How long the dip takes going down (hold) and coming back up (release), in seconds.
+    double talkOverFadeInSeconds = 0.15;
+    double talkOverFadeOutSeconds = 0.7;
     // Panic (Esc): how long everything takes to fade out. A second press stops at once.
     double panicSeconds = 1.0;
     // The keyboard plays the pads (see KeyLayout).
     bool keyboardPads = true;
     // The output device by name, or empty to follow the system's default output.
     QString outputDevice;
+    // How big the output buffer is (AudioLatency): "default", "low", "lowest" or "safe".
+    // Applies when Feedra next starts.
+    QString outputLatency = QStringLiteral("default");
     // A second device for the Files tab's previews (headphones), or empty to preview on the
     // main output. See CueOutput.
     QString previewDevice;

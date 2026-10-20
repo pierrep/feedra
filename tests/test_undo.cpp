@@ -13,6 +13,7 @@
 #include "widgets/EditorPanel.h"
 #include "widgets/SceneRowWidget.h"
 #include "widgets/SoundPadWidget.h"
+#include "widgets/WaveformWidget.h"
 
 #include <QAbstractButton>
 #include <QAction>
@@ -24,6 +25,7 @@
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QKeyEvent>
+#include <QMouseEvent>
 #include <QMessageBox>
 #include <QPushButton>
 #include <QSpinBox>
@@ -222,6 +224,76 @@ int main(int argc, char** argv)
               pad(0, 0)->soundPlayer().player[0]->getGain());
     } else {
         CHECK(false, "no gain box");
+    }
+
+    std::printf("the sample's fades, dragged on the waveform\n");
+    {
+        bottom->setCurrentTab(BottomPanel::WaveformTab);
+        auto* wave = bottom->findChild<WaveformWidget*>();
+        CHECK(wave != nullptr, "no waveform");
+        if (wave) {
+            pump(1500, [&]() { bottom->tick(); return false; }); // the peaks read, so the knobs can be grabbed
+            const auto mouse = [&](QEvent::Type type, int x, int y) {
+                QMouseEvent event(type, QPointF(x, y), QPointF(wave->mapToGlobal(QPoint(x, y))), Qt::LeftButton,
+                                  type == QEvent::MouseButtonRelease ? Qt::NoButton : Qt::LeftButton, Qt::NoModifier);
+                QCoreApplication::sendEvent(wave, &event);
+            };
+            // The wave area: 20 px in from each side, the header above and 12 px below.
+            const int left = 20;
+            const int right = wave->width() - 20;
+            const int mid = 32 + (wave->height() - 32 - 12) / 2;
+            const auto at = [&](double pct) { return left + static_cast<int>(pct * (right - left)); };
+            const auto region = []() { return pad(0, 0)->soundPlayer().player[0]->loopRegion(); };
+            const QString undoText = QStringLiteral("&Undo");
+
+            mouse(QEvent::MouseButtonPress, left + 1, mid);
+            mouse(QEvent::MouseMove, at(0.25), mid);
+            mouse(QEvent::MouseMove, at(0.5), mid);
+            CHECK(region().fadeInSec == 0.0, "the audio changed during the drag (%f)", region().fadeInSec);
+            mouse(QEvent::MouseButtonRelease, at(0.5), mid);
+            CHECK(std::fabs(region().fadeInSec - 1.0) < 0.11, "fade in from the knob: %f", region().fadeInSec);
+            CHECK(region().fadeOutSec == 0.0, "fade out moved");
+            CHECK(action(undoText)->text().contains(QStringLiteral("Fade")), "undo text: %s", qPrintable(action(undoText)->text()));
+            undo();
+            CHECK(region().fadeInSec == 0.0, "one undo didn't undo the whole drag: %f", region().fadeInSec);
+            redo();
+            CHECK(std::fabs(region().fadeInSec - 1.0) < 0.11, "redo: %f", region().fadeInSec);
+
+            // The fade out's knob is at the right edge. Dragging it to 75% leaves a quarter of the sample.
+            mouse(QEvent::MouseButtonPress, right - 1, mid);
+            mouse(QEvent::MouseMove, at(0.75), mid);
+            mouse(QEvent::MouseButtonRelease, at(0.75), mid);
+            CHECK(std::fabs(region().fadeOutSec - 0.5) < 0.11, "fade out from the knob: %f", region().fadeOutSec);
+            CHECK(std::fabs(region().fadeInSec - 1.0) < 0.11, "fade in moved with the fade out");
+            CHECK(!region().loop && region().start == 0.0 && region().end <= 0.0, "the loop settings moved with a fade");
+
+            // Never longer than the sample (2 s), however far it's dragged.
+            mouse(QEvent::MouseButtonPress, at(0.5), mid); // the fade in's knob, now at 50%
+            mouse(QEvent::MouseMove, wave->width() + 200, mid);
+            mouse(QEvent::MouseButtonRelease, wave->width() + 200, mid);
+            CHECK(region().fadeInSec > 1.9 && region().fadeInSec <= 2.0 + 1e-9, "fade in past the end: %f", region().fadeInSec);
+
+            // With a shorter limit than the sample (a 40 s sample's limit is 30 s), the knob stops at
+            // the limit. The panel refreshes the view every tick, so no pump between.
+            wave->setFadeView({ 0.0f, 0.0f, 0.5f });
+            mouse(QEvent::MouseButtonPress, left + 1, mid);
+            mouse(QEvent::MouseMove, at(0.9), mid);
+            mouse(QEvent::MouseButtonRelease, at(0.9), mid);
+            CHECK(std::fabs(region().fadeInSec - 0.5) < 1e-4, "the knob went past the limit: %f", region().fadeInSec);
+            pump(150); // the view back to the sample's
+
+            // Double-click a knob to remove its fade.
+            // The fade in is 0.5 s of 2 s now: its knob is at 25%.
+            QMouseEvent dbl(QEvent::MouseButtonDblClick, QPointF(at(0.25), mid), QPointF(wave->mapToGlobal(QPoint(at(0.25), mid))),
+                            Qt::LeftButton, Qt::LeftButton, Qt::NoModifier);
+            QCoreApplication::sendEvent(wave, &dbl);
+            CHECK(region().fadeInSec == 0.0, "double-click didn't remove the fade: %f", region().fadeInSec);
+            // Back to how the later steps expect the pad.
+            LoopRegion plain = region();
+            plain.fadeInSec = 0.0;
+            plain.fadeOutSec = 0.0;
+            pad(0, 0)->soundPlayer().player[0]->setLoopRegion(plain);
+        }
     }
 
     std::printf("cut and paste\n");

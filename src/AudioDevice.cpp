@@ -745,6 +745,16 @@ bool AudioDevice::isConnected()
     return connected != 0;
 }
 
+double AudioDevice::outputRefreshHz()
+{
+    if (!alDevice) {
+        return 0.0;
+    }
+    ALCint refresh = 0;
+    alcGetIntegerv(alDevice, ALC_REFRESH, 1, &refresh);
+    return refresh > 0 ? static_cast<double>(refresh) : 0.0;
+}
+
 int AudioDevice::reopen(const char* deviceName)
 {
     auto ctx = alcGetCurrentContext();

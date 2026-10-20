@@ -113,9 +113,12 @@ bool RegionRenderer::canUseInitial(int64_t framesAlready) const
     // Only from the top, and only when nothing in those frames needs the region (a fade, a
     // wrap or a stop).
     const int64_t stop = stopFrame();
-    const int64_t untouched = m_loop ? m_E - m_xf
-                                     : (m_total > 0 && stop < m_total ? stop - m_edgeFade : stop);
-    return m_fromStart && framesAlready > 0 && framesAlready <= untouched;
+    int64_t untouched = m_loop ? m_E - m_xf
+                               : (m_total > 0 && stop < m_total ? stop - m_edgeFade : stop);
+    if (m_envOut > 0 && m_total > 0) {
+        untouched = std::min(untouched, m_total - m_envOut);
+    }
+    return m_fromStart && m_envIn == 0 && framesAlready > 0 && framesAlready <= untouched;
 }
 
 void RegionRenderer::startRunAfterInitial(int64_t framesAlready)
@@ -156,6 +159,14 @@ void RegionRenderer::computeEffectiveRegion()
     if (m_E < INT64_MAX / 8) {
         m_edgeFade = std::min(m_edgeFade, std::max<int64_t>(1, (m_E - m_S) / 2));
     }
+    // The sample's fades: at most the file (the Waveform tab limits them to 30 s and to the length).
+    const auto fadeFrames = [&](double seconds) {
+        const double clamped = std::clamp(seconds, 0.0, LoopRegion::kMaxFadeSec);
+        int64_t frames = static_cast<int64_t>(std::llround(clamped * m_rate));
+        return m_total > 0 ? std::min(frames, m_total) : frames;
+    };
+    m_envIn = fadeFrames(m_active.fadeInSec);
+    m_envOut = m_total > 0 ? fadeFrames(m_active.fadeOutSec) : 0; // the end must be known
     m_loop = m_active.loop;
     m_toEnd = m_active.playToEnd;
     m_fromStart = m_active.playFromStart;
@@ -190,6 +201,7 @@ void RegionRenderer::ensureHeadCache()
         const int64_t back = m_src->position();
         m_src->seek(m_S);
         m_src->read(m_headCache.data(), m_xf);
+        applyEnvelope(m_headCache.data(), m_S, m_xf);
         m_src->seek(back);
     }
     m_headCacheValid = true;
@@ -213,6 +225,30 @@ void RegionRenderer::addSegment(ChunkRecord& rec, int64_t out, int64_t file, int
         return;
     }
     rec.seg[rec.segCount++] = Segment{ out, file, frames };
+}
+
+void RegionRenderer::applyEnvelope(float* data, int64_t pos, int64_t frames) const
+{
+    if ((m_envIn <= 0 && m_envOut <= 0) || frames <= 0) {
+        return;
+    }
+    const int ch = m_channels;
+    const int64_t outStart = m_total - m_envOut;
+    for (int64_t f = 0; f < frames; ++f) {
+        const int64_t at = pos + f;
+        float g = 1.0f;
+        if (at < m_envIn) {
+            g = float(std::sin((double(at) + 0.5) / double(m_envIn) * kHalfPi));
+        }
+        if (m_envOut > 0 && at >= outStart) {
+            g *= float(std::cos((double(at - outStart) + 0.5) / double(m_envOut) * kHalfPi));
+        }
+        if (g != 1.0f) {
+            for (int c = 0; c < ch; ++c) {
+                data[f * ch + c] *= g;
+            }
+        }
+    }
 }
 
 void RegionRenderer::applyFadeIn(float* data, int64_t frames)
@@ -268,6 +304,7 @@ int RegionRenderer::render(ChunkRecord& rec, int want)
             if (got < n) {
                 std::fill(dst + got * ch, dst + n * ch, 0.0f);
             }
+            applyEnvelope(dst, pos, got);
             for (int64_t i = 0; i < n; ++i) {
                 const double t = (double(m_xfPos + i) + 0.5) / double(m_xf) * kHalfPi;
                 const float gOut = float(std::cos(t));
@@ -326,6 +363,7 @@ int RegionRenderer::render(ChunkRecord& rec, int want)
         const int64_t n = std::min<int64_t>(want - out, limit - pos);
         const int64_t got = m_src->read(dst, n);
         if (got > 0) {
+            applyEnvelope(dst, pos, got);
             // Fade-out before an end point that was moved in from the end of the file.
             const int64_t fadeOut = (!m_loop && m_total > 0 && E < m_total) ? m_edgeFade : 0;
             if (fadeOut > 0) {

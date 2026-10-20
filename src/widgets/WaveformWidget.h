@@ -7,7 +7,8 @@
 class QCheckBox;
 class QSpinBox;
 
-// Whole-file waveform of one sample with a moving playhead, loop start/end handles and the
+// Whole-file waveform of one sample with a moving playhead, loop start/end handles, the pad's
+// fade in and fade out (drawn as ramps over the waveform, with a knob to drag each) and the
 // sample's Loop and Play-from-start switches.
 //
 // Peaks come from PeakStore, which reads each file once on a low-priority background thread
@@ -17,7 +18,7 @@ class WaveformWidget : public QWidget
 {
     Q_OBJECT
 public:
-    enum class Handle { None, Start, End };
+    enum class Handle { None, Start, End, FadeIn, FadeOut };
 
     explicit WaveformWidget(QWidget* parent = nullptr);
     ~WaveformWidget() override;
@@ -47,11 +48,23 @@ public:
     void setLoopView(const LoopView& view);
     bool isDraggingHandle() const { return m_dragHandle != Handle::None; }
 
+    // The sample's own fade in and out, in seconds, and the longest the knobs may take them (30 s,
+    // or the sample's length). Ignored while a handle is being dragged.
+    struct FadeView {
+        float inSec = 0.0f;
+        float outSec = 0.0f;
+        float maxSec = 30.0f;
+        bool operator==(const FadeView& o) const { return inSec == o.inSec && outSec == o.outSec && maxSec == o.maxSec; }
+    };
+    void setFadeView(const FadeView& view);
+
 signals:
     // Click or drag on the waveform: 0..1 of the file.
     void seekRequested(float pct);
     // A handle moved. `finished` is false during the drag and true on release (or reset).
     void loopPointsChanged(double startPct, double endPct, bool finished);
+    // A fade knob moved. `finished` is false during the drag and true on release (or reset).
+    void fadeDragged(bool fadeIn, double seconds, bool finished);
     void loopToggled(bool on);
     void playFromStartToggled(bool on);
     void playToEndToggled(bool on);
@@ -83,6 +96,10 @@ private:
     void resetHandles(bool start, bool end);
     void layoutToggles();
     bool hasCustomRegion() const;
+    double fadePct(float seconds) const;
+    QPoint fadeKnob(bool fadeIn) const;
+    void dragFade(int x);
+    void drawFades(QPainter& p, const QRect& area);
 
     QString m_path;
     float m_duration = 0.0f;
@@ -92,6 +109,7 @@ private:
     Handle m_dragHandle = Handle::None;
     Handle m_hoverHandle = Handle::None;
     LoopView m_loop;
+    FadeView m_fade;
 
     QCheckBox* m_loopBox = nullptr;
     QCheckBox* m_fromStartBox = nullptr;

@@ -21,6 +21,7 @@ public:
     };
 
     static constexpr float kDefaultDepthDb = -12.0f;
+    // Defaults for how long a full-depth dip takes going down (attack) and coming back (release).
     static constexpr int kAttackMs = 150;
     static constexpr int kReleaseMs = 700;
 
@@ -32,6 +33,11 @@ public:
     void setDepthDb(float db);
     float depthDb() const { return m_depthDb; }
 
+    // Milliseconds for the full dip, down and back up (0 is instant).
+    void setTimesMs(int attackMs, int releaseMs);
+    int attackMs() const { return m_attackMs; }
+    int releaseMs() const { return m_releaseMs; }
+
     // Moves toward the target for the time since the last call. Returns the linear gain.
     float update(int64_t nowMs);
     float gain() const;
@@ -42,6 +48,8 @@ public:
 private:
     unsigned m_sources = 0;
     float m_depthDb = kDefaultDepthDb;
+    int m_attackMs = kAttackMs;
+    int m_releaseMs = kReleaseMs;
     float m_levelDb = 0.0f;
     int64_t m_lastMs = -1;
 };

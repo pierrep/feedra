@@ -68,27 +68,15 @@ public:
     // The pad's play button: play, or pause if it's playing. Nothing while it loads or is
     // empty. The keyboard and MIDI use this too.
     void togglePlay();
-    // Play, pause and stop with the pad's own fade in and fade out times (instant at 0).
-    // Pressing play during a fade-out fades back in from where it was.
+    // Straight away. (Scenes fade their pads themselves; a sample's own fade in and out are part
+    // of its audio, set on the Waveform tab.)
     void play();
     void pause();
     void stop();
-    // Straight away, whatever the fade times: the scene has already faded the pad out.
-    void pauseNow();
-    void stopNow();
-
-    // Seconds (0 = none, up to 10).
-    float fadeInTime() const { return m_fadeIn; }
-    void setFadeInTime(float seconds);
-    float fadeOutTime() const { return m_fadeOut; }
-    void setFadeOutTime(float seconds);
-    // The pad's own fade level, 0..1 (1 when not fading).
-    float padFadeGain() const;
-    bool isPadFading() const { return m_padFadeDirection != 0; }
 
     // Once per UI tick: the player's tick and the pad's volume.
     void updateAudio();
-    // Pad volume x master x fades x intensity layer, applied straight away.
+    // Pad volume x master x scene fade x intensity layer, applied straight away.
     void setFadeVolume(float fade);
     float fadeVolume() const { return m_fadeVolume; }
     void applyVolume();
@@ -140,8 +128,6 @@ public:
         // Samples whose files couldn't be loaded, as they were saved. Kept so they aren't lost.
         std::vector<QJsonObject> missing;
         bool scenePad = false;
-        float fadeIn = 0.0f;
-        float fadeOut = 0.0f;
         int layer = 0; // Intensity::Layer
         bool operator==(const PadClip& o) const;
         bool operator!=(const PadClip& o) const { return !(*this == o); }
@@ -232,18 +218,6 @@ private:
     int m_layer = 0;
     float m_layerGain = 1.0f;
 
-    // The pad's own fade (play, pause and stop from the pad, keys and MIDI).
-    enum class AfterFade { None, Pause, Stop };
-    float m_fadeIn = 0.0f;
-    float m_fadeOut = 0.0f;
-    int m_padFadeDirection = 0; // 1 in, -1 out, 0 not fading
-    float m_padPhase = 1.0f;
-    float m_padPhaseFrom = 1.0f;
-    int m_padFadeMs = 0;
-    AfterFade m_afterFade = AfterFade::None;
-    QElapsedTimer m_padFadeClock;
-    void startPadFade(int direction, float seconds, AfterFade after);
-    void updatePadFade();
     // Send levels, kept here too so they survive loading (bus order: EAX 1, EAX 2, conv 1, conv 2).
     float m_sends[OpenALSoundPlayer::kSendCount] = { 0.0f, 0.0f, 0.0f, 0.0f };
 

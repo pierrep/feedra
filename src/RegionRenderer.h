@@ -2,7 +2,8 @@
 
 // The region renderer: turns a sample's frames into the audio a voice queues, applying the
 // loop region on the way. It stops at E, wraps from E back to S with an equal-power crossfade,
-// and fades in or out where playback would otherwise start or stop mid-waveform.
+// fades in or out where playback would otherwise start or stop mid-waveform, and applies the
+// sample's own fade in and out.
 //
 // It knows nothing about OpenAL or threads: a voice feeds it a FrameSource and calls render()
 // from wherever the queue is filled (holding its own lock). That's what makes it testable on
@@ -25,10 +26,17 @@ struct LoopRegion {
     // it within half the loop.
     double crossfadeMs = 10.0;
     static constexpr double kMaxCrossfadeMs = 10000.0;
+    // The sample's own fade in and fade out, in seconds (0 = none): the first and last stretch of
+    // the file ramp up from and down to silence, wherever it plays from (equal power). They
+    // belong to the audio, not to how it's started or stopped, and are drawn on the waveform.
+    double fadeInSec = 0.0;
+    double fadeOutSec = 0.0;
+    static constexpr double kMaxFadeSec = 30.0;
     bool operator==(const LoopRegion& o) const
     {
         return start == o.start && end == o.end && loop == o.loop && playFromStart == o.playFromStart
-            && playToEnd == o.playToEnd && crossfadeMs == o.crossfadeMs;
+            && playToEnd == o.playToEnd && crossfadeMs == o.crossfadeMs && fadeInSec == o.fadeInSec
+            && fadeOutSec == o.fadeOutSec;
     }
     bool operator!=(const LoopRegion& o) const { return !(*this == o); }
 };
@@ -102,6 +110,8 @@ private:
     void ensureHeadCache();
     static void addSegment(ChunkRecord& rec, int64_t out, int64_t file, int64_t frames);
     void applyFadeIn(float* data, int64_t frames);
+    // The sample's own fades, by where `data` sits in the file: frames [pos, pos + frames).
+    void applyEnvelope(float* data, int64_t pos, int64_t frames) const;
 
     FrameSource* m_src = nullptr;
     int m_channels = 0;
@@ -117,6 +127,8 @@ private:
     int64_t m_S = 0, m_E = 0;     // effective region in frames
     int64_t m_xf = 0;             // effective loop crossfade length
     int64_t m_edgeFade = 0;       // short fade-in at a mid-file start, fade-out at a moved end
+    int64_t m_envIn = 0;          // the sample's fade in, in frames, from the start of the file
+    int64_t m_envOut = 0;         // the sample's fade out, in frames, to the end of the file
     bool m_loop = false;
     bool m_fromStart = true;
     bool m_toEnd = true;

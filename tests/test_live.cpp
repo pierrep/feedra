@@ -2,9 +2,12 @@
 // plays which pad.
 
 #include "ControlMap.h"
+#include "AudioLatency.h"
 #include "Duck.h"
 #include "KeyLayout.h"
 
+#include <QDir>
+#include <QFile>
 #include <QJsonArray>
 #include <QString>
 
@@ -65,6 +68,28 @@ void testDuck()
     duck.setDepthDb(0.0f);
     duck.update(100001);
     CHECK(duck.gain() == 1.0f, "depth 0 still ducks");
+    // Custom times: a 1 s attack and an instant release.
+    duck.setDepthDb(-12.0f);
+    duck.setHeld(Duck::Midi, false);
+    duck.update(200000);
+    duck.setTimesMs(1000, 0);
+    CHECK(duck.attackMs() == 1000 && duck.releaseMs() == 0, "times kept");
+    duck.update(200001); // sets the clock
+    duck.setHeld(Duck::Key, true);
+    duck.update(200501);
+    CHECK(near(duck.levelDb(), -6.0f, 1e-3f), "half way down a 1 s attack: %f", duck.levelDb());
+    duck.update(201501);
+    CHECK(near(duck.levelDb(), -12.0f, 1e-4f), "at depth: %f", duck.levelDb());
+    duck.setHeld(Duck::Key, false);
+    duck.update(201502);
+    CHECK(duck.levelDb() == 0.0f, "an instant release: %f", duck.levelDb());
+    duck.setHeld(Duck::Key, true);
+    duck.setTimesMs(0, 700);
+    duck.update(201503);
+    CHECK(near(duck.levelDb(), -12.0f, 1e-4f), "an instant attack: %f", duck.levelDb());
+    duck.setHeld(Duck::Key, false);
+    duck.setTimesMs(150, 700);
+    duck.update(210000);
     // Time going backwards (it shouldn't) does nothing odd.
     duck.setDepthDb(-12.0f);
     duck.update(50);
@@ -214,9 +239,41 @@ void testControls()
 
 } // namespace
 
+void testLatency()
+{
+    std::printf("output latency\n");
+    CHECK(AudioLatency::fromId(QStringLiteral("nonsense")) == AudioLatency::Default, "unknown id");
+    for (int preset = 0; preset < AudioLatency::kPresetCount; ++preset) {
+        CHECK(AudioLatency::fromId(AudioLatency::id(preset)) == preset, "id round trip %d", preset);
+    }
+    CHECK(AudioLatency::configText(AudioLatency::Default).isEmpty(), "the default writes nothing");
+    CHECK(AudioLatency::configText(AudioLatency::Lowest) == QByteArray("[general]\nperiod_size=128\nperiods=2\n"),
+          "lowest: %s", AudioLatency::configText(AudioLatency::Lowest).constData());
+    // Smaller presets really are smaller.
+    const auto ms = [](int preset) {
+        const AudioLatency::Buffering b = AudioLatency::buffering(preset);
+        return b.periodFrames * b.periods;
+    };
+    CHECK(ms(AudioLatency::Lowest) < ms(AudioLatency::Low) && ms(AudioLatency::Low) < ms(AudioLatency::Safe), "order");
+
+    const QString dir = QDir::temp().filePath(QStringLiteral("feedra_latency_test"));
+    QDir(dir).removeRecursively();
+    qunsetenv("ALSOFT_CONF");
+    CHECK(!AudioLatency::apply(AudioLatency::Default, dir) && !qEnvironmentVariableIsSet("ALSOFT_CONF"), "default touched OpenAL");
+    CHECK(AudioLatency::apply(AudioLatency::Low, dir), "low not applied");
+    QFile file(QDir(dir).filePath(QStringLiteral("alsoft.ini")));
+    CHECK(file.open(QIODevice::ReadOnly) && file.readAll() == AudioLatency::configText(AudioLatency::Low), "ini contents");
+    CHECK(qEnvironmentVariableIsSet("ALSOFT_CONF"), "ALSOFT_CONF not set");
+    // A config of the user's own is left alone.
+    CHECK(!AudioLatency::apply(AudioLatency::Lowest, dir), "overrode the user's ALSOFT_CONF");
+    qunsetenv("ALSOFT_CONF");
+    QDir(dir).removeRecursively();
+}
+
 int main()
 {
     testDuck();
+    testLatency();
     testKeys();
     testControls();
     std::printf("%s: %d failure(s)\n", g_failures ? "FAILED" : "OK", g_failures);

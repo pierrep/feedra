@@ -267,6 +267,128 @@ void testDegenerateRegion()
 
 } // namespace
 
+// The envelope the sample's own fades apply, as the test expects it (equal power).
+double envelope(int64_t frame, double fadeInFrames, double fadeOutFrames)
+{
+    const double halfPi = 1.57079632679489661923;
+    double g = 1.0;
+    if (fadeInFrames > 0 && frame < fadeInFrames) {
+        g = std::sin((double(frame) + 0.5) / fadeInFrames * halfPi);
+    }
+    const double outStart = double(kTotal) - fadeOutFrames;
+    if (fadeOutFrames > 0 && double(frame) >= outStart) {
+        g *= std::cos((double(frame) - outStart + 0.5) / fadeOutFrames * halfPi);
+    }
+    return g;
+}
+
+void testSampleFades()
+{
+    std::printf("the sample's own fade in and out\n");
+    {
+        Ramp src;
+        RegionRenderer r;
+        r.setSource(&src);
+        r.setFormat(1, kRate, kTotal);
+        LoopRegion region;
+        region.fadeInSec = 1.0;
+        region.fadeOutSec = 2.0;
+        r.setRegion(region);
+        r.startRun(-1, false);
+        const Run run = render(r, 1000);
+        CHECK(run.ended && static_cast<int64_t>(run.out.size()) == kTotal, "rendered %zu frames", run.out.size());
+        double worst = 0.0;
+        for (int64_t i = 0; i < static_cast<int64_t>(run.out.size()); ++i) {
+            worst = std::max(worst, std::fabs(double(run.out[static_cast<size_t>(i)]) - frameValue(i) * envelope(i, 1000, 2000)));
+        }
+        CHECK(worst < 1e-4, "the envelope is off by %g", worst);
+        CHECK(run.out[0] < 0.001f && std::fabs(run.out[2000] - float(frameValue(2000))) < 1e-6f
+                  && run.out.back() < 0.0005f, "ends aren't silent, or the middle was touched");
+    }
+    {
+        // Wherever it plays from: a seek into the fade-out is faded by where it is in the file.
+        Ramp src;
+        RegionRenderer r;
+        r.setSource(&src);
+        r.setFormat(1, kRate, kTotal);
+        LoopRegion region;
+        region.fadeOutSec = 2.0;
+        r.setRegion(region);
+        r.startRun(4000, true);
+        const Run run = render(r, 1000);
+        CHECK(run.out.size() == 1000, "rendered %zu frames after the seek", run.out.size());
+        double worst = 0.0;
+        for (int i = 50; i < 1000; ++i) { // past the short fade-in a seek adds
+            worst = std::max(worst, std::fabs(double(run.out[static_cast<size_t>(i)]) - frameValue(4000 + i) * envelope(4000 + i, 0, 2000)));
+        }
+        CHECK(worst < 1e-4, "a seek into the fade-out is off by %g", worst);
+    }
+    {
+        // Inside a loop region, away from the file's ends, nothing is faded; the intro still is.
+        Ramp src;
+        RegionRenderer r;
+        r.setSource(&src);
+        r.setFormat(1, kRate, kTotal);
+        LoopRegion region;
+        region.start = 1.0;
+        region.end = 4.0;
+        region.loop = true;
+        region.crossfadeMs = 0.0;
+        region.fadeInSec = 1.0;
+        region.fadeOutSec = 1.0;
+        r.setRegion(region);
+        r.startRun(-1, false);
+        const Run run = render(r, 40);
+        CHECK(run.out.size() > 8000, "loop didn't run on (%zu)", run.out.size());
+        CHECK(std::fabs(double(run.out[500]) - frameValue(500) * envelope(500, 1000, 1000)) < 1e-4, "intro not faded in");
+        CHECK(std::fabs(run.out[1500] - float(frameValue(1500))) < 1e-6f && std::fabs(run.out[3500] - float(frameValue(3500))) < 1e-6f,
+              "the loop was faded");
+        CHECK(std::fabs(run.out[4500] - float(frameValue(1500))) < 1e-6f, "the second pass of the loop was faded");
+    }
+    {
+        // A loop over the whole file with a crossfade: the tail it fades out carries the fade out, and the head it
+        // blends in the fade in.
+        Ramp src;
+        RegionRenderer r;
+        r.setSource(&src);
+        r.setFormat(1, kRate, kTotal);
+        LoopRegion region;
+        region.loop = true;
+        region.crossfadeMs = 100.0;
+        region.fadeInSec = 1.0;
+        region.fadeOutSec = 1.0;
+        r.setRegion(region);
+        r.startRun(-1, false);
+        const Run run = render(r, 40);
+        const int i = 4950; // 50 frames into the 100-frame crossfade
+        const double t = (50.0 + 0.5) / 100.0 * 1.57079632679489661923;
+        const double want = frameValue(4950) * envelope(4950, 1000, 1000) * std::cos(t)
+            + frameValue(50) * envelope(50, 1000, 1000) * std::sin(t);
+        CHECK(run.out.size() > 5000 && std::fabs(double(run.out[static_cast<size_t>(i)]) - want) < 5e-4,
+              "crossfade tail or head wasn't faded: %f, want %f", double(run.out[static_cast<size_t>(i)]), want);
+    }
+    {
+        // The loader's first chunks bypass the renderer, so they can't be used when a fade touches them.
+        Ramp src;
+        RegionRenderer r;
+        r.setSource(&src);
+        r.setFormat(1, kRate, kTotal);
+        r.applyPending();
+        CHECK(r.canUseInitial(512), "initial chunks refused with no fades");
+        LoopRegion region;
+        region.fadeInSec = 0.5;
+        r.setRegion(region);
+        r.applyPending();
+        CHECK(!r.canUseInitial(512), "initial chunks used under a fade in");
+        region.fadeInSec = 0.0;
+        region.fadeOutSec = 2.0;
+        r.setRegion(region);
+        r.applyPending();
+        CHECK(r.canUseInitial(512) && !r.canUseInitial(4000), "initial chunks vs the fade out: %d %d", r.canUseInitial(512),
+              r.canUseInitial(4000));
+    }
+}
+
 int main()
 {
     testPlayThrough();
@@ -277,6 +399,7 @@ int main()
     testChangeWhilePlaying();
     testSeekFadeIn();
     testDegenerateRegion();
+    testSampleFades();
     std::printf("%s: %d failure(s)\n", g_failures ? "FAILED" : "OK", g_failures);
     return g_failures ? 1 : 0;
 }

@@ -9,7 +9,9 @@
 #include "Scene.h"
 
 #include <QApplication>
+#include <QDoubleSpinBox>
 #include <QCheckBox>
+#include <QComboBox>
 #include <QDir>
 #include <QElapsedTimer>
 #include <QFile>
@@ -152,6 +154,24 @@ int main(int argc, char** argv)
     tap(&window, Qt::Key_M, "m"); // off the 6x4 grid: nothing
     pump(50);
 
+    std::printf("key caps show only while Tab is held\n");
+    SoundPadWidget* firstWidget = nullptr;
+    for (SoundPadWidget* w : window.findChildren<SoundPadWidget*>()) {
+        if (w->pad() == first) {
+            firstWidget = w;
+        }
+    }
+    CHECK(firstWidget != nullptr, "no widget for the first pad");
+    if (firstWidget) {
+        CHECK(firstWidget->keyHint().isEmpty(), "key cap showing without Tab: %s", qPrintable(firstWidget->keyHint()));
+        key(&window, Qt::Key_Tab, QString());
+        CHECK(firstWidget->keyHint() == QStringLiteral("1"), "Tab didn't show the key: '%s'", qPrintable(firstWidget->keyHint()));
+        key(&window, Qt::Key_Tab, QString()); // a repeat
+        CHECK(firstWidget->keyHint() == QStringLiteral("1"), "a repeat hid the key");
+        key(&window, Qt::Key_Tab, QString(), false);
+        CHECK(firstWidget->keyHint().isEmpty(), "key cap stayed after Tab let go");
+    }
+
     std::printf("talk-over\n");
     key(&window, Qt::Key_Space, " ");
     pump(300);
@@ -165,6 +185,30 @@ int main(int argc, char** argv)
     talk->click();
     pump(1200, [&]() { return !talk->property("live").toBool(); });
     CHECK(!talk->property("live").toBool(), "Talk button didn't let go");
+
+    std::printf("talk-over fade times\n");
+    QDoubleSpinBox* fadeOut = window.findChild<QDoubleSpinBox*>(QStringLiteral("TalkFadeOut"));
+    QDoubleSpinBox* fadeIn = window.findChild<QDoubleSpinBox*>(QStringLiteral("TalkFadeIn"));
+    CHECK(fadeIn && fadeOut, "talk fade settings missing");
+    if (fadeIn && fadeOut) {
+        CHECK(std::fabs(fadeIn->value() - 0.15) < 1e-6 && std::fabs(fadeOut->value() - 0.7) < 1e-6, "defaults: %f %f", fadeIn->value(), fadeOut->value());
+        fadeOut->setValue(0.0);
+        key(&window, Qt::Key_Space, " ");
+        pump(300);
+        CHECK(talk->property("live").toBool(), "Space didn't duck");
+        key(&window, Qt::Key_Space, " ", false);
+        pump(150, [&]() { return !talk->property("live").toBool(); });
+        CHECK(!talk->property("live").toBool(), "a 0 s fade out still ramped");
+        fadeOut->setValue(0.7);
+        fadeIn->setValue(0.15);
+    }
+
+    std::printf("output latency setting\n");
+    QComboBox* latency = window.findChild<QComboBox*>(QStringLiteral("OutputLatency"));
+    CHECK(latency && latency->currentData().toString() == QStringLiteral("default"), "latency setting missing or not default");
+    if (latency) {
+        latency->setCurrentIndex(latency->findData(QStringLiteral("low")));
+    }
 
     std::printf("panic\n");
     other->togglePlay(); // another scene's pad, playing by itself
@@ -253,6 +297,8 @@ int main(int argc, char** argv)
     QFile saved(QDir(data).filePath("settings/local.json"));
     saved.open(QIODevice::ReadOnly);
     const QJsonObject savedLocal = QJsonDocument::fromJson(saved.readAll()).object();
+    CHECK(savedLocal.value("outputlatency").toString() == QStringLiteral("low"), "latency not kept: %s",
+          qPrintable(savedLocal.value("outputlatency").toString()));
     CHECK(savedLocal.value("midi").toObject().value("bindings").toArray().size() == 5, "MIDI controls not kept");
 
     std::printf("%s: %d failure(s)\n", g_failures ? "FAILED" : "OK", g_failures);

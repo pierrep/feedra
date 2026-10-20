@@ -1,5 +1,6 @@
 #include "WaveformWidget.h"
 
+#include "Fade.h"
 #include "OpenALSoundPlayer.h"
 #include "PeakStore.h"
 #include "Theme.h"
@@ -13,11 +14,17 @@
 #include <QSpinBox>
 #include <QPainter>
 #include <QPainterPath>
+#include <QPolygonF>
 #include <QResizeEvent>
 #include <algorithm>
 #include <cmath>
 
 namespace {
+QColor withAlphaF(QColor c, qreal alpha)
+{
+    c.setAlphaF(alpha);
+    return c;
+}
 constexpr int kMarginX = 20;
 constexpr int kHeaderHeight = 32;
 constexpr int kMarginBottom = 12;
@@ -25,6 +32,8 @@ constexpr int kHandleGrab = 6;      // px either side of a handle line that pick
 constexpr int kTabWidth = 14;
 constexpr int kTabHeight = 13;
 constexpr double kMinLoopSec = 0.05; // shortest loop the handles allow
+constexpr int kKnobRadius = 5;
+constexpr int kKnobGrab = 10;        // px around a fade knob that picks it up
 }
 
 WaveformWidget::WaveformWidget(QWidget* parent)
@@ -177,6 +186,43 @@ void WaveformWidget::setLoopView(const LoopView& view)
     update();
 }
 
+void WaveformWidget::setFadeView(const FadeView& view)
+{
+    if (m_dragHandle == Handle::FadeIn || m_dragHandle == Handle::FadeOut) {
+        return;
+    }
+    if (view == m_fade) {
+        return;
+    }
+    m_fade = view;
+    update();
+}
+
+double WaveformWidget::fadePct(float seconds) const
+{
+    return m_duration > 0.0f ? std::clamp(static_cast<double>(seconds) / m_duration, 0.0, 1.0) : 0.0;
+}
+
+// Where a fade's knob sits: where its ramp ends, on the centre line.
+QPoint WaveformWidget::fadeKnob(bool fadeIn) const
+{
+    const QRect area = waveRect();
+    const double pct = fadeIn ? fadePct(m_fade.inSec) : 1.0 - fadePct(m_fade.outSec);
+    return QPoint(xFor(pct), area.center().y());
+}
+
+void WaveformWidget::dragFade(int x)
+{
+    const bool in = m_dragHandle == Handle::FadeIn;
+    const double fromEdge = in ? pctAt(x) : 1.0 - pctAt(x);
+    // To a tenth of a second, as the Pad tab's boxes do.
+    const double seconds = std::clamp(std::round(fromEdge * m_duration * 10.0) / 10.0, 0.0,
+                                      static_cast<double>(std::min(m_fade.maxSec, m_duration > 0.0f ? m_duration : m_fade.maxSec)));
+    (in ? m_fade.inSec : m_fade.outSec) = static_cast<float>(seconds);
+    update();
+    emit fadeDragged(in, seconds, false);
+}
+
 bool WaveformWidget::hasCustomRegion() const
 {
     return m_loop.startPct > 0.0 || m_loop.endPct < 1.0;
@@ -214,6 +260,16 @@ WaveformWidget::Handle WaveformWidget::handleAt(const QPoint& pos) const
     const QRect area = waveRect();
     if (pos.y() < area.top() - 2 || pos.y() > area.bottom()) {
         return Handle::None;
+    }
+    // The fade knobs first: at a file edge they share a spot with a loop handle's line.
+    if (m_duration > 0.0f) {
+        const QPoint in = fadeKnob(true) - pos;
+        const QPoint out = fadeKnob(false) - pos;
+        const int dIn = in.x() * in.x() + in.y() * in.y();
+        const int dOut = out.x() * out.x() + out.y() * out.y();
+        if (std::min(dIn, dOut) <= kKnobGrab * kKnobGrab) {
+            return dIn <= dOut ? Handle::FadeIn : Handle::FadeOut;
+        }
     }
     const int sx = xFor(m_loop.startPct);
     const int ex = xFor(m_loop.endPct);
@@ -297,7 +353,11 @@ void WaveformWidget::mousePressEvent(QMouseEvent* event)
         const Handle handle = handleAt(pos);
         if (handle != Handle::None) {
             m_dragHandle = handle;
-            dragHandle(pos.x());
+            if (handle == Handle::FadeIn || handle == Handle::FadeOut) {
+                dragFade(pos.x());
+            } else {
+                dragHandle(pos.x());
+            }
             event->accept();
             return;
         }
@@ -315,7 +375,11 @@ void WaveformWidget::mouseMoveEvent(QMouseEvent* event)
 {
     const QPoint pos = event->position().toPoint();
     if (m_dragHandle != Handle::None && (event->buttons() & Qt::LeftButton)) {
-        dragHandle(pos.x());
+        if (m_dragHandle == Handle::FadeIn || m_dragHandle == Handle::FadeOut) {
+            dragFade(pos.x());
+        } else {
+            dragHandle(pos.x());
+        }
         event->accept();
         return;
     }
@@ -327,6 +391,12 @@ void WaveformWidget::mouseMoveEvent(QMouseEvent* event)
     const Handle hover = handleAt(pos);
     if (hover != m_hoverHandle) {
         m_hoverHandle = hover;
+        setToolTip(hover == Handle::FadeIn
+                       ? tr("Fade in: the start of the sample rises from silence over this time, however it's played.\nDrag to change, double-click to remove.")
+                       : hover == Handle::FadeOut
+                           ? tr("Fade out: the end of the sample falls to silence over this time.\n"
+                                "Drag to change, double-click to remove.")
+                           : QString());
         update();
     }
     if (hover != Handle::None) {
@@ -341,7 +411,12 @@ void WaveformWidget::mouseReleaseEvent(QMouseEvent* event)
 {
     if (event->button() == Qt::LeftButton) {
         m_dragging = false;
-        if (m_dragHandle != Handle::None) {
+        if (m_dragHandle == Handle::FadeIn || m_dragHandle == Handle::FadeOut) {
+            const bool in = m_dragHandle == Handle::FadeIn;
+            m_dragHandle = Handle::None;
+            emit fadeDragged(in, in ? m_fade.inSec : m_fade.outSec, true);
+            update();
+        } else if (m_dragHandle != Handle::None) {
             m_dragHandle = Handle::None;
             emit loopPointsChanged(m_loop.startPct, m_loop.endPct, true);
             update();
@@ -354,6 +429,15 @@ void WaveformWidget::mouseDoubleClickEvent(QMouseEvent* event)
 {
     // Double-click a handle to put it back at the edge of the file.
     const Handle handle = event->button() == Qt::LeftButton ? handleAt(event->position().toPoint()) : Handle::None;
+    if (handle == Handle::FadeIn || handle == Handle::FadeOut) {
+        m_dragHandle = Handle::None;
+        const bool in = handle == Handle::FadeIn;
+        (in ? m_fade.inSec : m_fade.outSec) = 0.0f;
+        update();
+        emit fadeDragged(in, 0.0, true);
+        event->accept();
+        return;
+    }
     if (handle != Handle::None) {
         m_dragHandle = Handle::None;
         resetHandles(handle == Handle::Start, handle == Handle::End);
@@ -488,6 +572,73 @@ QString WaveformWidget::formatTime(float seconds)
 {
     const int total = std::max(0, static_cast<int>(seconds));
     return QStringLiteral("%1:%2").arg(total / 60).arg(total % 60, 2, 10, QLatin1Char('0'));
+}
+
+// The fades as the gain they apply: a ramp from silence up to full over the fade in, and down
+// again over the fade out, with what they cut out shaded, and a knob at the end of each ramp.
+void WaveformWidget::drawFades(QPainter& p, const QRect& area)
+{
+    if (m_duration <= 0.0f || area.width() <= 0) {
+        return;
+    }
+    const Theme::Palette& pal = Theme::instance().palette();
+    const QColor accent = pal.playLoaded;
+    p.save();
+    p.setRenderHint(QPainter::Antialiasing, true);
+    for (const bool in : { true, false }) {
+        const float seconds = in ? m_fade.inSec : m_fade.outSec;
+        const double pct = fadePct(seconds);
+        const int x0 = in ? area.left() : xFor(1.0 - pct);
+        const int x1 = in ? xFor(pct) : area.right();
+        if (pct > 0.0 && x1 > x0) {
+            const int steps = std::clamp(x1 - x0, 2, 96);
+            QPolygonF cut; // above the curve: the part of the sound the fade takes away
+            QPolygonF curve;
+            for (int i = 0; i <= steps; ++i) {
+                const double t = double(i) / steps;
+                const float gain = Fade::equalPower(static_cast<float>(in ? t : 1.0 - t));
+                const QPointF pt(x0 + t * (x1 - x0), area.bottom() - gain * area.height());
+                curve << pt;
+            }
+            cut = curve;
+            cut << QPointF(x1, area.top()) << QPointF(x0, area.top());
+            QColor fill = accent;
+            fill.setAlphaF(0.20);
+            p.setPen(Qt::NoPen);
+            p.setBrush(fill);
+            p.drawPolygon(cut);
+            QColor line = accent;
+            line.setAlphaF(0.9);
+            p.setPen(QPen(line, 1.5));
+            p.setBrush(Qt::NoBrush);
+            p.drawPolyline(curve);
+            QPen dashed(withAlphaF(accent, 0.5), 1.0, Qt::DashLine);
+            p.setPen(dashed);
+            const int edge = in ? x1 : x0;
+            p.drawLine(edge, area.top(), edge, area.bottom());
+        }
+        const bool active = m_dragHandle == (in ? Handle::FadeIn : Handle::FadeOut)
+            || m_hoverHandle == (in ? Handle::FadeIn : Handle::FadeOut);
+        const QPoint knob = fadeKnob(in);
+        p.setPen(QPen(pal.background, 1.5));
+        p.setBrush(withAlphaF(accent, active ? 1.0 : 0.85));
+        const int r = active ? kKnobRadius + 1 : kKnobRadius;
+        p.drawEllipse(knob, r, r);
+        if (active) {
+            const QString t = (in ? tr("Fade in ") : tr("Fade out ")) + tr("%1 s").arg(seconds, 0, 'f', 1);
+            const int w = p.fontMetrics().horizontalAdvance(t) + 10;
+            QRect label(in ? knob.x() + 10 : knob.x() - w - 10, knob.y() - 22, w, 16);
+            label.moveLeft(std::clamp(label.left(), area.left(), std::max(area.left(), area.right() - w)));
+            QColor bg = pal.panelBackground;
+            bg.setAlphaF(0.9);
+            p.setPen(Qt::NoPen);
+            p.setBrush(bg);
+            p.drawRect(label);
+            p.setPen(pal.text);
+            p.drawText(label, Qt::AlignCenter, t);
+        }
+    }
+    p.restore();
 }
 
 void WaveformWidget::paintEvent(QPaintEvent* event)
@@ -625,6 +776,8 @@ void WaveformWidget::paintEvent(QPaintEvent* event)
         tint.setAlphaF(0.22);
         p.fillRect(QRect(fx, area.top(), std::max(1, ex - fx), area.height()), tint);
     }
+
+    drawFades(p, area);
 
     if (m_playhead >= 0.0f) {
         QColor head = m_playing ? pal.playheadText : pal.playheadDelay;

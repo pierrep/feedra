@@ -31,17 +31,17 @@ cmake --build build
 ctest --test-dir build --output-on-failure
 ```
 
-- `region_renderer`: the loop, crossfade and fade logic, on its own.
+- `region_renderer`: the loop, crossfade and fade logic (including a sample's own fade in and out), on its own.
 - `engine`: the audio engine on OpenAL Soft's silent `null` device (no sound card needed).
 - `cue`: the preview output on a second (null) device: play, seek, end, a bad file, close.
 - `project_roundtrip`: opens a project in the window (offscreen), quits, and checks the saved file.
 - `panels`: the Editor and bottom panel driven directly, and a Files-tab preview on the cue output.
 - `scene_fades`: the equal-power fade curve and a crossfade between two scenes.
-- `live`: the talk-over duck, which key plays which pad, and the MIDI map (learning included).
-- `live_window`: pad keys, Space, Esc and MIDI messages in the real window.
-- `pad_play`: per-pad fades (in, out, turning round, saving).
+- `live`: the talk-over duck (and its fade times), which key plays which pad, the latency presets, and the MIDI map (learning included).
+- `live_window`: pad keys, the Tab key caps, Space, Esc and MIDI messages in the real window.
+- `pad_play`: play, pause and stop, and a sample's own fades surviving save, load, copy and paste.
 - `intensity`: the layer crossfade, and the Intensity slider, MIDI and the Pad tab's layer in the window.
-- `undo`: undo and redo of settings, cut and paste, moving pads and deleting a scene, in the window.
+- `undo`: undo and redo of settings, cut and paste, moving pads, deleting a scene and dragging a sample's fades on the waveform, in the window.
 
 CI (`.github/workflows/build.yml`) builds on Linux, macOS and Windows and runs them.
 Configure with `-DFEEDRA_WARNINGS_AS_ERRORS=ON` to fail on warnings, `-DFEEDRA_BUILD_TESTS=OFF` to skip the tests.
@@ -49,6 +49,7 @@ Configure with `-DFEEDRA_WARNINGS_AS_ERRORS=ON` to fail on warnings, `-DFEEDRA_B
 ## Source layout
 
 - `AudioDevice`: the OpenAL device, effect buses, scheduled starts.
+- `AudioLatency`: the Settings "Latency" presets, which size the output buffer through an OpenAL Soft config file written before the device opens.
 - `CueOutput`: a second device for the Files tab's previews (headphones), on its own thread.
 - `Duck`, `KeyLayout`, `ControlMap`, `MidiInput`: the live controls: talk-over, pad keys, MIDI
   mappings and MIDI input.
@@ -56,7 +57,7 @@ Configure with `-DFEEDRA_WARNINGS_AS_ERRORS=ON` to fail on warnings, `-DFEEDRA_B
 - `RegionRenderer`: loop regions and crossfades.
 - `OpenALSoundPlayer`: one voice: its source, queue and the stream service.
 - `SoundPlayer`: a pad's list of samples, delays, random order and handovers.
-- `Pad`: one pad's samples and settings, and its fades. `Scene` owns a
+- `Pad`: one pad's samples and settings. `Scene` owns a
   scene's pads; `SoundPadWidget` draws one. `Fade`: the equal-power fade curve.
   `Intensity`: a scene's Calm, Tense and Combat layers and the crossfade between them.
 - `ProjectFile`, `ProjectBackups`: the project file's format, export and backups.

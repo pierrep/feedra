@@ -172,6 +172,8 @@ private:
     void refreshIntensityControl();
     // The key caps on the pads, for the keyboard setting.
     void refreshKeyHints();
+    // Key caps show only while Tab is held (and the keyboard plays the pads).
+    void setKeyHintsShown(bool shown);
     // MIDI: carries out what a message asks for (ControlMap), or finishes learning.
     void handleMidi(const MidiMessage& message);
     void startMidiLearn(ControlAction action, int pad = -1);
@@ -238,6 +240,7 @@ private:
     EditorPanel* m_editor = nullptr;
     BottomPanel* m_bottom = nullptr;
     Duck m_duck;
+    bool m_keyHintsShown = false;
     MidiInput* m_midi = nullptr;
     ControlMap m_controls;
     QString m_midiPort; // the chosen input, open or not

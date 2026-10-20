@@ -52,6 +52,8 @@ signals:
     // Controls were cleared, or default notes switched: save.
     void midiMapChanged();
     void previewDeviceChanged();
+    // AppConfig::outputLatency was changed here: it's saved, and used from the next start.
+    void outputLatencyChanged();
 
 private:
     void applyImpulsePath(const QString& path, int which);
@@ -67,6 +69,8 @@ private:
     QDoubleSpinBox* m_crossfade = nullptr;
     SettingsCard m_liveCard; // keyboard and MIDI rows go in here too
     QDoubleSpinBox* m_talkOverDepth = nullptr;
+    QDoubleSpinBox* m_talkFadeIn = nullptr;
+    QDoubleSpinBox* m_talkFadeOut = nullptr;
     QDoubleSpinBox* m_panicTime = nullptr;
     QCheckBox* m_keyboardPads = nullptr;
     MidiInput* m_midi = nullptr;
@@ -81,6 +85,7 @@ private:
     QLabel* m_waveformCacheInfo = nullptr;
     QComboBox* m_outputDevice = nullptr;
     QComboBox* m_previewDevice = nullptr;
+    QComboBox* m_outputLatency = nullptr;
     QLabel* m_deviceStatus = nullptr;
     QComboBox* m_reverbPreset[AudioDevice::kEaxReverbCount] = {};
     QSlider* m_convolutionGain[AudioDevice::kConvolutionCount] = {};

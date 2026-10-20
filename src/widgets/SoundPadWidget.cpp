@@ -881,11 +881,13 @@ void SoundPadWidget::paintEvent(QPaintEvent*)
         keyFont.setStyleHint(QFont::Monospace);
         keyFont.setPixelSize(std::max(8, qRound(10 * s)));
         const QRectF cap = at(144, 44, 18, 16);
-        p.setPen(QPen(theme.padBorder, 1.0));
-        p.setBrush(Qt::NoBrush);
+        // Solid, in the strongest text colour, so it reads over any pad.
+        keyFont.setBold(true);
+        p.setPen(QPen(theme.text, 1.2));
+        p.setBrush(theme.padFill);
         p.drawRoundedRect(cap, 3.0 * s, 3.0 * s);
         p.setFont(keyFont);
-        p.setPen(theme.textMuted);
+        p.setPen(theme.text);
         p.drawText(cap, Qt::AlignCenter, m_keyHint);
     }
 

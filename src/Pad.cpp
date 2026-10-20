@@ -3,7 +3,6 @@
 #include "AppConfig.h"
 #include "AudioDevice.h"
 #include "AudioSample.h"
-#include "Fade.h"
 #include "Intensity.h"
 #include "FsPath.h"
 #include "SampleLoadQueue.h"
@@ -148,10 +147,10 @@ void Pad::togglePlay()
     if (isLoading() || !isLoaded()) {
         return;
     }
-    if (m_padFadeDirection < 0 || !m_player.isPlaying()) {
-        play(); // also turns a fade-out round
-    } else {
+    if (m_player.isPlaying()) {
         pause();
+    } else {
+        play();
     }
 }
 
@@ -160,107 +159,22 @@ void Pad::play()
     if (isLoading() || !isLoaded()) {
         return;
     }
-    if (m_fadeIn > 0.0f && (m_padFadeDirection < 0 || !m_player.isPlaying())) {
-        // From silence, or from the level a fade-out had reached.
-        if (m_padFadeDirection == 0) {
-            m_padPhase = 0.0f;
-        }
-        startPadFade(1, m_fadeIn, AfterFade::None);
-    } else if (m_padFadeDirection < 0) {
-        m_padFadeDirection = 0;
-        m_padPhase = 1.0f;
-        m_afterFade = AfterFade::None;
-    }
     applyVolume();
     m_player.setPaused(false);
 }
 
 void Pad::pause()
 {
-    if (m_fadeOut > 0.0f && m_player.isPlaying()) {
-        startPadFade(-1, m_fadeOut, AfterFade::Pause);
-        return;
-    }
-    pauseNow();
+    m_player.setPaused(true);
 }
 
 void Pad::stop()
 {
-    if (m_fadeOut > 0.0f && m_player.isPlaying()) {
-        startPadFade(-1, m_fadeOut, AfterFade::Stop);
-        return;
-    }
-    stopNow();
-}
-
-void Pad::pauseNow()
-{
-    m_padFadeDirection = 0;
-    m_padPhase = 1.0f;
-    m_afterFade = AfterFade::None;
-    m_player.setPaused(true);
-    applyVolume();
-}
-
-void Pad::stopNow()
-{
-    m_padFadeDirection = 0;
-    m_padPhase = 1.0f;
-    m_afterFade = AfterFade::None;
     m_player.stop();
-    applyVolume();
-}
-
-void Pad::startPadFade(int direction, float seconds, AfterFade after)
-{
-    // From wherever the level is, so turning a fade round never jumps.
-    m_padPhaseFrom = m_padPhase;
-    m_padFadeDirection = direction;
-    m_afterFade = after;
-    // The time for a full fade; a part-way one takes its share.
-    const float distance = direction > 0 ? 1.0f - m_padPhaseFrom : m_padPhaseFrom;
-    m_padFadeMs = std::max(1, static_cast<int>(std::lround(seconds * 1000.0f * distance)));
-    m_padFadeClock.restart();
-}
-
-void Pad::updatePadFade()
-{
-    if (m_padFadeDirection == 0) {
-        return;
-    }
-    const float t = std::min(1.0f, float(m_padFadeClock.elapsed()) / float(m_padFadeMs));
-    const float target = m_padFadeDirection > 0 ? 1.0f : 0.0f;
-    m_padPhase = m_padPhaseFrom + (target - m_padPhaseFrom) * t;
-    if (t >= 1.0f) {
-        const AfterFade after = m_afterFade;
-        m_padFadeDirection = 0;
-        m_afterFade = AfterFade::None;
-        if (after == AfterFade::Pause) {
-            pauseNow();
-        } else if (after == AfterFade::Stop) {
-            stopNow();
-        }
-    }
-}
-
-float Pad::padFadeGain() const
-{
-    return m_padFadeDirection == 0 && m_padPhase >= 1.0f ? 1.0f : Fade::equalPower(m_padPhase);
-}
-
-void Pad::setFadeInTime(float seconds)
-{
-    m_fadeIn = std::clamp(seconds, 0.0f, 10.0f);
-}
-
-void Pad::setFadeOutTime(float seconds)
-{
-    m_fadeOut = std::clamp(seconds, 0.0f, 10.0f);
 }
 
 void Pad::updateAudio()
 {
-    updatePadFade();
     m_player.update();
     applyVolume();
 }
@@ -274,8 +188,7 @@ void Pad::setFadeVolume(float fade)
 
 void Pad::applyVolume()
 {
-    const float base = m_volume * m_config->masterVolume() * m_config->masterFade() * m_fadeVolume * padFadeGain()
-        * m_layerGain;
+    const float base = m_volume * m_config->masterVolume() * m_config->masterFade() * m_fadeVolume * m_layerGain;
     if (!m_player.isLoaded() || m_player.player.empty()) {
         return;
     }
@@ -570,12 +483,12 @@ void Pad::loadFromJson(const QJsonObject& root, const QString& baseDir)
         slot.loop.playToEnd = sample.value(QStringLiteral("playtoend")).toBool(true);
         slot.loop.loop = sample.value(QStringLiteral("loop")).toBool(migrateToLoop);
         slot.loop.crossfadeMs = std::clamp(sample.value(QStringLiteral("crossfade")).toDouble(10.0), 0.0, LoopRegion::kMaxCrossfadeMs);
+        slot.loop.fadeInSec = std::clamp(sample.value(QStringLiteral("fadein")).toDouble(0.0), 0.0, LoopRegion::kMaxFadeSec);
+        slot.loop.fadeOutSec = std::clamp(sample.value(QStringLiteral("fadeout")).toDouble(0.0), 0.0, LoopRegion::kMaxFadeSec);
         slot.saved = sample;
         enqueueSample(slot);
     }
     setScenePad(pad.value(QStringLiteral("scenepad")).toBool(false));
-    setFadeInTime(static_cast<float>(pad.value(QStringLiteral("fadein")).toDouble(0.0)));
-    setFadeOutTime(static_cast<float>(pad.value(QStringLiteral("fadeout")).toDouble(0.0)));
     setLayer(Intensity::layerFromId(pad.value(QStringLiteral("layer")).toString()));
     emit changed();
 }
@@ -609,13 +522,7 @@ void Pad::saveToJson(QJsonObject& sceneObj) const
     if (m_scenePad) {
         pad.insert(QStringLiteral("scenepad"), true);
     }
-    // Written only when set, so pads that don't use them read the same as before.
-    if (m_fadeIn > 0.0f) {
-        pad.insert(QStringLiteral("fadein"), m_fadeIn);
-    }
-    if (m_fadeOut > 0.0f) {
-        pad.insert(QStringLiteral("fadeout"), m_fadeOut);
-    }
+    // Written only when set, so pads that don't use it read the same as before.
     if (m_layer != Intensity::None) {
         pad.insert(QStringLiteral("layer"), Intensity::layerId(m_layer));
     }
@@ -640,6 +547,13 @@ void Pad::saveToJson(QJsonObject& sceneObj) const
         sample.insert(QStringLiteral("loopstart"), loop.start);
         sample.insert(QStringLiteral("loopend"), loop.end);
         sample.insert(QStringLiteral("crossfade"), loop.crossfadeMs);
+        // The sample's own fades, written only when set.
+        if (loop.fadeInSec > 0.0) {
+            sample.insert(QStringLiteral("fadein"), loop.fadeInSec);
+        }
+        if (loop.fadeOutSec > 0.0) {
+            sample.insert(QStringLiteral("fadeout"), loop.fadeOutSec);
+        }
         samples.insert(QString("sample-%1").arg(i), sample);
     }
     // Samples that couldn't be loaded go back as they were, after the loaded ones.
@@ -692,13 +606,8 @@ void Pad::clearPad()
     for (float& send : m_sends) {
         send = 0.0f;
     }
-    m_fadeIn = 0.0f;
-    m_fadeOut = 0.0f;
     m_layer = Intensity::None;
     m_layerGain = 1.0f;
-    m_padFadeDirection = 0;
-    m_padPhase = 1.0f;
-    m_afterFade = AfterFade::None;
     emit changed(); // drops the delay border, resets the playhead
 }
 
@@ -735,8 +644,6 @@ Pad::PadClip Pad::clip() const
     }
     clip.missing = m_missingSamples;
     clip.scenePad = m_scenePad;
-    clip.fadeIn = m_fadeIn;
-    clip.fadeOut = m_fadeOut;
     clip.layer = m_layer;
     clip.valid = !clip.samples.empty() || !clip.missing.empty();
     return clip;
@@ -763,8 +670,6 @@ void Pad::pasteClip(const PadClip& clip)
         m_sends[bus] = clip.sends[bus];
     }
     m_missingSamples = clip.missing;
-    setFadeInTime(clip.fadeIn);
-    setFadeOutTime(clip.fadeOut);
     setLayer(clip.layer);
     m_notifyWhenDone = true;
     for (const PadClip::Sample& sample : clip.samples) {
@@ -798,8 +703,7 @@ bool Pad::PadClip::operator==(const PadClip& o) const
     return stream == o.stream && repeat == o.repeat && delayOn == o.delayOn && minDelay == o.minDelay
         && maxDelay == o.maxDelay && randomPlayback == o.randomPlayback && randomPan == o.randomPan
         && name == o.name && volume == o.volume && samples == o.samples && missing == o.missing
-        && scenePad == o.scenePad && fadeIn == o.fadeIn && fadeOut == o.fadeOut
-        && layer == o.layer;
+        && scenePad == o.scenePad && layer == o.layer;
 }
 
 bool Pad::PadClip::sameSamples(const PadClip& o) const
@@ -853,8 +757,6 @@ void Pad::restoreClip(const PadClip& target)
         sample->setLoopRegion(want.loop);
     }
     setScenePad(target.scenePad);
-    setFadeInTime(target.fadeIn);
-    setFadeOutTime(target.fadeOut);
     setLayer(target.layer);
     applyVolume();
     emit sampleLoopChanged();

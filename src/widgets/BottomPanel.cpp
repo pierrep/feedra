@@ -12,7 +12,6 @@
 
 #include <QCheckBox>
 #include <QComboBox>
-#include <QDoubleSpinBox>
 #include <QFileInfo>
 #include <QGridLayout>
 #include <QHBoxLayout>
@@ -137,32 +136,11 @@ BottomPanel::BottomPanel(AppConfig* config, QWidget* parent)
     padGrid->setRowStretch(4, 1);
     padGrid->setColumnMinimumWidth(0, 130);
 
-    // The pad's own fade in and out.
+    // The pad's intensity layer.
     auto* playGrid = new QGridLayout();
     playGrid->setContentsMargins(0, 0, 0, 0);
     playGrid->setHorizontalSpacing(10);
     playGrid->setVerticalSpacing(10);
-    const auto makeAmount = [padPage](double max, double step, const QString& suffix, int decimals) {
-        auto* box = new QDoubleSpinBox(padPage);
-        box->setRange(0.0, max);
-        box->setSingleStep(step);
-        box->setDecimals(decimals);
-        box->setSuffix(suffix);
-        box->setAlignment(Qt::AlignRight);
-        box->setKeyboardTracking(false);
-        box->setMinimumWidth(90);
-        box->setMaximumWidth(120);
-        box->setEnabled(false);
-        return box;
-    };
-    m_fadeIn = makeAmount(10.0, 0.1, tr(" s"), 1);
-    m_fadeIn->setToolTip(tr("Playing the pad (its button, key or MIDI, or its scene) fades it in over this time"));
-    m_fadeOut = makeAmount(10.0, 0.1, tr(" s"), 1);
-    m_fadeOut->setToolTip(tr("Pausing or stopping the pad from its button, key or MIDI fades it out over this time"));
-    playGrid->addWidget(new QLabel(tr("Fade in"), padPage), 0, 0);
-    playGrid->addWidget(m_fadeIn, 0, 1);
-    playGrid->addWidget(new QLabel(tr("Fade out"), padPage), 1, 0);
-    playGrid->addWidget(m_fadeOut, 1, 1);
     // The pad's intensity layer, for the scene's Intensity slider in the header.
     m_layer = new QComboBox(padPage);
     for (int layer = Intensity::None; layer <= Intensity::Combat; ++layer) {
@@ -174,9 +152,9 @@ BottomPanel::BottomPanel(AppConfig* config, QWidget* parent)
     m_layer->setToolTip(tr("Calm, Tense or Combat: the scene's Intensity slider (in the header) crossfades "
                            "between its layered pads, which all start with the scene and play together.\n"
                            "None: the slider leaves this pad alone."));
-    playGrid->addWidget(new QLabel(tr("Layer"), padPage), 2, 0);
-    playGrid->addWidget(m_layer, 2, 1);
-    playGrid->setRowStretch(3, 1);
+    playGrid->addWidget(new QLabel(tr("Layer"), padPage), 0, 0);
+    playGrid->addWidget(m_layer, 0, 1);
+    playGrid->setRowStretch(1, 1);
 
     // EAX reverbs on top, convolution reverbs below.
     auto* sendGrid = new QGridLayout();
@@ -245,6 +223,35 @@ BottomPanel::BottomPanel(AppConfig* config, QWidget* parent)
         region.start = startPct <= 0.0 ? 0.0 : startPct * duration;
         region.end = endPct >= 1.0 ? -1.0 : endPct * duration;
         applyLoopRegion(sample, region);
+    });
+    connect(m_waveform, &WaveformWidget::fadeDragged, this, [this](bool fadeIn, double seconds, bool finished) {
+        // Applied on release, like the loop points: the waveform shows the drag itself.
+        if (!finished) {
+            if (m_loopDragSampleId < 0) {
+                if (AudioSample* shown = waveformSample()) {
+                    m_loopDragSampleId = shown->id;
+                }
+            }
+            return;
+        }
+        AudioSample* sample = waveformSample();
+        if (m_loopDragSampleId >= 0) {
+            sample = nullptr;
+            if (m_pad) {
+                for (AudioSample* candidate : m_pad->soundPlayer().player) {
+                    if (candidate->id == m_loopDragSampleId) {
+                        sample = candidate;
+                    }
+                }
+            }
+            m_loopDragSampleId = -1;
+        }
+        if (!sample) {
+            return;
+        }
+        LoopRegion region = sample->loopRegion();
+        (fadeIn ? region.fadeInSec : region.fadeOutSec) = std::clamp(seconds, 0.0, LoopRegion::kMaxFadeSec);
+        applyLoopRegion(sample, region, tr("Fade"));
     });
     connect(m_waveform, &WaveformWidget::loopToggled, this, [this](bool on) {
         if (AudioSample* sample = waveformSample()) {
@@ -334,18 +341,10 @@ BottomPanel::BottomPanel(AppConfig* config, QWidget* parent)
         if (m_updating) return;
         edit(tr("Repeat"), [&](Pad* pad) { pad->setRepeating(on); });
     });
-    connect(m_fadeIn, qOverload<double>(&QDoubleSpinBox::valueChanged), this, [this](double v) {
-        if (m_updating || !m_pad) return;
-        edit(tr("Fade time"), [&](Pad* pad) { pad->setFadeInTime(static_cast<float>(v)); });
-    });
     connect(m_layer, qOverload<int>(&QComboBox::currentIndexChanged), this, [this](int index) {
         if (m_updating || !m_pad) return;
         const int layer = m_layer->itemData(index).toInt();
         edit(tr("Layer"), [&](Pad* pad) { pad->setLayer(layer); });
-    });
-    connect(m_fadeOut, qOverload<double>(&QDoubleSpinBox::valueChanged), this, [this](double v) {
-        if (m_updating || !m_pad) return;
-        edit(tr("Fade time"), [&](Pad* pad) { pad->setFadeOutTime(static_cast<float>(v)); });
     });
 
     setCurrentTab(WaveformTab);
@@ -384,10 +383,6 @@ void BottomPanel::refreshPadControls()
         for (int bus = 0; bus < OpenALSoundPlayer::kSendCount; ++bus) {
             m_sendSliders[bus]->setEnabled(AudioDevice::sendAvailable(bus));
         }
-        m_fadeIn->setValue(pad->fadeInTime());
-        m_fadeOut->setValue(pad->fadeOutTime());
-        m_fadeIn->setEnabled(true);
-        m_fadeOut->setEnabled(true);
         m_layer->setCurrentIndex(m_layer->findData(pad->layer()));
         m_layer->setEnabled(true);
     } else {
@@ -404,8 +399,6 @@ void BottomPanel::refreshPadControls()
         for (QSlider* slider : m_sendSliders) {
             slider->setEnabled(false);
         }
-        m_fadeIn->setEnabled(false);
-        m_fadeOut->setEnabled(false);
         m_layer->setCurrentIndex(0);
         m_layer->setEnabled(false);
     }
@@ -546,6 +539,9 @@ void BottomPanel::refreshWaveform()
     view.playToEnd = region.playToEnd;
     view.crossfadeMs = static_cast<int>(std::lround(region.crossfadeMs));
     m_waveform->setLoopView(view);
+    // The sample's own fades, up to 30 s or the sample's length.
+    m_waveform->setFadeView({ static_cast<float>(region.fadeInSec), static_cast<float>(region.fadeOutSec),
+                              static_cast<float>(std::min(LoopRegion::kMaxFadeSec, duration)) });
 }
 
 int BottomPanel::waveformSampleIndex() const
@@ -568,9 +564,9 @@ AudioSample* BottomPanel::waveformSample() const
     return index < 0 ? nullptr : m_pad->soundPlayer().player[static_cast<size_t>(index)];
 }
 
-void BottomPanel::applyLoopRegion(AudioSample* sample, const LoopRegion& region)
+void BottomPanel::applyLoopRegion(AudioSample* sample, const LoopRegion& region, const QString& what)
 {
-    edit(tr("Loop points"), [&](Pad*) { sample->setLoopRegion(region); });
+    edit(what.isEmpty() ? tr("Loop points") : what, [&](Pad*) { sample->setLoopRegion(region); });
     emit loopRegionChanged(sample);
     refreshWaveform();
 }

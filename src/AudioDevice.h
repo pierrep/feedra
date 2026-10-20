@@ -43,6 +43,9 @@ std::vector<std::string> outputDevices();
 std::string currentDeviceName();
 // False once the device has gone away (unplugged; ALC_EXT_disconnect). Cheap.
 bool isConnected();
+// How many output buffers the device renders a second (its frequency over its period), or 0
+// when there is no device. The delay of a press is a few of these.
+double outputRefreshHz();
 
 // Float buffers (AL_EXT_FLOAT32). Any thread.
 bool floatOutput();

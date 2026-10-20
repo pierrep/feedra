@@ -1,7 +1,7 @@
 #pragma once
 
 // The panel under the pad grid: the Waveform tab (playhead, seek, loop points), the Pad tab
-// (delay, repeat, scene pad, fades, intensity layer, effect sends) and the Info tab (the current sample's format).
+// (delay, repeat, scene pad, intensity layer, effect sends) and the Info tab (the current sample's format).
 //
 // Collapsing changes the window's height, so the panel only asks (collapseRequested) and the
 // window does it, calling setCollapsedState() in the middle.
@@ -19,7 +19,6 @@ class Pad;
 class WaveformWidget;
 class QCheckBox;
 class QComboBox;
-class QDoubleSpinBox;
 class QLabel;
 class QPushButton;
 class QSlider;
@@ -82,7 +81,8 @@ private:
     // playing sample while the pad plays), or the pad's current one.
     int waveformSampleIndex() const;
     AudioSample* waveformSample() const;
-    void applyLoopRegion(AudioSample* sample, const LoopRegion& region);
+    // `what` names the undo step (the loop handles, or the fades).
+    void applyLoopRegion(AudioSample* sample, const LoopRegion& region, const QString& what = QString());
     void refreshSampleInfo();
     void refreshDelayReadout();
     void tabClicked(int tab);
@@ -113,8 +113,6 @@ private:
     QPushButton* m_resetDelay = nullptr;
     QCheckBox* m_scenePad = nullptr;
     QLabel* m_delayReadout = nullptr;
-    QDoubleSpinBox* m_fadeIn = nullptr;
-    QDoubleSpinBox* m_fadeOut = nullptr;
     QComboBox* m_layer = nullptr; // the pad's intensity layer
 
     WaveformWidget* m_waveform = nullptr;
