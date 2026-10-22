@@ -230,8 +230,9 @@ public:
 
     void setRoot(const QString& root)
     {
-        m_rootPrefix = root.endsWith(QLatin1Char('/')) ? root : root + QLatin1Char('/');
-        invalidateFilter();
+        refilter([&] {
+            m_rootPrefix = root.endsWith(QLatin1Char('/')) ? root : root + QLatin1Char('/');
+        });
     }
 
     void setSearch(const QString& search)
@@ -239,8 +240,7 @@ public:
         if (search == m_search) {
             return;
         }
-        m_search = search;
-        invalidateFilter();
+        refilter([&] { m_search = search; });
     }
 
 protected:
@@ -261,6 +261,20 @@ protected:
     }
 
 private:
+    // invalidateFilter() warns on Qt 6.10+; begin/endFilterChange arrived in 6.10.
+    template<typename Change>
+    void refilter(Change change)
+    {
+#if QT_VERSION >= QT_VERSION_CHECK(6, 10, 0)
+        beginFilterChange();
+        change();
+        endFilterChange();
+#else
+        change();
+        invalidateFilter();
+#endif
+    }
+
     QString m_rootPrefix;
     QString m_search;
 };

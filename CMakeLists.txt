@@ -88,9 +88,36 @@ add_executable(feedra WIN32 src/main.cpp resources/resources.qrc)
 target_link_libraries(feedra PRIVATE feedra_app)
 
 if(WIN32)
-    # The .exe's own icon (Explorer, the taskbar, Alt+Tab). CMake builds .rc files with the
-    # platform's resource compiler (rc.exe for MSVC, windres for MinGW).
-    target_sources(feedra PRIVATE resources/feedra.rc)
+    # The .exe's own icon (Explorer, the taskbar, Alt+Tab).
+    if(MINGW)
+        # CMake's own RC rule records a bare "windres". Ninja then fails with
+        # "CreateProcess failed: The system cannot find the file specified" when
+        # the MinGW bin directory is not on PATH. Call the windres beside the compiler.
+        get_filename_component(_windres_bin "${CMAKE_CXX_COMPILER}" DIRECTORY)
+        set(_windres "${_windres_bin}/windres.exe")
+        if(NOT EXISTS "${_windres}")
+            find_program(_windres NAMES windres REQUIRED)
+        endif()
+        set(_feedra_rc_obj "${CMAKE_CURRENT_BINARY_DIR}/feedra_icon.obj")
+        add_custom_command(
+            OUTPUT "${_feedra_rc_obj}"
+            COMMAND "${_windres}" -O coff
+                -i "${CMAKE_CURRENT_SOURCE_DIR}/resources/feedra.rc"
+                -o "${_feedra_rc_obj}"
+            DEPENDS
+                "${CMAKE_CURRENT_SOURCE_DIR}/resources/feedra.rc"
+                "${CMAKE_CURRENT_SOURCE_DIR}/resources/feedra.ico"
+            WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/resources"
+            VERBATIM
+        )
+        target_sources(feedra PRIVATE "${_feedra_rc_obj}")
+        set_source_files_properties("${_feedra_rc_obj}" PROPERTIES
+            EXTERNAL_OBJECT TRUE
+            GENERATED TRUE
+        )
+    else()
+        target_sources(feedra PRIVATE resources/feedra.rc)
+    endif()
 endif()
 
 if(APPLE)
